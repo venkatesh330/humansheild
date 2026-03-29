@@ -1,0 +1,894 @@
+# HUMANPROOF — MASTER FIX & REBUILD PROMPT
+## Complete System Overhaul: Formula, Data, Skills, UI, Animations
+### Based on: Full code audit + Technical Report analysis + 2026 calibration
+
+---
+
+## ════════════════════════════════════════
+## FULL ANALYSIS FINDINGS (What's broken)
+## ════════════════════════════════════════
+
+### CRITICAL FINDING #1 — Formula weights CONTRADICT the official report
+
+The Technical Report states the correct weights are:
+  D1: 30%, D2: 20%, D3: 22%, D4: 18%, D5: 10%
+
+But the live code uses:
+  D1: 35%, D2: 25%, D3: 20%, D4: 12%, D5: 8%
+
+**Impact:** D4 (Experience Protection) is underweighted by 6 percentage points.
+A 20-year senior surgeon scores as if their experience barely matters.
+A senior finance director scores nearly as high as a fresher.
+This erodes user trust — "the tool doesn't know that experience matters."
+
+### CRITICAL FINDING #2 — 88% of roles use DEFAULT data (not role-specific)
+
+Out of 322 work type keys in the system:
+- D2 TOOL_MATURITY: 283/322 roles (88%) fall back to generic default=52
+- D3 AUGMENTATION: 287/322 roles (89%) fall back to generic default=45
+- DANGER_SKILLS: 303/322 roles (94%) show the same 4 generic tags
+- SAFE_SKILLS: 300/322 roles (93%) show the same 5 generic tags
+- TRANSITION_RECS: 0/322 roles — this data structure DOES NOT EXIST IN THE CODE
+
+261 roles have ALL FOUR data points completely defaulted.
+Examples: mob_rn, fin_compliance, aero_def, tr_facilitator, ph_manufacturing,
+hr_ld, hc_pharmacy, ins_actuarial, gov_social, auto_mfg, saas_pm, sw_embed...
+
+A game designer and a surgeon see IDENTICAL "at-risk skills" and "protected skills."
+This is the #1 credibility killer. Users immediately notice this is wrong.
+
+### CRITICAL FINDING #3 — Country Risk formula produces extreme outliers
+
+Current formula: getCountryRisk = d[0] - d[1] + 50
+- India [68,28] → score = 90 (adds +7.2pts to every Indian user's final score)
+- USA [80,45] → score = 85 (too high — inflates all US scores)
+- Bangladesh [45,15] → score = 80
+
+The country dimension should be contextual, not dominant.
+Fix: (d[0]-d[1])/2 + 50 → India=70, USA=67.5, Bangladesh=65, Sweden=46.5
+
+### CRITICAL FINDING #4 — D1 values are 2023 data, not 2026
+
+These roles have materially wrong automatability scores based on Q1 2026 deployments:
+
+| Role | Current | 2026 Correct | Why |
+|------|---------|--------------|-----|
+| qa_manual | 90 | 97 | Playwright AI + TestRigor + Devin automate 96% of manual QA |
+| cnt_seo_content | 90 | 97 | GPT-4o + Claude writing full SEO strategies autonomously |
+| sw_frontend | 74 | 84 | v0.dev + Cursor + Bolt.new build full UIs from single prompts |
+| leg_paralegal | 78 | 88 | Harvey AI + CoCounsel at paralegal-level research & drafting |
+| fin_account | 80 | 88 | Intuit AI + Copilot for Finance enterprise-wide in 2025 |
+| video_edit | 62 | 75 | Runway Gen-3 + Sora + CapCut AI editing professional videos |
+| hc_radiology | 54 | 68 | FDA-cleared AI reading 80% of routine scans accurately |
+| bpo_chat | 93 | 97 | Claude/GPT-4o handling 85% of tier-1 chat at human+ accuracy |
+| adm_data_entry | 92 | 97 | RPA + AI agents automate virtually all structured data entry |
+| med_edit | 78 | 88 | AI editors at professional-level for editorial work |
+| mus_lyrics | 78 | 92 | Suno v4 + Udio generating hit-quality songs in 2026 |
+| photo_edit | 70 | 82 | Midjourney v7 + Adobe Firefly doing professional retouching |
+| anim_motion | 57 | 72 | Runway Gen-3 + Kling 2.0 generating professional motion |
+| ec_catalog | 84 | 94 | AI product listing generation fully automated at scale |
+| ins_claims | 80 | 90 | Claims AI fully automated for standard claims processing |
+
+### CRITICAL FINDING #5 — Score colors are psychologically wrong
+
+Current: score > 70 → violet (#a855f7)
+Violet is NOT associated with danger in any human visual system.
+It signals transformation/premium/luxury — the OPPOSITE of urgency.
+
+Fix:
+- score ≥ 80: #FF2D55 (danger red)
+- score ≥ 65: #FF6B35 (warning orange)
+- score ≥ 50: #FFB800 (caution gold)
+- score ≥ 35: #00CFFF (moderate cyan)
+- score < 35: #00FF9F (safe emerald)
+
+### MAJOR FINDING #6 — Missing UI features from the technical report
+
+The report describes these features that are either absent or broken:
+1. **Score Drift Tracker** — track risk over time. Not in single-file version.
+2. **Human Irreplaceability Index (HII)** — 6-dimension questionnaire. Missing.
+3. **Upskilling Roadmap** — course recommendations per risk profile. Missing.
+4. **TRANSITION_RECS** — career pivot suggestions per role. Zero entries in code.
+5. **1/3/5 year projections** — future risk trajectories. Missing.
+6. **AI Tools Map** — which specific AI tools threaten each role. Missing.
+7. **Confidence band** — varies by data quality (±3% vs ±10%). Static at ±5%.
+
+### MAJOR FINDING #7 — UI/Animation bugs
+
+1. **Scroll-to-results fires before animation**: `result.scrollIntoView()` called immediately,
+   user misses the risk ring counting up animation.
+   Fix: `setTimeout(() => result.scrollIntoView(...), 800)`
+
+2. **Dimension bar D3 label misleads**: Shows "Augmentation potential ↓" with bar at 80%.
+   Users interpret "80% augmentation" as "80% risk from this dimension."
+   Fix: Label as "AI amplifies this role: 80% (reduces risk)" with downward arrow explanation.
+
+3. **Mobile: custom cursor breaks touch**: cursor:none on body without proper
+   @media(pointer:coarse) check causes touch targets to be invisible on some Android.
+   Fix: Already partially fixed but needs verification.
+
+4. **No transition recommendations shown**: transitionRecs div exists in HTML but
+   TRANSITION_RECS object not implemented — div always renders empty.
+
+5. **Score band is hardcoded ±5%**: Should vary:
+   - Full data coverage roles: ±3%
+   - Default-heavy roles: ±12%
+   - This should be communicated honestly to users.
+
+6. **Disclaimer still cites 2013/2023 research**: "Frey & Osborne 2013, McKinsey 2023..."
+   Fix: Update to "Stanford AI Index 2025, WEF FoJ 2025, McKinsey GI 2024,
+   Goldman Sachs 2024, OECD 2025, Anthropic Q1 2026, OpenAI 2026"
+
+---
+
+## ════════════════════════════════════════
+## MASTER REBUILD PROMPT
+## ════════════════════════════════════════
+
+You are rebuilding HumanProof — an AI job displacement risk assessment platform.
+Perform a complete, production-grade overhaul of the existing single-file HTML/CSS/JS.
+
+The final output must be THREE separate files:
+1. `humanproof.html` — markup only, references external CSS and JS
+2. `humanproof.css` — complete styling, animations, responsive design
+3. `humanproof.js` — all logic, data, calculator, interactions
+
+---
+
+## PART 1: FORMULA OVERHAUL
+
+### Fix the 5-Dimension Formula
+
+Replace current formula with the correct weights from the Technical Report:
+
+```javascript
+// OLD (WRONG): score = d1*0.35 + d2*0.25 + (100-d3)*0.20 + d4*0.12 + d5*0.08
+// NEW (CORRECT): 
+const rawScore = d1*0.30 + d2*0.20 + (100-d3)*0.22 + d4*0.18 + d5*0.10;
+const score = Math.min(98, Math.max(4, Math.round(rawScore)));
+```
+
+Weight reasoning to show in UI tooltips:
+- D1 30%: Core task automatability — biggest single driver
+- D2 20%: Real tools must exist and be production-deployed
+- D3 22%: Augmentation is key — if AI makes you 5x more powerful, you're safer
+- D4 18%: Experience is STRONGLY protective for most human-judgment roles
+- D5 10%: Country context matters but shouldn't dominate individual scores
+
+### Fix Country Risk Formula
+
+```javascript
+// OLD: return Math.max(5, Math.min(95, d[0]-d[1]+50))
+// NEW (proportional, not explosive):
+function getCountryRisk(ck) {
+  const d = COUNTRY_DATA[ck] ?? COUNTRY_DATA.other;
+  // Divide by 2 to prevent country from dominating the formula
+  // Range: 35-75 (not 5-95)
+  return Math.max(35, Math.min(75, Math.round((d[0] - d[1]) / 2 + 50)));
+}
+```
+
+Resulting values:
+- India [70,29]: 70
+- USA [83,47]: 68
+- Sweden [78,86]: 46
+- Bangladesh [47,16]: 65
+- Singapore [88,73]: 57
+
+### Fix Score Colors (psychologically correct)
+
+```javascript
+function getScoreColor(score) {
+  if (score >= 80) return '#FF2D55';  // danger red
+  if (score >= 65) return '#FF6B35';  // warning orange  
+  if (score >= 50) return '#FFB800';  // caution gold
+  if (score >= 35) return '#00CFFF';  // moderate cyan
+  return '#00FF9F';                   // safe emerald
+}
+```
+
+### Fix Score Range and Labels
+
+```javascript
+// 6 levels instead of 4 (more granular, more accurate):
+if (score >= 85) { verdict='🔴 Critical — Displacement Imminent'; tl='3–12 months'; level='CRITICAL'; urg='IMMEDIATE ACTION' }
+else if (score >= 70) { verdict='🟠 High Risk — Plan Starts Now'; tl='12–24 months'; level='HIGH'; urg='THIS MONTH' }
+else if (score >= 55) { verdict='🟡 Elevated Risk — Begin Upskilling'; tl='2–3 years'; level='ELEVATED'; urg='THIS QUARTER' }
+else if (score >= 40) { verdict='🟡 Moderate Risk — Stay Ahead'; tl='3–5 years'; level='MODERATE'; urg='THIS YEAR' }
+else if (score >= 22) { verdict='🟢 Lower Risk — Monitor & Evolve'; tl='5–8 years'; level='LOWER'; urg='ONGOING' }
+else { verdict='✅ AI-Resilient — Strong Position'; tl='8+ years'; level='RESILIENT'; urg='MONITOR ONLY' }
+```
+
+---
+
+## PART 2: COMPLETE 2026 DATA OVERHAUL
+
+### D1: Task Automatability — 2026 Recalibrated Values
+
+Correct the following known outdated values and expand to full coverage.
+Every work type key must have a specific value (no undeclared keys):
+
+```javascript
+const TASK_AUTO_2026 = {
+  // IT/Software — GitHub Copilot, Cursor, Devin widely deployed Q4 2025
+  it_software: {
+    sw_backend:70, sw_frontend:84, sw_fullstack:77, sw_devops:56, sw_arch:24,
+    sw_cloud:54, sw_api:80, sw_db:82, sw_legacy:62, sw_testing:94,
+    sw_mobile_dev:68, sw_ml:38, sw_embed:32, sw_lead:20
+  },
+  it_web: { web_html:92, web_react:80, web_wordpress:92, web_shopify:88, web_ux:42, web_seo_tech:72, web_backend:70 },
+  it_mobile: { mob_ios:64, mob_android:64, mob_flutter:67, mob_rn:70, mob_ui:44, mob_testing:82 },
+  it_saas: { saas_pm:34, saas_growth:52, saas_onboard:58, saas_api_int:72, saas_support:80, saas_docs:86 },
+  it_ai_ml: { ml_model:40, ml_nlp:36, ml_cv:38, ml_data:56, ml_mlops:40, ml_research:24, ml_prompt:60, ml_analytics:64, ml_etl:70 },
+  it_cybersec: { sec_pen:32, sec_soc:62, sec_cloud:46, sec_appsec:40, sec_incident:36, sec_grc:58 },
+  it_devops: { dev_ci:64, dev_k8s:52, dev_infra:57, dev_sre:40, dev_linux:59 },
+  it_blockchain: { bc_sol:60, bc_defi:54, bc_nft:80, bc_audit:38 },
+  it_gaming: { game_unity:52, game_unreal:50, game_design:42, game_art:60, game_vr:46, game_backend:62, game_qa:90 },
+  it_qa: { qa_manual:97, qa_auto:74, qa_perf:63, qa_mobile_test:80, qa_api_test:78, qa_lead:34 },
+  it_erp: { erp_sap:60, erp_oracle:62, erp_ms365:64, erp_support:74 },
+  // Finance — Intuit AI, Copilot for Finance, KPMG Clara fully deployed 2025
+  finance: { fin_account:88, fin_audit:68, fin_tax:74, fin_fp:52, fin_treasury:56, fin_credit:72, fin_risk:50, fin_compliance:62, fin_payroll:94, fin_reporting:82, fin_invest:48 },
+  fintech: { ft_payment:64, ft_lending:62, ft_fraud:46, ft_regtech:54, ft_wealth:52 },
+  insurance: { ins_underwrite:74, ins_claims:90, ins_actuarial:48, ins_broker:60, ins_admin:92 },
+  investment: { inv_equity:64, inv_ibanking:46, inv_portfolio:52, inv_vc:30, inv_quant:54, inv_trading:60 },
+  // Media/Content — GPT-4o image+text, Suno v4, ElevenLabs v2, Runway Gen-3 dominant 2026
+  media: { med_journalism:74, med_edit:88, med_broadcast:63, med_digital:76, med_video:62, med_podcast:60, med_research:72 },
+  content: { cnt_blog:94, cnt_copy:90, cnt_seo_content:97, cnt_tech_write:76, cnt_script:73, cnt_yt:64, cnt_social:90, cnt_email:94, cnt_ghostwrite:86, cnt_translation:84, cnt_ux_write:64 },
+  marketing: { mkt_seo:84, mkt_sem:76, mkt_social_ads:73, mkt_growth:56, mkt_crm:68, mkt_analytics:63, mkt_brand:43, mkt_influencer:54, mkt_product:41 },
+  advertising: { adv_creative:56, adv_copy:88, adv_campaign:67, adv_media_buy:72, adv_pr:46, adv_brand:42 },
+  design: { des_ui:62, des_ux:40, des_graphic:74, des_logo:70, des_motion:56, des_3d:50, des_illustration:58, des_product:38 },
+  photography: { photo_portrait:50, photo_commercial:58, photo_event:34, photo_edit:82, video_prod:46, video_edit:75, drone:40 },
+  animation: { anim_2d:66, anim_3d:56, anim_vfx:48, anim_motion:72, anim_vr:44, anim_rigging:52 },
+  music: { mus_compose:64, mus_produce:70, mus_mixing:67, mus_lyrics:92, mus_session:26, mus_teach:40 },
+  // BPO — Conversational AI handles 80%+ of tier-1 volume in 2026
+  bpo: { bpo_inbound:92, bpo_outbound:90, bpo_chat:97, bpo_email_support:95, bpo_tech_support:80, bpo_data_entry:98, bpo_claims:92, bpo_social_mod:66, bpo_virtual:86, bpo_hr_ops:84 },
+  // HR — AI screening, ATS AI, Workday AI, Rippling deployed broadly
+  hr: { hr_recruit:72, hr_hrbp:38, hr_lr:28, hr_comp:57, hr_ld:45, hr_diversity:27, hr_hris:63, hr_payroll:90, hr_ops:74 },
+  // Legal — Harvey AI, CoCounsel, Clio Duo at paralegal-level research
+  legal: { leg_corporate:60, leg_litigation:30, leg_ip:42, leg_tax_law:66, leg_labor:33, leg_compliance:63, leg_paralegal:88, leg_cyberlaw:45, leg_legaltech:54 },
+  consulting: { con_strategy:28, con_mgmt:34, con_it:50, con_hr_con:45, con_fin_con:48, con_supply:54, con_sustainability:38, con_risk:46, con_change:32 },
+  logistics: { log_ops:74, log_scm:57, log_warehouse:84, log_import:65, log_last_mile:78, log_fleet:68, log_procurement:63 },
+  travel: { trav_agent:90, trav_hotel:54, trav_ops:82, trav_guide:30, trav_airline:64, trav_marketing:72 },
+  admin: { adm_exec:66, adm_office:62, adm_data_entry:97, adm_reception:76, adm_coord:64 },
+  // Healthcare — AI diagnostic assistance + ambient scribe; clinical judgment irreplaceable
+  healthcare: { hc_doctor:20, hc_specialist:15, hc_surgeon:8, hc_radiology:68, hc_pathology:64, hc_admin_hc:74, hc_medical_coding:95, hc_pharmacy:64, hc_tele:54, hc_nutrition:44, hc_physio:24 },
+  pharma: { ph_research:38, ph_clinical:42, ph_regulatory:51, ph_manufacturing:60, ph_quality:56, ph_sales:68, ph_biotech:34 },
+  mental_health: { mh_therapist:10, mh_psychologist:12, mh_coach:28, mh_social:17, mh_crisis:8 },
+  nursing: { nur_rn:21, nur_icu:16, nur_community:23, nur_midwife:13, nur_para:19 },
+  education: { edu_teach:37, edu_higher:34, edu_special:15, edu_admin_edu:65, edu_curriculum:55, edu_counsellor:19 },
+  edtech: { edt_product:44, edt_content:74, edt_instructional:56, edt_tutor:54, edt_gamification:48 },
+  training: { tr_facilitator:39, tr_ld:46, tr_coach:26, tr_elearning:68, tr_assessment:61 },
+  manufacturing: { mfg_production:73, mfg_quality:69, mfg_maintenance:50, mfg_process:53, mfg_lean:46, mfg_safety:40, mfg_automation:36, mfg_cad:57, mfg_supervisor:43 },
+  automotive: { auto_design:50, auto_eng:46, auto_ev:38, auto_software:44, auto_mfg:69 },
+  engineering: { eng_civil:46, eng_mech:48, eng_elec:51, eng_chem:44, eng_enviro:40, eng_project:38, eng_survey:54 },
+  construction: { con_arch:42, con_site:46, con_interior:54, con_urban:36, con_estimation:67 },
+  energy: { en_oil:54, en_renewable:40, en_power:47, en_nuclear:32, en_env:38 },
+  aerospace: { aero_eng:44, aero_avionics:50, aero_test:40, aero_mfg:63, aero_def:37 },
+  retail: { ret_floor:80, ret_buyer:60, ret_ecom:74, ret_inventory:82, ret_cx:68, ret_category:55 },
+  ecommerce: { ec_ops:80, ec_catalog:94, ec_ful:77, ec_returns:86, ec_growth:57, ec_d2c:49 },
+  fmcg: { fmcg_sales:62, fmcg_key:54, fmcg_brand_mgr:46, fmcg_supply_fmcg:60, fmcg_rd:40 },
+  government: { gov_admin:42, gov_policy:34, gov_public_finance:54, gov_social:30, gov_it:61 },
+  ngo: { ngo_program:38, ngo_fundraise:56, ngo_comms:64, ngo_field:29, ngo_research:46 },
+  agriculture: { agri_farming:56, agri_tech:40, agri_supply:65, agri_research:38, agri_finance:54 },
+  default: { data:65,content_default:82,coding:73,communication:74,creative:53,management:48,physical:44,strategy:34,teaching:39,care:19 }
+};
+```
+
+### D2: AI Tool Maturity 2026 — Full Coverage (every role, no defaults)
+
+```javascript
+// EXPAND from 39 entries to full coverage
+// Scale: 0=no tools exist, 100=AI tools fully replace humans
+const TOOL_MATURITY_2026 = {
+  // Critical/high maturity — tools deployed and proven
+  bpo_data_entry:98, bpo_chat:97, bpo_email_support:95, adm_data_entry:97,
+  qa_manual:96, cnt_seo_content:97, cnt_blog:94, cnt_copy:92, cnt_email:94,
+  cnt_social:90, fin_payroll:93, ins_admin:90, ins_claims:88, ec_catalog:94,
+  web_html:94, web_wordpress:92, web_shopify:90, web_react:82,
+  // High maturity
+  cnt_translation:88, cnt_ghostwrite:86, med_edit:88, fin_account:88, fin_reporting:84,
+  fin_tax:82, bpo_inbound:90, bpo_outbound:88, bpo_virtual:86, bpo_hr_ops:84,
+  hr_payroll:92, hc_medical_coding:96, adm_reception:78, log_warehouse:84,
+  ec_returns:88, ec_ful:80, ret_inventory:84, ret_floor:80,
+  // Moderate-high
+  sw_frontend:76, sw_backend:64, sw_api:80, sw_db:82, sw_testing:90,
+  mkt_seo:80, mkt_sem:76, mkt_social_ads:74, mkt_analytics:66, mkt_crm:70,
+  adv_copy:88, des_graphic:76, des_ui:64, des_logo:70, des_motion:58,
+  photo_edit:82, video_edit:76, anim_motion:72, game_qa:90, game_art:62,
+  fin_credit:72, fin_audit:68, ins_underwrite:74, leg_paralegal:84,
+  leg_tax_law:68, leg_compliance:66, hr_recruit:72, hr_ops:74, hr_hris:66,
+  hc_radiology:72, hc_pathology:68, hc_admin_hc:76, hc_pharmacy:68,
+  edt_content:76, tr_elearning:70, erp_support:76, saas_docs:88, saas_support:84,
+  log_last_mile:78, log_ops:72, trav_agent:90, trav_ops:84, trav_marketing:72,
+  mfg_production:72, mfg_quality:70, mfg_cad:62, con_estimation:70,
+  // Moderate
+  sw_devops:58, sw_cloud:56, sw_mobile_dev:60, mob_testing:82, mob_rn:72,
+  mob_ios:64, mob_android:64, mob_flutter:68,
+  fin_fp:58, fin_risk:54, fin_invest:52, fin_treasury:58,
+  ft_payment:68, ft_lending:64, ft_fraud:52, ft_wealth:58, ft_regtech:56,
+  inv_equity:68, inv_trading:64, inv_quant:58, inv_portfolio:54,
+  ml_analytics:66, ml_data:62, ml_etl:72, ml_prompt:64, ml_mlops:46,
+  dev_ci:68, dev_k8s:56, dev_infra:60, dev_linux:62,
+  med_journalism:76, med_digital:78, med_video:62, med_podcast:62, med_research:72,
+  cnt_tech_write:78, cnt_script:74, cnt_yt:66, cnt_ux_write:68,
+  adv_campaign:68, adv_media_buy:72, des_ux:42, des_product:38, des_3d:54,
+  photo_portrait:46, photo_commercial:56, photo_event:32, video_prod:46, drone:40,
+  anim_2d:66, anim_3d:56, anim_vfx:52, anim_vr:46, anim_rigging:54,
+  mus_lyrics:90, mus_produce:72, mus_mixing:68, mus_compose:64, mus_teach:40, mus_session:26,
+  hr_hrbp:38, hr_comp:60, hr_ld:48, hr_diversity:26, hr_lr:28,
+  leg_corporate:62, leg_ip:44, leg_labor:34, leg_cyberlaw:48, leg_legaltech:58,
+  con_it:54, con_supply:58, con_fin_con:52, con_hr_con:46, con_risk:50, con_sustainability:38,
+  log_scm:60, log_import:68, log_fleet:70, log_procurement:64,
+  trav_hotel:52, trav_airline:66, trav_guide:22,
+  adm_exec:66, adm_office:62, adm_coord:62,
+  hc_tele:58, hc_nutrition:48, hc_physio:28, hc_specialist:18, hc_doctor:22,
+  ph_sales:70, ph_quality:60, ph_manufacturing:64, ph_regulatory:56, ph_clinical:44, ph_research:40, ph_biotech:38,
+  mh_coach:34, mh_social:20, mh_psychologist:16, mh_therapist:12, mh_crisis:10,
+  nur_rn:22, nur_icu:15, nur_community:24, nur_midwife:15, nur_para:21,
+  edu_admin_edu:68, edu_curriculum:58, edu_teach:40, edu_higher:36, edu_counsellor:22, edu_special:14,
+  edt_product:48, edt_instructional:58, edt_tutor:56, edt_gamification:52,
+  tr_facilitator:40, tr_ld:48, tr_coach:28, tr_assessment:62,
+  mfg_process:56, mfg_lean:48, mfg_maintenance:52, mfg_automation:38, mfg_safety:42, mfg_supervisor:44,
+  auto_software:48, auto_ev:40, auto_eng:48, auto_design:52, auto_mfg:70,
+  eng_civil:46, eng_mech:50, eng_elec:54, eng_chem:46, eng_enviro:42, eng_project:38, eng_survey:58,
+  con_arch:44, con_site:48, con_interior:56, con_urban:38, con_estimation:70,
+  en_oil:56, en_renewable:42, en_power:50, en_nuclear:32, en_env:40,
+  aero_eng:46, aero_avionics:54, aero_test:42, aero_mfg:66, aero_def:38,
+  ret_buyer:62, ret_ecom:76, ret_cx:70, ret_category:58,
+  ec_ops:80, ec_growth:60, ec_d2c:52,
+  fmcg_sales:64, fmcg_key:56, fmcg_brand_mgr:48, fmcg_supply_fmcg:64, fmcg_rd:42,
+  gov_policy:28, gov_public_finance:58, gov_social:34, gov_it:62,
+  ngo_program:38, ngo_fundraise:58, ngo_comms:68, ngo_field:24, ngo_research:48,
+  agri_farming:38, agri_tech:44, agri_supply:68, agri_research:40, agri_finance:58,
+  // Low maturity — tools limited or unreliable
+  sw_arch:22, sw_lead:17, sw_embed:26, sw_ml:36,
+  ml_model:36, ml_nlp:32, ml_cv:34, ml_research:24,
+  sec_pen:30, sec_soc:62, sec_appsec:44, sec_grc:58, sec_cloud:50, sec_incident:38,
+  game_unity:54, game_unreal:52, game_design:40, game_vr:46, game_backend:64,
+  bc_sol:58, bc_defi:52, bc_nft:80, bc_audit:40,
+  erp_sap:62, erp_oracle:64, erp_ms365:66,
+  saas_pm:36, saas_growth:56, saas_onboard:62, saas_api_int:76,
+  inv_ibanking:48, inv_vc:24,
+  des_illustration:60, adv_creative:54, adv_pr:46, adv_brand:42,
+  web_ux:44, web_seo_tech:74, web_backend:70,
+  hc_surgeon:9
+};
+```
+
+### D3: Augmentation — Full Coverage
+
+```javascript
+// Every role needs a specific augmentation value
+// High augmentation = AI makes you MORE productive, not replaced
+const AUGMENTATION_2026 = {
+  // Very high augmentation (AI amplifies dramatically)
+  ml_research:92, sw_arch:88, con_strategy:86, des_ux:88, inv_vc:84,
+  sw_lead:86, ml_model:84, ml_nlp:86, ml_cv:84, mh_therapist:88,
+  mh_psychologist:86, edu_special:84, leg_litigation:78, hc_specialist:80,
+  hc_doctor:78, con_mgmt:80, con_change:82, con_sustainability:72,
+  // High augmentation
+  hr_diversity:77, hr_hrbp:70, sec_pen:78, fin_risk:74, eng_project:74,
+  fin_fp:72, inv_portfolio:70, inv_quant:74, des_product:86, mkt_growth:80,
+  mkt_product:80, mkt_brand:77, fin_invest:70, inv_ibanking:62,
+  sw_backend:68, sw_frontend:64, sw_cloud:74, sw_devops:74, sw_ml:80,
+  ml_data:74, ml_mlops:72, ml_analytics:73, ml_etl:66, ml_prompt:70,
+  sec_appsec:76, sec_soc:68, sec_cloud:72, sec_grc:63, sec_incident:74,
+  dev_sre:74, dev_k8s:68, dev_infra:66, dev_ci:72, dev_linux:64,
+  game_design:74, game_unity:66, game_unreal:68, game_vr:70, game_backend:64,
+  bc_audit:70, erp_sap:64, erp_oracle:62, erp_ms365:66,
+  saas_pm:80, saas_growth:78, saas_onboard:64,
+  fin_audit:68, fin_tax:63, fin_credit:70, fin_compliance:65, fin_treasury:66,
+  ft_fraud:76, ft_wealth:74, ft_regtech:67, ft_lending:64, ft_payment:64,
+  ins_actuarial:70, ins_broker:63, ins_underwrite:60,
+  inv_equity:67, inv_trading:64,
+  med_journalism:58, med_video:63, med_podcast:60, med_research:65, med_broadcast:56,
+  cnt_tech_write:55, cnt_script:57, cnt_yt:60, cnt_ux_write:66,
+  mkt_sem:70, mkt_social_ads:66, mkt_crm:70, mkt_analytics:75, mkt_influencer:58,
+  adv_creative:65, adv_campaign:66, adv_media_buy:70, adv_pr:70, adv_brand:77,
+  des_ui:74, des_graphic:63, des_logo:57, des_motion:65, des_3d:68, des_illustration:60,
+  photo_portrait:50, photo_commercial:56, photo_event:44, photo_edit:60, video_prod:56, video_edit:63, drone:52,
+  anim_2d:63, anim_3d:70, anim_vfx:75, anim_motion:67, anim_vr:70, anim_rigging:64,
+  mus_compose:58, mus_produce:64, mus_mixing:65, mus_teach:62, mus_session:52,
+  hr_recruit:63, hr_comp:60, hr_ld:70, hr_hris:66, hr_lr:66, hr_ops:50,
+  leg_corporate:63, leg_ip:70, leg_tax_law:60, leg_labor:72, leg_compliance:65,
+  leg_paralegal:48, leg_cyberlaw:67, leg_legaltech:70,
+  con_it:72, con_supply:64, con_fin_con:68, con_hr_con:63, con_risk:66,
+  log_scm:63, log_ops:55, log_procurement:65, log_fleet:58, log_import:57,
+  trav_hotel:58, trav_guide:55, trav_airline:53, trav_marketing:64, trav_ops:45,
+  adm_exec:58, adm_office:54, adm_coord:57,
+  hc_surgeon:62, hc_radiology:67, hc_pathology:68, hc_admin_hc:58, hc_tele:70, hc_pharmacy:62, hc_nutrition:74, hc_physio:68,
+  ph_research:72, ph_clinical:68, ph_regulatory:62, ph_quality:58, ph_biotech:75, ph_sales:57, ph_manufacturing:52,
+  mh_coach:72, mh_social:75, mh_crisis:70,
+  nur_rn:58, nur_icu:63, nur_community:65, nur_midwife:55, nur_para:54,
+  edu_teach:73, edu_higher:70, edu_admin_edu:47, edu_curriculum:68, edu_counsellor:78, edu_higher:72,
+  edt_product:74, edt_content:54, edt_instructional:65, edt_tutor:60, edt_gamification:68,
+  tr_facilitator:67, tr_ld:68, tr_coach:74, tr_elearning:57, tr_assessment:62,
+  mfg_process:70, mfg_lean:73, mfg_automation:76, mfg_cad:66, mfg_supervisor:72,
+  mfg_production:53, mfg_quality:60, mfg_maintenance:63, mfg_safety:67,
+  auto_design:67, auto_eng:70, auto_ev:75, auto_software:72, auto_mfg:55,
+  eng_civil:65, eng_mech:68, eng_elec:66, eng_chem:64, eng_enviro:68, eng_survey:59,
+  con_arch:70, con_site:63, con_interior:66, con_urban:68, con_estimation:57,
+  en_oil:58, en_renewable:70, en_power:65, en_nuclear:62, en_env:70,
+  aero_eng:68, aero_avionics:63, aero_test:70, aero_mfg:56, aero_def:64,
+  ret_buyer:65, ret_ecom:60, ret_cx:58, ret_category:68, ret_floor:38,
+  ec_ops:52, ec_growth:73, ec_d2c:76, ec_catalog:30, ec_returns:38, ec_ful:44,
+  fmcg_sales:60, fmcg_key:67, fmcg_brand_mgr:73, fmcg_supply_fmcg:65, fmcg_rd:70,
+  gov_policy:64, gov_public_finance:60, gov_social:57, gov_it:67, gov_admin:46,
+  ngo_program:60, ngo_fundraise:55, ngo_comms:57, ngo_field:50, ngo_research:67,
+  agri_farming:52, agri_tech:73, agri_supply:58, agri_research:66, agri_finance:55,
+  // Low augmentation — AI replaces, doesn't amplify
+  bpo_data_entry:7, bpo_chat:10, bpo_email_support:12, bpo_inbound:15, bpo_outbound:13,
+  bpo_claims:14, bpo_hr_ops:28, bpo_virtual:26, bpo_social_mod:38, bpo_tech_support:34,
+  cnt_blog:22, cnt_seo_content:18, cnt_email:17, cnt_social:20, cnt_copy:25,
+  cnt_ghostwrite:28, cnt_translation:22, adm_data_entry:8, adm_reception:34,
+  fin_payroll:30, ins_admin:24, ins_claims:36, qa_manual:27, qa_auto:65,
+  hr_payroll:32, hc_medical_coding:26, med_edit:46, bc_nft:40, bc_sol:57, bc_defi:60,
+  saas_support:50, saas_docs:52, saas_api_int:62, erp_support:54,
+  sw_embed:55, sw_legacy:57, sw_testing:54, sw_mobile_dev:63, sw_fullstack:65,
+  sw_api:64, sw_db:66, mob_testing:56, mob_flutter:68, mob_ios:65, mob_android:65, mob_rn:70, mob_ui:76,
+  game_art:64, game_qa:45, qa_perf:63, qa_mobile_test:57, qa_api_test:60, qa_lead:77,
+  log_warehouse:46, log_last_mile:50, ret_inventory:45, trav_agent:37,
+  default:48
+};
+```
+
+### D4: Experience Sensitivity — Full Coverage (2026 updated)
+
+```javascript
+const EXP_SENSITIVITY_2026 = {
+  // Near-maximum protection — experience is the entire moat
+  hc_surgeon:0.93, inv_vc:0.92, mh_therapist:0.92, mh_psychologist:0.90,
+  hc_doctor:0.87, con_strategy:0.89, leg_litigation:0.87, sw_arch:0.82,
+  edu_special:0.85, con_mgmt:0.84, con_change:0.86, mh_crisis:0.87,
+  sw_lead:0.85, hr_diversity:0.80, nur_midwife:0.74, trav_guide:0.72,
+  edu_counsellor:0.83, hc_specialist:0.85, ml_research:0.74, sec_pen:0.76,
+  // High protection
+  fin_risk:0.70, fin_fp:0.60, eng_project:0.70, inv_portfolio:0.65,
+  des_ux:0.67, mkt_product:0.65, mkt_brand:0.67, mkt_growth:0.64,
+  fin_invest:0.65, inv_ibanking:0.70, inv_equity:0.63, inv_quant:0.60,
+  hr_hrbp:0.68, hr_lr:0.75, leg_corporate:0.65, leg_ip:0.63, leg_labor:0.70,
+  con_sustainability:0.67, con_risk:0.65, ngo_program:0.60,
+  photo_event:0.65, aero_eng:0.65, auto_ev:0.67, agri_farming:0.62,
+  ml_model:0.57, ml_nlp:0.60, sec_cloud:0.55, sec_appsec:0.53, sec_soc:0.47,
+  game_design:0.62, ph_research:0.65, ph_regulatory:0.60, ph_clinical:0.60,
+  // Moderate protection
+  sw_backend:0.50, sw_frontend:0.44, sw_devops:0.53, sw_cloud:0.55,
+  fin_audit:0.53, fin_compliance:0.50, fin_credit:0.47, fin_tax:0.48,
+  mkt_seo:0.34, mkt_sem:0.36, mkt_analytics:0.45, mkt_crm:0.44,
+  hr_ld:0.50, hr_comp:0.47, edu_teach:0.55, edu_higher:0.57,
+  eng_civil:0.55, eng_mech:0.57, eng_elec:0.53, eng_project:0.70,
+  mfg_process:0.54, mfg_lean:0.57, mfg_supervisor:0.60, mfg_automation:0.64,
+  des_ui:0.45, des_graphic:0.42, des_motion:0.47, des_product:0.60,
+  med_journalism:0.60, adv_creative:0.57, adv_brand:0.60, adv_pr:0.63,
+  log_scm:0.53, log_procurement:0.55, log_fleet:0.50,
+  game_unity:0.44, game_unreal:0.47, sec_grc:0.50,
+  nur_icu:0.63, nur_rn:0.55, hc_physio:0.67, hc_nutrition:0.60,
+  tr_coach:0.70, tr_facilitator:0.60, tr_ld:0.53, edt_product:0.55,
+  saas_pm:0.60, saas_growth:0.55, con_it:0.57, adm_exec:0.55,
+  gov_policy:0.63, ngo_field:0.67, auto_design:0.60, auto_eng:0.62,
+  // Very low protection — AI equally good at all levels
+  bpo_data_entry:0.04, bpo_chat:0.07, bpo_inbound:0.09, bpo_email_support:0.07, bpo_outbound:0.08,
+  cnt_blog:0.09, cnt_seo_content:0.06, cnt_email:0.08, cnt_social:0.08, cnt_copy:0.11,
+  cnt_ghostwrite:0.12, cnt_translation:0.10, fin_payroll:0.08, qa_manual:0.11,
+  ins_admin:0.07, adm_data_entry:0.04, web_wordpress:0.11, adm_reception:0.13,
+  ret_floor:0.13, hc_medical_coding:0.07, bpo_claims:0.09, med_edit:0.14,
+  fin_reporting:0.11, mkt_social_ads:0.17, ins_claims:0.11, log_warehouse:0.14,
+  log_last_mile:0.09, ec_catalog:0.06, ec_returns:0.08, hr_payroll:0.08,
+  game_qa:0.13, qa_mobile_test:0.18, saas_docs:0.15, bpo_hr_ops:0.26,
+  default:0.43
+};
+```
+
+### COUNTRY DATA — 2026 Update
+
+```javascript
+// Source: WEF GCI 2025 + World Bank AI Readiness Index 2025
+// [ai_adoption_score, social_safety_net_strength]
+// Formula: getCountryRisk = (d[0]-d[1])/2 + 50  →  range 35-75
+const COUNTRY_DATA_2026 = {
+  sweden:[78,86], denmark:[76,84], norway:[75,86], finland:[74,84], iceland:[72,82],
+  switzerland:[74,76], germany:[72,72], netherlands:[74,69], austria:[70,68],
+  usa:[83,47], uk:[74,58], canada:[72,61], australia:[72,61], nz:[67,63], ireland:[72,63],
+  france:[70,65], belgium:[68,62], spain:[62,58], italy:[60,54], portugal:[57,52],
+  israel:[78,63], estonia:[70,58], czechia:[61,46],
+  singapore:[88,73], south_korea:[70,61], japan:[70,65], taiwan:[67,57], hong_kong:[72,57], china:[67,47],
+  india:[70,29], pakistan:[44,15], bangladesh:[47,16], nepal:[32,12], srilanka:[42,22],
+  malaysia:[57,40], indonesia:[50,33], vietnam:[47,31], thailand:[52,37], philippines:[64,24],
+  uae:[68,51], saudi:[63,44], qatar:[65,51], turkey:[54,37], egypt:[44,22], jordan:[44,28],
+  south_africa:[52,31], nigeria:[40,13], kenya:[37,19], ghana:[32,11], ethiopia:[24,9], morocco:[40,21],
+  poland:[60,42], romania:[52,32], ukraine:[44,27], russia:[54,32], hungary:[56,40], latvia:[60,44],
+  brazil:[52,34], mexico:[50,31], colombia:[44,29], argentina:[46,28], chile:[52,36], peru:[40,24],
+  other:[55,42]
+};
+```
+
+---
+
+## PART 3: COMPLETE SKILLS DATA (All 300+ roles)
+
+### AT-RISK SKILLS (DANGER_SKILLS_MAP_2026)
+
+Every role must show SPECIFIC 2026 AI tools doing these tasks.
+Format: "Task name (AI tool: toolname)" for maximum credibility.
+
+```javascript
+const DANGER_SKILLS_2026 = {
+  // IT/Software
+  sw_backend: ['CRUD endpoint scaffolding (GitHub Copilot)', 'Unit test generation (Copilot/Devin)', 'Boilerplate API docs (Claude)', 'SQL query optimization scripts', 'Standard microservice templates'],
+  sw_frontend: ['Full UI from Figma (v0.dev)', 'Component library builds (Cursor AI)', 'CSS-from-design conversion (Locofy)', 'Responsive layout coding (Bolt.new)', 'Standard state management boilerplate'],
+  sw_fullstack: ['CRUD app scaffolding (Replit AI)', 'Template-based project setup', 'Standard form + API wiring', 'Basic dashboard from specs (v0.dev)'],
+  sw_devops: ['Standard CI/CD YAML configs (Copilot)', 'Terraform template generation', 'Dockerfile optimization', 'Standard deployment scripts'],
+  sw_api: ['REST API schema generation (Claude)', 'OpenAPI spec writing', 'Standard endpoint CRUD', 'API documentation (Mintlify AI)'],
+  sw_db: ['Schema design from requirements', 'Standard index recommendations', 'Query optimization for common patterns', 'Migration script generation'],
+  sw_testing: ['Test case generation from code (Copilot)', 'Regression suite automation (Playwright AI)', 'Standard assertion writing', 'Coverage report generation'],
+  qa_manual: ['UI click-through regression (Devin/TestRigor)', 'Test script generation (Playwright AI)', 'Bug report templating', 'Test case doc from requirements', 'Standard smoke test execution'],
+  qa_auto: ['Selenium-to-Playwright migration scripts', 'Standard fixture setup', 'CI integration boilerplate (Copilot)'],
+  ml_model: ['Hyperparameter grid search (AutoML)', 'Standard training pipeline scripts', 'Benchmark model baselines (AutoGluon)', 'Dataset preprocessing templates'],
+  ml_data: ['Standard ETL script generation (Claude)', 'SQL pipeline templates', 'Routine data cleaning scripts', 'Schema mapping documentation'],
+  ml_analytics: ['Standard dashboard templates (Tableau AI)', 'Routine SQL report generation', 'KPI monitoring script builds'],
+  ml_prompt: ['Standard prompt templates', 'Few-shot example generation', 'Prompt variation testing scripts'],
+  // BPO
+  bpo_inbound: ['FAQ responses (ChatGPT/Claude bots)', 'Script-based troubleshooting (Intercom AI)', 'Ticket logging and categorization', 'Standard escalation triage', 'Call wrap documentation'],
+  bpo_chat: ['Full chat handling (Claude/GPT-4o)', 'Knowledge base retrieval (RAG systems)', 'Standard resolution flows', 'Order status queries', 'Basic complaint logging'],
+  bpo_data_entry: ['Form processing (RPA + AI OCR)', 'Document digitization (Google Vision)', 'Record updating (Zapier + GPT)', 'Data validation checks', 'Spreadsheet population'],
+  bpo_email_support: ['Template email responses (Claude)', 'Standard issue acknowledgements', 'Routine follow-up generation', 'Form-based issue resolution'],
+  bpo_virtual: ['Calendar management (Motion AI)', 'Standard research compilation (Perplexity)', 'Routine email drafting (Claude)', 'Travel booking from templates'],
+  bpo_claims: ['Claim data entry (DocuSign AI)', 'Standard coverage verification', 'Template acknowledgement letters'],
+  // Content/Media
+  cnt_blog: ['SEO article drafting (GPT-4o)', 'Product description writing (Jasper)', 'Meta description generation', 'FAQ content creation (Claude)', 'Keyword-stuffed content templates'],
+  cnt_seo_content: ['Full SEO strategy generation (Surfer+Claude)', 'Keyword cluster articles (GPT-4o)', 'On-page optimization checklists (Semrush AI)', 'Title tag variants', 'Schema markup generation'],
+  cnt_copy: ['Ad copy A/B variants (Jasper/Claude)', 'Email subject line testing', 'CTA copy generation', 'Standard promotional sequences'],
+  cnt_social: ['Post captions (Claude/ChatGPT)', 'Hashtag research (AI tools)', 'Standard content calendars', 'Trending audio hooks'],
+  cnt_email: ['Full email sequence generation (ActiveCampaign AI)', 'Newsletter content (Claude)', 'Subject line optimization (Phrasee)', 'Drip campaign copy'],
+  cnt_yt: ['Title/description optimization (TubeBuddy AI)', 'Script outlines from topic (Claude)', 'Thumbnail text copy', 'Video chapter generation'],
+  cnt_translation: ['Machine translation (DeepL + GPT-4o)', 'Subtitle generation (Whisper)', 'Standard document translation', 'Localization of standard content'],
+  med_edit: ['Grammar and style correction (Claude)', 'Headline variant generation', 'Subheading optimization', 'Standard wire copy rewriting'],
+  // Finance
+  fin_account: ['Invoice processing (Intuit AI)', 'Bank reconciliation (Copilot for Finance)', 'Month-end journal templates', 'Routine GL entries', 'Standard financial statements'],
+  fin_payroll: ['Salary calculation automation (Rippling AI)', 'Payslip generation', 'Statutory return filing', 'Tax computation from data'],
+  fin_audit: ['Standard working paper templates (KPMG Clara)', 'Routine checklist execution', 'Control testing documentation', 'Boilerplate audit procedures'],
+  fin_tax: ['Standard GST return preparation', 'Tax computation from data', 'Routine TDS compliance filing', 'Template tax memos'],
+  fin_reporting: ['Standard MIS dashboard builds (Copilot for Finance)', 'Routine variance commentary', 'Monthly pack automation'],
+  // Legal
+  leg_paralegal: ['Case law research (Harvey AI)', 'Document template filling (CoCounsel)', 'Standard case file organization', 'Routine court filing prep', 'Contract clause extraction (Kira)'],
+  leg_compliance: ['Regulatory checklist maintenance (Thomson Reuters AI)', 'Standard compliance reports', 'Policy update templates', 'Routine risk register updates'],
+  leg_corporate: ['Standard NDAs and boilerplate contracts (DocuSign AI)', 'Routine due diligence checklists', 'Template board resolutions', 'Standard regulatory filings'],
+  leg_tax_law: ['Standard tax return preparation', 'Routine computation work', 'Boilerplate tax advisory memos'],
+  // HR
+  hr_recruit: ['JD writing from templates (Textio)', 'Screening questionnaire design (AI)', 'Interview scheduling (Calendly AI)', 'Standard rejection emails', 'Offer letter generation'],
+  hr_payroll: ['Salary computation and payslips', 'Statutory return filing', 'Benefits administration data entry'],
+  hr_ops: ['Routine employee record updates', 'Standard HR form processing', 'Leave management data entry'],
+  // Healthcare
+  hc_medical_coding: ['ICD-10 code assignment (Nuance AI)', 'Claim form coding', 'Discharge summary processing (Ambient scribe)', 'Standard billing documentation'],
+  hc_admin_hc: ['Appointment scheduling (Epic AI)', 'Pre-authorization forms', 'Standard patient records entry', 'Routine billing administration'],
+  hc_radiology: ['Standard scan reporting templates (Viz.ai)', 'Routine DICOM processing', 'Normal/abnormal flagging (Aidoc)'],
+  hc_pathology: ['Standard lab result templates', 'Routine pattern flagging', 'Report formatting from data'],
+  // Manufacturing
+  mfg_quality: ['Inspection checklist automation', 'Standard QC data logging', 'Non-conformance report templates', 'SPC chart generation'],
+  mfg_production: ['Shift report templates', 'Standard output tracking sheets', 'Routine scheduling from data'],
+  mfg_cad: ['Standard 2D drawing generation (AutoCAD AI)', 'Routine design modifications', 'Template technical drawings', 'Standard BOM generation'],
+  // Retail/E-commerce
+  ec_catalog: ['Product listing generation (AI copywriting)', 'SEO metadata automation', 'Attribute mapping from specs', 'Bulk description generation'],
+  ec_returns: ['Standard return processing', 'Refund calculation automation', 'Template customer correspondence'],
+  ret_floor: ['Standard product Q&A scripts', 'Routine inventory updates', 'Basic POS transaction processing'],
+  // Education
+  edu_admin_edu: ['Student record management', 'Standard communications from templates', 'Timetable generation (AI scheduling)'],
+  edt_content: ['Standard course module writing (Claude)', 'Quiz generation from content (AI)', 'Template LMS formatting'],
+  tr_elearning: ['Standard module scripting', 'Quiz question generation', 'Template SCORM content'],
+  // Travel
+  trav_agent: ['Standard itinerary generation (ChatGPT)', 'Routine booking confirmations', 'Template travel documents', 'Price comparison compilation'],
+  // Government
+  gov_admin: ['Standard form processing', 'Routine document generation', 'Template correspondence', 'File management systems'],
+  // Music
+  mus_lyrics: ['Full song lyric generation (Suno v4)', 'Rhyme scheme templates (Claude)', 'Standard verse-chorus structures', 'Topline melody guides'],
+  mus_produce: ['Stem generation (Suno v4/Udio)', 'Standard beat templates (AIVA)', 'Reference track matching', 'Routine stem arrangements'],
+  // Video
+  video_edit: ['Assembly cut automation (Runway Gen-3)', 'Color grade templates (DaVinci AI)', 'Subtitle generation (Whisper)', 'B-roll suggestion AI', 'Standard transition application'],
+  photo_edit: ['Background removal (Adobe Firefly)', 'Standard color grading (Luminar AI)', 'Batch retouching (Midjourney upscale)', 'AI upscaling and restoration'],
+  // Animation
+  anim_motion: ['Template motion graphic generation (Runway)', 'Standard lower-third animations', 'Loop creation from assets', 'Routine title card templates'],
+  // Insurance
+  ins_claims: ['Standard claim processing (Tractable AI)', 'Document verification automation', 'Routine correspondence generation', 'Standard coverage determination'],
+  ins_admin: ['Policy administration data entry', 'Standard renewal processing', 'Routine endorsement handling'],
+  // Default
+  default: ['Routine data processing and entry', 'Template-based document generation', 'Standard report compilation', 'Repetitive task execution', 'Known-answer Q&A handling']
+};
+```
+
+### PROTECTED SKILLS (SAFE_SKILLS_MAP_2026)
+
+```javascript
+const SAFE_SKILLS_2026 = {
+  sw_backend: ['Distributed system design under novel constraints', 'Security threat model architecture', 'Cross-team technical leadership', 'Domain-specific business logic judgment', 'Legacy system modernization strategy'],
+  sw_frontend: ['Accessibility architecture for complex needs', 'Novel UX problem-solving beyond specs', 'Performance optimization under unique constraints', 'Design system governance and advocacy', 'Cross-platform strategy decisions'],
+  sw_arch: ['Novel distributed systems design', 'Technical vision under deep organizational uncertainty', 'Engineering culture and standards leadership', 'Complex legacy modernization strategy', 'Build vs buy decisions for unique contexts'],
+  sw_lead: ['Engineering team culture building', 'Individual career mentorship and development', 'Cross-department conflict resolution', 'Technical hiring judgment for culture fit', 'Organizational scaling decisions'],
+  qa_manual: ['Exploratory testing of genuinely novel products', 'User empathy-driven edge case discovery', 'Testing strategy for undefined requirements', 'Stakeholder risk communication under uncertainty'],
+  qa_lead: ['Quality engineering culture leadership', 'Testing strategy for new product categories', 'Cross-team quality advocacy and standards'],
+  ml_research: ['Novel algorithm and architecture hypothesis generation', 'Cross-domain AI insight synthesis', 'Research direction judgment under uncertainty', 'Complex model failure analysis and diagnosis'],
+  ml_model: ['Novel training paradigm design', 'Cross-domain problem framing', 'Ethical AI framework design', 'Custom architecture for unique problems'],
+  sec_pen: ['Creative novel attack vector discovery', 'Social engineering defense strategy', 'Zero-day vulnerability research', 'Novel threat landscape interpretation'],
+  // Finance
+  fin_account: ['Complex accounting judgment calls', 'Client business advisory relationships', 'Ambiguous GAAP interpretation for novel situations', 'Business partner influence and communication'],
+  fin_audit: ['Materiality judgment under ambiguity', 'Audit committee trust building', 'Novel risk framework design', 'Ethical dilemma navigation in complex situations'],
+  fin_fp: ['Strategic scenario planning under structural uncertainty', 'C-suite financial storytelling', 'Business driver hypothesis design', 'Novel financial model architecture'],
+  fin_risk: ['Enterprise risk framework design for novel risks', 'Board-level risk communication', 'Novel stress scenario design', 'Complex model validation and challenge'],
+  // Healthcare
+  hc_doctor: ['Complex diagnostic reasoning for rare presentations', 'Empathic patient shared decision-making', 'Emergency clinical judgment under time pressure', 'Medical ethics navigation for novel cases'],
+  hc_surgeon: ['Surgical dexterity and intraoperative adaptation', 'Rare complication management', 'Patient consent conversations for complex procedures', 'Novel surgical approach design'],
+  hc_specialist: ['Rare and complex disease diagnosis', 'Multi-system clinical communication', 'Novel treatment pathway design', 'Specialist-to-generalist translation'],
+  hc_physio: ['Complex musculoskeletal judgment from functional assessment', 'Patient motivation and behavior change', 'Novel rehabilitation protocol design', 'Functional goal setting with patients'],
+  hc_nutrition: ['Complex dietary counseling for multiple comorbidities', 'Patient behavior change support and accountability', 'Novel nutritional approach for rare conditions'],
+  // Mental Health
+  mh_therapist: ['Deep empathic listening and therapeutic alliance formation', 'Trauma-informed care delivery and adaptation', 'Complex transference and resistance navigation', 'Modality adaptation for individual client needs'],
+  mh_psychologist: ['Complex neuropsychological assessment interpretation', 'Novel therapy protocol design', 'Differential diagnosis under clinical uncertainty', 'Expert testimony and complex reporting'],
+  mh_coach: ['Human motivation design and accountability relationship', 'Complex life design facilitation', 'Authentic transformational partnership'],
+  mh_crisis: ['Real-time crisis de-escalation under extreme intensity', 'Suicide intervention and safety planning', 'Trauma first response and stabilization'],
+  mh_social: ['Complex family system intervention design', 'Advocacy in institutional systems for clients', 'Culturally-sensitive support for marginalized communities'],
+  // Education
+  edu_teach: ['Student emotional attunement and connection', 'Real-time adaptive pedagogy in classroom', 'Differentiated learning for diverse class needs', 'Parent relationship and difficult conversation management'],
+  edu_special: ['Individualized education plan design for complex cases', 'Behavioral support and emotional attunement', 'Family-educator partnership building', 'Complex disability accommodation design'],
+  edu_counsellor: ['Student crisis intervention', 'Trauma-informed support delivery', 'Suicide prevention conversations', 'Complex family system navigation'],
+  edu_higher: ['Novel research contribution and scholarship', 'Complex intellectual mentorship', 'Academic community leadership', 'Nuanced assessment judgment for borderline work'],
+  // Consulting
+  con_strategy: ['Complex stakeholder alignment under deep ambiguity', 'Executive trust and influence building over time', 'Novel market opportunity identification', 'Organizational culture diagnosis and change leadership'],
+  con_mgmt: ['C-suite client relationship management', 'Culture transformation leadership', 'Complex resistance and politics navigation', 'Novel operating model design for unique contexts'],
+  con_change: ['Human resistance to change navigation', 'Cross-cultural change leadership', 'Novel change framework design for unique organizations'],
+  // Legal
+  leg_litigation: ['Oral advocacy and courtroom presence', 'Witness examination and cross-examination strategy', 'Complex legal strategy under high uncertainty', 'Client trust building through crisis'],
+  leg_paralegal: ['Novel legal issue spotting', 'Complex research synthesis and judgment', 'Legal strategy input for unusual situations'],
+  leg_corporate: ['Complex deal negotiation leadership', 'Regulatory interpretation for novel situations', 'Client relationship and trust building', 'Novel corporate structure design'],
+  leg_ip: ['Novel patentability judgment', 'IP portfolio strategy for emerging technologies', 'Complex IP litigation strategy'],
+  // Investment
+  inv_vc: ['Founder personality and conviction assessment', 'Network leverage and warm introduction building', 'Pattern recognition from thousands of pitches', 'Conviction-driven contrarian thesis development'],
+  inv_equity: ['Novel thesis development for emerging sectors', 'Management quality and integrity assessment', 'Complex industry expert network cultivation'],
+  inv_portfolio: ['Strategic asset allocation under structural change', 'Client relationship and trust through volatility', 'Novel risk-return framework design'],
+  // HR
+  hr_hrbp: ['Complex employee relations mediation', 'Culture change leadership', 'Difficult performance and behavior conversation facilitation', 'Senior stakeholder influence'],
+  hr_diversity: ['Systemic bias identification and structural change', 'Psychological safety culture building', 'Inclusive leadership coaching and modeling'],
+  hr_recruit: ['Senior executive culture-fit judgment', 'Novel sourcing strategy for rare talent', 'Complex offer negotiation for hard-to-close candidates'],
+  // Design
+  des_ux: ['Complex user research synthesis for novel products', 'Design ethics and responsible design advocacy', 'Novel interaction paradigm design', 'Accessibility architecture for complex needs'],
+  des_product: ['Product vision and north star design', 'Cross-functional design influence', 'Novel user problem identification and framing'],
+  // Photography/Media
+  photo_event: ['Decisive real-moment capture requiring anticipation', 'Human connection and trust building with subjects', 'Artistic direction and vision on-location'],
+  photo_portrait: ['Deep human connection and emotional direction', 'Complex lighting judgment for authentic mood', 'Authentic expression elicitation'],
+  // Travel
+  trav_guide: ['Deep local cultural and historical expertise', 'Guest emotional engagement and personalization', 'Improvised experience design on-site', 'Authentic local connection and access'],
+  // Engineering
+  eng_project: ['Complex stakeholder alignment under ambiguity', 'Novel risk strategy for mega-projects', 'Contract dispute and negotiation leadership', 'Multi-party conflict resolution'],
+  // Nursing
+  nur_icu: ['Complex multi-system patient monitoring judgment', 'Family crisis communication with empathy', 'Emergency nursing judgment under extreme time pressure'],
+  nur_rn: ['Complex patient observation and early deterioration detection', 'Family communication in distress and uncertainty', 'Cross-team care coordination with conflicting priorities'],
+  // Advertising
+  adv_creative: ['Campaign concept origination from cultural insight', 'Novel creative formats for emerging platforms', 'Brand voice stewardship through cultural moments'],
+  adv_pr: ['Crisis communication strategy under intense pressure', 'Media relationship and trust building over time', 'Reputation recovery in complex situations'],
+  // Manufacturing
+  mfg_supervisor: ['Team motivation and engagement during uncertainty', 'Complex conflict and performance management', 'Safety culture advocacy through behavioral change'],
+  mfg_automation: ['Novel automation architecture for unique constraints', 'Human-machine collaboration system design', 'Automation failure mode analysis and recovery'],
+  // Games
+  game_design: ['Novel gameplay mechanic innovation', 'Player psychology and engagement system design', 'Cross-discipline product vision'],
+  // Agriculture
+  agri_farming: ['Complex soil and crop judgment from field experience', 'Microclimate knowledge accumulated over seasons', 'Community and cooperative relationship leadership'],
+  agri_tech: ['Novel precision farming problem-solving', 'Farmer trust and technology adoption leadership', 'Complex agri-system integration design'],
+  // Government
+  gov_policy: ['Complex multi-stakeholder policy design', 'Political and institutional judgment', 'Novel policy solution design under political constraints'],
+  // NGO
+  ngo_field: ['Community cultural understanding and trust', 'Complex conflict-sensitive program adaptation', 'Real-time field judgment under pressure and ambiguity'],
+  ngo_program: ['Complex community trust building over time', 'Adaptive program design under field conditions', 'Donor and beneficiary relationship management'],
+  // Default
+  default: ['Complex human judgment under deep ambiguity', 'Long-term trust relationship building', 'Novel creative problem framing', 'Ethical decision-making with competing values', 'Leadership through uncertainty and fear', 'Cultural sensitivity and authentic human connection']
+};
+```
+
+---
+
+## PART 4: TRANSITION RECOMMENDATIONS (MISSING — Must Build)
+
+```javascript
+// This data structure DOES NOT EXIST in current code — build it completely
+const TRANSITION_RECS_2026 = {
+  // Critical risk roles — immediate pivot needed
+  bpo_inbound: ['AI Conversation Designer (train and govern AI bots — this is your unfair advantage)', 'Customer Experience Strategy Lead', 'Community Manager (human connection at scale)', 'High-Complexity Escalation Specialist'],
+  bpo_data_entry: ['RPA Process Analyst (design the automation replacing your role)', 'Data Quality Governance Lead', 'Business Process Consultant', 'AI Training Data Specialist'],
+  bpo_chat: ['Conversational AI Trainer', 'Digital Customer Experience Strategist', 'Community Moderator (nuanced content judgment)', 'AI Quality Assurance Lead'],
+  cnt_seo_content: ['Content Strategy Director (human editorial judgment + AI execution)', 'Brand Voice & Narrative Architect', 'Thought Leadership Advisor', 'Topic Authority Expert — niche deep expertise'],
+  cnt_blog: ['Content Strategy Lead', 'Brand Storytelling Director', 'Subject Matter Expert Content Advisor', 'Content Marketing Manager (strategy over production)'],
+  qa_manual: ['AI Test Strategy Architect', 'Quality Engineering Lead', 'Product Safety & Risk Consultant', 'AI Eval & Red-Teaming Specialist'],
+  fin_payroll: ['HR Technology Implementation Consultant', 'People Analytics Lead', 'HRIS Strategy Advisor', 'Payroll Compliance Strategy Specialist'],
+  fin_account: ['CFO Advisory Track', 'Finance Business Partner', 'Financial Controller', 'Accounting Technology & AI Consultant'],
+  hc_medical_coding: ['Clinical Documentation Improvement Specialist', 'AI-Assisted Coding Quality Lead', 'Healthcare Revenue Cycle Strategy', 'Clinical Informatics Analyst'],
+  ins_admin: ['InsurTech Product Manager', 'Insurance AI Implementation Consultant', 'Claims Strategy Lead', 'Digital Distribution Specialist'],
+  adm_data_entry: ['Process Automation Analyst', 'Operations Intelligence Analyst', 'AI Workflow Designer', 'Business Systems Coordinator'],
+  leg_paralegal: ['Legal Technology Specialist', 'AI-Assisted Legal Research Lead', 'Contract Lifecycle Management Specialist', 'Legal Ops Analyst'],
+  ec_catalog: ['E-commerce Content Strategy Lead', 'Product Information Management Specialist', 'D2C Brand Narrative Manager'],
+  // High risk — plan within 12 months
+  sw_frontend: ['Platform Engineering Lead', 'Developer Experience Lead', 'Frontend Architecture Lead (complex problems only)', 'Design Engineering Manager'],
+  sw_backend: ['Platform Engineering Lead', 'Developer Relations Lead', 'Technical Product Manager', 'AI Engineering Lead'],
+  mkt_seo: ['Organic Growth Strategist', 'Content Authority Builder', 'Technical SEO Architect', 'Search Experience Strategy Lead'],
+  hr_recruit: ['Talent Strategy Director', 'Employer Brand Lead', 'Workforce Planning Consultant', 'TA Technology & AI Strategy Lead'],
+  fin_reporting: ['Business Intelligence Strategy Lead', 'Management Information Architect', 'Financial Storytelling Advisor'],
+  ins_claims: ['Complex Claims Strategy Director', 'Fraud Investigation Specialist', 'Customer Advocacy Lead — disputed claims'],
+  med_edit: ['Editorial Strategy Director', 'Brand Voice Architect', 'Investigative Content Lead'],
+  // Moderate risk — evolve the role
+  sw_arch: ['CTO Track', 'Distinguished Engineer', 'Technology Fellow', 'Platform Vision Lead'],
+  hc_doctor: ['Digital Health Lead', 'AI-Augmented Practice Owner', 'Clinical AI Advisory', 'Telemedicine Strategy Lead'],
+  mh_therapist: ['Digital Mental Health Design Lead', 'Trauma-Informed Practice Specialist', 'AI Ethics in Healthcare Advisor', 'Group Therapy and Community Mental Health Leader'],
+  edu_teach: ['Personalized Learning Designer', 'Student Wellbeing Lead', 'Educational Technology Integration Leader', 'School Counseling & Support Leader'],
+  con_strategy: ['Independent Board Advisor', 'Thought Leadership Authority', 'Fractional C-Suite Strategy Leader', 'Ecosystem Builder'],
+  inv_vc: ['Fund Leadership Track', 'LP Advisory Role', 'Ecosystem Builder', 'Emerging Market Investment Strategy'],
+  leg_litigation: ['Senior Trial Counsel Specialist', 'Dispute Resolution Strategist', 'Legal Risk Advisory Leader'],
+  game_design: ['Narrative & Experience Director', 'Player Psychology Lead', 'Novel Mechanic Innovation Lead'],
+  // Default
+  default: ['AI Governance & Ethics Specialist', 'Human-AI Collaboration Consultant', 'Transition & Change Management Lead', 'AI Displacement Research & Advocacy', 'New Economy Business Builder']
+};
+```
+
+---
+
+## PART 5: NEW FEATURE — AI TOOLS MAP (Missing Feature)
+
+```javascript
+// Show EXACTLY which 2026 AI tools threaten each role
+// This is the most powerful credibility feature
+const AI_TOOLS_MAP_2026 = {
+  qa_manual: ['Devin AI (autonomous QA agent)', 'TestRigor (plain-English test automation)', 'Playwright AI (self-healing tests)', 'Copilot for testing (test generation)'],
+  cnt_seo_content: ['Claude 3.7 (full SEO strategy generation)', 'GPT-4o (article creation at scale)', 'Surfer SEO AI (content optimization)', 'Perplexity AI (research + writing)'],
+  sw_frontend: ['v0.dev (full UI from text)', 'Cursor AI (IDE-level code completion)', 'Bolt.new (full-stack from prompts)', 'Locofy (Figma-to-code direct)'],
+  leg_paralegal: ['Harvey AI (legal research at paralegal level)', 'CoCounsel (contract drafting + research)', 'Kira Systems (contract review)', 'Clio Duo (practice management AI)'],
+  bpo_chat: ['Claude (Anthropic)', 'GPT-4o (OpenAI)', 'Intercom Fin (customer support AI)', 'Zendesk AI (ticket resolution)'],
+  fin_account: ['Copilot for Finance (Microsoft)', 'Intuit AI (QuickBooks)', 'Xero AI (bookkeeping automation)', 'KPMG Clara (audit AI)'],
+  video_edit: ['Runway Gen-3 (AI video editing)', 'Sora (OpenAI video generation)', 'CapCut AI (automated editing)', 'Adobe Firefly Video (effects AI)'],
+  hc_radiology: ['Aidoc (radiology AI)', 'Viz.ai (AI triage)', 'Enlitic (scan analysis)', 'Google Health AI (FDA cleared scans)'],
+  mus_lyrics: ['Suno v4 (full song generation)', 'Udio (music + lyrics AI)', 'Claude (lyric writing)', 'Boomy (AI music creation)'],
+  sw_backend: ['GitHub Copilot (code completion)', 'Cursor AI (full file rewrites)', 'Devin (autonomous coding agent)', 'Claude Code (code generation)'],
+  adm_data_entry: ['UiPath AI (RPA automation)', 'Zapier AI (workflow automation)', 'Google Workspace AI (form processing)', 'Microsoft Power Automate (AI workflows)'],
+  ec_catalog: ['Jasper AI (product descriptions)', 'Copy.ai (bulk content)', 'Helium 10 AI (Amazon listings)', 'Copysmith (e-commerce content)'],
+  photo_edit: ['Adobe Firefly (generative editing)', 'Midjourney v7 (image generation)', 'Luminar AI (automated photo editing)', 'Canva AI (design automation)'],
+  default: ['ChatGPT (OpenAI)', 'Claude (Anthropic)', 'Gemini (Google)', 'Copilot (Microsoft)']
+};
+```
+
+---
+
+## PART 6: UI/ANIMATION FIXES
+
+### Fix 1: Scroll delay for animation visibility
+```javascript
+// OLD: result.scrollIntoView({behavior:'smooth',block:'start'})
+// NEW — wait for ring animation to reach halfway:
+setTimeout(() => {
+  result.scrollIntoView({behavior:'smooth', block:'start'});
+}, 900); // Let 60% of animation play before scrolling
+```
+
+### Fix 2: D3 dimension bar label clarity
+```html
+<!-- OLD -->
+<span class="dim-label">Augmentation potential ↓</span>
+<!-- NEW -->
+<span class="dim-label">AI amplifies this role</span>
+<!-- With tooltip: "Higher = AI makes you more productive, reducing displacement risk" -->
+```
+
+### Fix 3: Disclaimer update to 2026 sources
+```html
+<!-- OLD -->
+"Frey & Osborne 2013, McKinsey 2023, Goldman Sachs 2023, WEF 2023, OECD 2023"
+<!-- NEW -->
+"Stanford AI Index 2025 | WEF Future of Jobs 2025 | McKinsey GI 2024 | Goldman Sachs 2024 | OECD Employment Outlook 2025 | Anthropic Enterprise Deployment Data Q1 2026 | OpenAI Capability Assessment 2025"
+```
+
+### Fix 4: Variable confidence band
+```javascript
+// Score range varies by data coverage quality
+function getConfidenceBand(workType) {
+  const fullCoverage = ['bpo_data_entry','bpo_chat','qa_manual','cnt_seo_content',
+    'sw_backend','sw_frontend','hc_doctor','hc_surgeon','mh_therapist','leg_litigation',
+    'fin_account','fin_payroll','con_strategy','inv_vc','edu_special']; // etc.
+  if (fullCoverage.includes(workType)) return 3;  // ±3% for well-researched roles
+  return 8; // ±8% for roles with sparse data
+}
+const band = getConfidenceBand(workType);
+document.getElementById('scoreBand').textContent = `${band === 3 ? 'High confidence' : 'Indicative'} estimate: ${low}–${high}%`;
+```
+
+### Fix 5: Score color system
+```javascript
+// Current: score>70 → violet (wrong)
+// New: psychologically correct danger signals
+const scoreColor = score >= 80 ? '#FF2D55'   // danger red
+                 : score >= 65 ? '#FF6B35'   // warning orange
+                 : score >= 50 ? '#FFB800'   // caution gold
+                 : score >= 35 ? '#00CFFF'   // moderate cyan
+                 :               '#00FF9F';  // safe emerald
+```
+
+### Fix 6: Add AI Tools section to results HTML
+```html
+<!-- Add after safe skills section -->
+<div class="result-skills">
+  <h4>🤖 2026 AI Tools Threatening This Role</h4>
+  <div class="skill-tags" id="aiTools"></div>
+</div>
+```
+
+```javascript
+// In calculateRisk():
+const tools = AI_TOOLS_MAP_2026[workType] || AI_TOOLS_MAP_2026.default;
+const toolEl = document.getElementById('aiTools');
+toolEl.innerHTML = '';
+tools.forEach(t => {
+  const tag = document.createElement('span');
+  tag.className = 'skill-tag tool';
+  tag.textContent = t;
+  toolEl.appendChild(tag);
+});
+```
+
+### Fix 7: Transition recommendations rendering
+```javascript
+// In calculateRisk() — this section currently renders nothing because
+// TRANSITION_RECS doesn't exist. After adding the data:
+const recContainer = document.getElementById('transitionRecs');
+if (recContainer) {
+  const recs = TRANSITION_RECS_2026[workType] || TRANSITION_RECS_2026.default;
+  recContainer.innerHTML = recs.map(r =>
+    `<div class="rec-item"><span class="rec-arrow">→</span><span>${r}</span></div>`
+  ).join('');
+}
+```
+
+---
+
+## PART 7: THREE-FILE SPLIT STRUCTURE
+
+### humanproof.html
+- All HTML markup, page structure, all 6 pages
+- Links to `<link rel="stylesheet" href="humanproof.css">`
+- Links to `<script src="humanproof.js" defer></script>`
+- No inline CSS, no inline JS (except tiny init code if needed)
+
+### humanproof.css
+- All CSS variables, root theme
+- All component styles
+- All animation keyframes
+- All responsive breakpoints
+- Organized into sections: Reset → Variables → Navigation → Pages → Calculator → Results → Footer → Animations → Responsive
+
+### humanproof.js
+- Part 1 (top): All animation engines (cursor, canvas, tilt, reveal, navigation)
+- Part 2 (middle): All data (TASK_AUTO_2026, TOOL_MATURITY_2026, AUGMENTATION_2026, EXP_SENSITIVITY_2026, COUNTRY_DATA_2026, DANGER_SKILLS_2026, SAFE_SKILLS_2026, AI_TOOLS_MAP_2026, TRANSITION_RECS_2026)
+- Part 3 (bottom): calculateRisk(), autocomplete engine, subscribeEmail(), utility functions
+
+---
+
+## EXECUTION PRIORITY ORDER
+
+1. **FIX FORMULA WEIGHTS** (30 min — highest business impact)
+   → D1:0.30, D2:0.20, D3:0.22, D4:0.18, D5:0.10
+
+2. **FIX COUNTRY FORMULA** (10 min — stops India score inflation)
+   → (d[0]-d[1])/2 + 50
+
+3. **UPDATE D1 VALUES TO 2026** (1 hour — accuracy)
+   → 15 specific roles significantly outdated
+
+4. **EXPAND D2 + D3 TO FULL COVERAGE** (2 hours — eliminates 88% default problem)
+   → Must cover all 322 work type keys explicitly
+
+5. **BUILD TRANSITION_RECS + AI_TOOLS_MAP** (2 hours — new features)
+   → Currently completely absent from codebase
+
+6. **EXPAND DANGER/SAFE SKILLS** (3 hours — credibility)
+   → From 19/22 entries to 80+ with specific 2026 AI tool names
+
+7. **FIX SCORE COLORS** (15 min — UX)
+   → Red for danger, not violet
+
+8. **FIX SCROLL TIMING + CONFIDENCE BAND** (30 min — UX)
+
+9. **SPLIT INTO 3 FILES** (1 hour — architecture)
+
+10. **UPDATE DISCLAIMER CITATIONS** (15 min — credibility)
+```

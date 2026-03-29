@@ -1,0 +1,203 @@
+You are a senior React/TypeScript engineer. I am giving you the full codebase for HumanProof v2.0 — a 6-dimension AI displacement risk assessment platform built with React 18, Vite, TypeScript, and localStorage for persistence. Your task is to fix every bug, correct every formula issue, fix the data citations, and implement the listed UX enhancements. Work through each section in order. Do not skip any item. After each fix, add a short inline comment: // FIX: [what you fixed].
+
+══════════════════════════════════════
+SECTION 1 — CRITICAL BUG FIXES
+══════════════════════════════════════
+
+BUG 1 — Score deduplication logic (scoreStorage.ts)
+Problem: The current logic saves a new history point if score changed >4 pts regardless of time elapsed. Users who retake assessments multiple times in a short session (e.g. exploring inputs) generate false drift trends with entries like 67→69→71 in 5 minutes.
+Fix required:
+- Add a compound guard: require BOTH (a) score change exceeds threshold AND (b) at least 30 minutes elapsed since last save for that scoreType.
+- Store lastSaveTimestamp per scoreType separately from the history array (use key pattern hp_last_save_{scoreType}).
+- The existing 1-hour guard for unchanged scores is fine — keep it.
+- Thresholds remain: Job Risk >4pts, Human Index >8pts, Skill Risk >6pts.
+
+BUG 2 — D6 Social Capital Moat display direction (riskFormula.ts + CalculatorPage)
+Problem: NETWORK_MOAT stores values where low = protected (CEO=8) and high = exposed (data entry=81). D6_EXP_BONUS subtracts points for senior experience (−12 for 10+ years), reducing D6. This is mathematically correct for the weighted sum (lower D6 = less displacement risk contribution). BUT the UI label "Network Moat Strength: Strong/Moderate/Weak" currently maps high D6 numbers to "Strong" — this is backwards.
+Fix required in the display component only (do not change the formula):
+- Strong moat: D6 < 30
+- Moderate moat: D6 30–60
+- Weak moat: D6 > 60
+- Update the descriptor text to: "Strong moat — high relationship capital protects this role" / "Moderate moat" / "Weak moat — easily replicated by AI tools"
+
+BUG 3 — D4 Experience Shield floor missing (riskFormula.ts)
+Problem: D4 = baseRisk × (1 − (sensitivity × expIndex / 4)). For a surgeon (sensitivity=0.9) at 10+ years (expIndex=4), this gives D4 = baseRisk × (1 − 0.9) = baseRisk × 0.1. If baseRisk=50, D4=5 — unrealistically low.
+Fix required:
+- After computing D4, apply: D4 = Math.max(D4, baseRisk * 0.25)
+- This means experience can reduce D4 by at most 75% of baseRisk, not 90%.
+- Add comment explaining this is a realism floor, not a formula change.
+
+BUG 4 — Displacement Pressure Boost double-counting (riskFormula.ts)
+Problem: The boost multiplier re-amplifies D1 and D2 after they've already been included in the weighted sum at 26%+18%=44%. For high-risk roles, this silently over-weights D1+D2 to ~60–65% effective weight without disclosure.
+Fix required:
+- Change the boost to apply only to the component ABOVE the weighted sum baseline, not to the full rawScore.
+- New formula:
+    d1d2Average = (D1 * 0.26 + D2 * 0.18) / 0.44
+    excessRisk = Math.max(0, d1d2Average - 50)
+    boostAddition = excessRisk * 0.15
+    boostedScore = rawScore + boostAddition
+- Remove the arbitrary 1.42× multiplier ceiling. Replace with: boostedScore clamped to rawScore * 1.20 max (20% boost ceiling, documented).
+- Add a comment: // Boost adds up to 20% for roles where both task automatability and tool maturity are high. Applied as an additive adjustment, not a multiplier, to avoid double-counting D1/D2.
+
+BUG 5 — Tab 7 Forecast NaN when workType is missing (DisplacementForecast component)
+Problem: Tab 7 reads ROLE_DECAY_FACTORS_2026[workType] and ROLE_RISK_THRESHOLD_2026[workType]. If the user completed only Skill Calculator (no workType set), these lookups return undefined and the logistic S-curve formula produces NaN, rendering a blank chart with no error.
+Fix required:
+- Add null-check at the top of the projectScore() call:
+    const decayFactor = ROLE_DECAY_FACTORS_2026[workType] ?? SECTOR_DECAY_FALLBACK[industry] ?? 0.08
+    const riskThreshold = ROLE_RISK_THRESHOLD_2026[workType] ?? SECTOR_THRESHOLD_FALLBACK[industry] ?? 70
+- Add SECTOR_DECAY_FALLBACK and SECTOR_THRESHOLD_FALLBACK objects to riskData.ts with one entry per industry (use the median of that industry's roles).
+- If both workType and industry are missing, use global fallback: decay=0.07, threshold=68.
+- Show a non-blocking info banner above the chart: "No job role selected — showing estimates based on your skill portfolio. Complete the Job Risk Calculator for a personalised forecast." (Do not block the chart from rendering.)
+
+BUG 6 — Journal dirty state fires on read-only open (HumanEdgeJournal component)
+Problem: Opening an entry to read it triggers the dirty state confirm dialog on navigate-away because isDirty is set during component mount, not on actual user input.
+Fix required:
+- Replace the current dirty state logic with a useRef tracking original content.
+- Set isDirty = true only inside onChange handlers for the textarea/input fields.
+- On component mount: isDirty = false always, regardless of existing content.
+- The confirm dialog should only fire when isDirty === true.
+
+BUG 7 — Pattern Insight triggers at 5 entries (too few) (HumanEdgeJournal)
+Problem: The insight "Your strongest human edge" appears after exactly 5 journal entries, which is statistically unreliable.
+Fix required:
+- Change trigger condition to: entries.length >= 8 AND distinctDimensionsTagged >= 3
+- Add confidence qualifier to the insight text: "Based on your last {entries.length} journal entries, your dominant dimension is..."
+- If entries.length >= 8 but distinctDimensionsTagged < 3: show a prompt instead — "Tag entries across more dimensions to unlock your Human Edge pattern."
+
+BUG 8 — localStorage hydration race condition (HumanProofContext)
+Problem: On slow devices, child components may render with default state before HYDRATE completes.
+Fix required:
+- Add a boolean field isHydrated to context initial state (default: false).
+- Set isHydrated = true as the last action in the HYDRATE reducer case.
+- In App.tsx: render a minimal skeleton/loading state for any page that reads scores from context, gated on !isHydrated.
+- The existing LoadingScreen handles visual feedback — just ensure the gate is on the data-dependent renders, not the full page.
+
+══════════════════════════════════════
+SECTION 2 — FORMULA ACCURACY FIXES
+══════════════════════════════════════
+
+FORMULA FIX 1 — Document D3 exponent as a parameter (riskData.ts)
+The exponent 0.70 in D3 = 100 × (1 − (augVal/100)^0.70) is a calibration parameter, not a derived constant. Add to riskData.ts:
+    export const D3_CURVE_EXPONENT = 0.70 // Calibration param: controls how steeply mid-range augmentation protects vs displaces. Lower = more protective. Source: author-calibrated against WEF 2025 augmentation case studies.
+Replace the hardcoded 0.70 in riskFormula.ts with D3_CURVE_EXPONENT.
+
+FORMULA FIX 2 — S-curve projection: ensure 3 scenarios use independent parameters (riskFormula.ts)
+Problem: If optimistic/base/pessimistic scenarios only differ by a scalar multiplier on the same decay factor, they're not independent forecasts.
+Fix required:
+- Each scenario must have its own growth rate, adoption ceiling, and time-to-inflection:
+    scenarios = {
+      optimistic: { growthRate: decayFactor * 0.6, ceiling: threshold * 0.7, inflection: 4.5 },
+      base:       { growthRate: decayFactor,       ceiling: threshold,       inflection: 3.0 },
+      pessimistic:{ growthRate: decayFactor * 1.5, ceiling: Math.min(threshold * 1.3, 95), inflection: 1.8 }
+    }
+- The logistic formula applies independently per scenario.
+
+FORMULA FIX 3 — Custom skill scoring Layer 3 co-occurrence fix (skill scoring utility)
+Problem: "(techCount / total) * 82 + (humanCount / total) * 10" ignores that skills like "AI ethics governance" have both tech and human keywords and should score low-risk.
+Fix required:
+- Add a co-occurrence check: if a skill name contains both a TECH_KEYWORD and a GOVERNANCE_KEYWORD (add: ['ethics','governance','oversight','policy','regulation','safety','audit','compliance']), apply a protective override: baseScore = Math.min(baseScore, 25).
+- Add GOVERNANCE_KEYWORDS as a named export in riskData.ts.
+
+FORMULA FIX 4 — Specialist deduction: cap the 1.4× multiplier (riskFormula.ts)
+Problem: Specialist keywords ("Lead","Principal","Architect","Director") give a 1.4× multiplier on the experience deduction (up to 22pts × 1.4 = 30.8pts deducted). This can drop high-risk roles below their realistic floor.
+Fix required:
+- Cap specialist deduction at: Math.min(specialistDeduction, 18)
+- This preserves the specialist benefit without creating unrealistic low scores for e.g. "Lead Data Entry Operator."
+
+══════════════════════════════════════
+SECTION 3 — DATA & CITATION FIXES
+══════════════════════════════════════
+
+CITATION FIX 1 — Remove or correct fabricated citations
+In every component, data file comment, and UI text where these appear:
+- REMOVE: "McKinsey Jan 2026", "McKinsey Q1 2026" — replace with "McKinsey 2023 (The economic potential of generative AI)"
+- REMOVE: "Goldman Sachs 2026" — replace with "Goldman Sachs 2023 (The Potentially Large Effects of Artificial Intelligence on Economic Growth)"
+- REMOVE: "Anthropic Q1 2026 enterprise deployment data" — replace with "Author-calibrated based on Anthropic published capability evaluations, 2024"
+- KEEP AS-IS: "WEF Future of Jobs 2025" — this is real
+- ADD these real citations where relevant: "Stanford HAI AI Index Report 2024", "OECD AI Outlook 2024", "MIT Work of the Future 2024"
+
+CITATION FIX 2 — Data Freshness chip
+The "Data: Q1 2026" chip on the Calculator results card is misleading because the underlying data is from 2023–2024 sources.
+Fix: Change chip text to "Data: 2024–2025 sources" and add a tooltip/title attribute: "Based on WEF Future of Jobs 2025, McKinsey 2023, Goldman Sachs 2023, Stanford HAI 2024"
+
+CITATION FIX 3 — D6 MIT Sloan attribution
+The NETWORK_MOAT scores (CEO=8, data entry=81) are author-assigned, not directly from MIT Sloan.
+Fix: Update the D6 description in riskData.ts and the homepage card to read: "Social Capital Moat — based on relational capital theory (MIT Sloan 2024). Scores calibrated by role type."
+
+══════════════════════════════════════
+SECTION 4 — UX & WORKFLOW FIXES
+══════════════════════════════════════
+
+UX FIX 1 — Role-based skill pre-fill in Tab 2 (SkillRiskCalculator)
+When the user has a jobTitle set in context (from Tab 1), Tab 2 should open with 8–10 pre-selected skills.
+Implementation:
+- Create a ROLE_SUGGESTED_SKILLS map in riskData.ts. Add entries for at minimum these roles: software_engineer, data_analyst, accountant, lawyer, nurse, teacher, marketing_manager, hr_manager, financial_analyst, project_manager, sales_rep, designer, journalist, doctor, therapist.
+- Each entry: array of 8–10 skill IDs from skillsDataNew.ts.
+- On Tab 2 mount: if jobTitle is set AND selectedSkills is empty, auto-populate with ROLE_SUGGESTED_SKILLS[workType] (use weight=1x for all pre-fills).
+- Show a dismissible banner: "We've suggested skills common for {jobTitle}. Add or remove as needed."
+
+UX FIX 2 — HII Quiz: show time estimate and partial score (HumanIrreplacabilityIndex)
+- Add at quiz start: "Estimated time: 6–8 minutes · 30 questions"
+- After question 15 (halfway): show a "halfway there" micro-feedback moment with the current provisional score: "So far you're scoring {provisionalScore}/100 on human irreplaceability."
+- Provisional score = (answeredQuestions / 30) × currentPartialHII, displayed as "provisional — complete all 30 for your final score."
+
+UX FIX 3 — Tab 7 dependency prompt (DisplacementForecast)
+If jobRiskScore is null (Tab 1 not completed), currently: dependency prompt replaces the entire tab.
+Fix: Show the S-curve chart anyway using skillRiskScore as the baseline (with fallback to 60). Show a non-blocking info banner above: "Showing skill-based forecast. Complete the Job Risk Calculator for a role-specific projection." Do NOT block the tab content.
+
+UX FIX 4 — Drift Tracker "What changed?" explainer (ScoreDriftTracker)
+When drift > threshold between two history points, show a structured explanation panel below the chart:
+- "Your job risk changed from {prev} → {curr} ({delta} points, {direction})"
+- List contributing factors pulled from the stored hp_skill_breakdown: "Largest movers: [top 2 dimension changes]"
+- If no breakdown is available: "Retake the calculator to see a detailed breakdown."
+
+UX FIX 5 — Score transparency panel (CalculatorPage + SkillRiskCalculator)
+Add a collapsible "How was this calculated?" section below every score output.
+Content: one row per dimension showing:
+  D{n}: {name} — contributed {contribution} points ({weight}% weight × raw score {rawScore})
+Each row uses the stored hp_skill_breakdown values. Use a simple HTML details/summary element or a custom accordion. Collapsed by default.
+
+UX FIX 6 — Waitlist modal email validation (PricingPage)
+Add RFC 5322-compatible email validation before accepting the email:
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+If invalid: show inline error "Please enter a valid email address" — do not submit to localStorage.
+
+UX FIX 7 — React ErrorBoundary per tab (ToolsPage)
+Wrap each of the 7 tab components in an individual ErrorBoundary:
+- On error: show a contained error card within the tab: "Something went wrong in this tool. Your other tabs and data are unaffected. [Retry]"
+- The retry button remounts only that tab's component (use a key prop incremented on retry).
+- Log the error to console.error with the tab name and error message.
+
+UX FIX 8 — Products page filter state (ProductsPage)
+Confirm that all 5 filter buttons (All / Free / Guides / Templates / Reports) are wired to useState and correctly filter the products array. Each product object must have a category field matching one of: 'free' | 'guide' | 'template' | 'report'. The "All" filter clears the active filter and shows everything. Active filter button should have a visually distinct style (border or background change).
+
+══════════════════════════════════════
+SECTION 5 — ARCHITECTURE IMPROVEMENTS
+══════════════════════════════════════
+
+ARCH 1 — Add unit tests for riskFormula.ts
+Create riskFormula.test.ts. Write tests for:
+- D4 floor: surgeon at 10+ years should produce D4 >= baseRisk * 0.25
+- D6 display: CEO workType should render "Strong moat"
+- Boost cap: final score after boost should never exceed rawScore * 1.20
+- Weights: D1*0.26 + D2*0.18 + D3*0.20 + D4*0.16 + D5*0.09 + D6*0.11 should equal exactly 1.00
+- Country formula: USA should produce D5 ~74, Germany should produce D5 ~32
+- Custom skill: "AI ethics governance" should score ≤25
+
+ARCH 2 — localStorage data loss warning
+In ScoreDriftTracker: on mount, check if hp_score_history exists AND has length > 0. If the key exists but is empty (or was recently cleared), show a one-time warning banner: "Your score history was not found. This may be because browser data was cleared. Start a new assessment to begin tracking your progress." Store a flag hp_history_warned = true after showing this once.
+
+ARCH 3 — Add isHydrated guard (already described in BUG 8 — implement here if not done above)
+
+══════════════════════════════════════
+EXECUTION NOTES
+══════════════════════════════════════
+
+- Work file by file. List each file you modify at the top of your response.
+- Do not change any UI styling, color theme, or visual design — only logic, formulas, copy, and structure.
+- Do not remove any existing features — only fix and enhance.
+- After all changes, confirm: weights still sum to 1.00, D5 USA ≈ 74, D5 Germany ≈ 32.
+- Preferred output format: show each modified file in full with // FIX: comments marking every change.
+- If you cannot implement any item due to missing context (e.g. a component file I haven't shared), flag it explicitly: "BLOCKED: need [filename] to implement [fix name]."
+
+Begin with SECTION 1, BUG 1. Work sequentially.

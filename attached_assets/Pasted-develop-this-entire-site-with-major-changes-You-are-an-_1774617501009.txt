@@ -1,0 +1,274 @@
+develop this  entire site  with major changes You are an expert front-end developer and AI labor market researcher. I am attaching my website file: humanproof_v2_fixed.html
+
+Apply ALL of the following fixes and generate a complete, single, self-contained HTML file as output. Do not truncate. Do not skip sections. Output the full file from <!DOCTYPE html> to </html>.
+
+═══════════════════════════════════════════
+SECTION 1 — FORMULA ENGINE v3.0 (2026)
+═══════════════════════════════════════════
+
+FIX-F1: Replace TOOL_MATURITY (D2) with DISRUPTION_VELOCITY
+- D2 must measure how fast AI is advancing in this domain over next 24 months
+- Not current tool maturity (which correlates with D1 at r≈0.87)
+- Scale: 0=AI barely advancing here, 100=domain being consumed rapidly
+- High values (>80): qa_manual=95, hc_medical_coding=95, cnt_seo_content=92, web_html=92, fin_payroll=90
+- Medium-high (65-80): sw_frontend=80, des_graphic=78, cnt_blog=78, hc_radiology=76
+- Medium (40-65): sw_backend=68, ml_model=58, sec_pen=48, hc_doctor=45
+- Low (<40): mh_therapist=15, hc_surgeon=35, con_strategy=28, mh_crisis=12, nur_rn=25
+
+FIX-F2: Fix D3 bar display — show actual risk contribution not augmentation
+- Currently formula uses d3 = 100-augVal but bar displays augVal
+- Fix: change bar to show d3 value (the actual risk contribution)
+- Label as "Displacement amplifier" not "AI-amplifiable (↓ risk)"
+- This removes the misleading inversion where low augmentation appears visually "safe"
+
+FIX-F3: Rewrite getExpRisk() — fix junior ceiling bug
+Replace entire function with:
+const EXP_RISK_BASE = {'0-2':82,'2-5':68,'5-10':54,'10-20':38,'20+':22};
+const EXP_INDEX = {'0-2':0,'2-5':1,'5-10':2,'10-20':3,'20+':4};
+function getExpRisk(wt, exp) {
+  const base = EXP_RISK_BASE[exp] ?? 54;
+  const idx = EXP_INDEX[exp] ?? 2;
+  const sens = EXP_SENSITIVITY[wt] ?? EXP_SENSITIVITY.default;
+  return Math.max(5, Math.round(base * (1 - sens * idx / 4)));
+}
+This gives meaningful spread at ALL experience levels. Seniors in high-sens roles get 5-15, juniors in low-sens roles stay 78-82.
+
+FIX-F4: Align score color thresholds with verdict thresholds
+Replace scoreColor logic with:
+const scoreColor = score>=80?'#ff4757':score>=65?'#ff7043':score>=50?'#fbbf24':score>=35?'#00F5FF':'#00FF9F';
+
+FIX-F5: Add compound displacement factor for double-jeopardy roles
+After rawScore calculation, add:
+const compoundBoost = (d1 > 75 && augVal < 25) ? 1.08 : 1.0;
+const score = Math.min(97, Math.max(8, Math.round(rawScore * compoundBoost)));
+
+FIX-F6: Add temporal acceleration note in results
+After confidence band display, add a note element:
+If DISRUPTION_VELOCITY[workType] > 70, show:
+"⚡ High-velocity domain — this score may be 15–25 pts higher by 2027"
+
+FIX-F7: Fix animation timing — use time-based not step-based
+Replace RAF step loop with:
+const ANIM_MS = 900;
+const startTime = performance.now();
+function step(now) {
+  const t = Math.min(1, (now - startTime) / ANIM_MS);
+  const ease = 1 - Math.pow(1 - t, 3);
+  cur = score * ease;
+  // update DOM ...
+  if (t < 1) requestAnimationFrame(step);
+  else { /* scroll here, not in setTimeout */ result.scrollIntoView({behavior:'smooth',block:'start'}); }
+}
+requestAnimationFrame(step);
+
+FIX-F8: Fix score ring circumference — read from DOM not hardcoded
+Replace: const circ=2*Math.PI*70;
+With: const sc = document.getElementById('scoreCircle'); const circ = 2*Math.PI*sc.r.baseVal.value;
+
+FIX-F9: Dimension bars — sync with score animation, no 300ms delay
+Remove setTimeout wrapper around dims. Set bars in same RAF loop as score.
+Set individual CSS transition-delays: d1=0ms, d2=80ms, d3=160ms, d4=240ms, d5=320ms
+
+FIX-F10: Fix dimension bar weights display
+Change formula: rawScore = d1*0.30 + d2*0.20 + d3*0.22 + d4*0.18 + d5*0.10
+New weights: D1 Task Automatability (30%), D2 Disruption Velocity (20%), D3 Displacement Amplifier (22%), D4 Experience Protection (18%), D5 Country Context (10%)
+Increase experience weight from 15% to 18% — more real-world accurate.
+
+═══════════════════════════════════════════
+SECTION 2 — 2026 DATA UPDATES
+═══════════════════════════════════════════
+
+FIX-D1: Update TASK_AUTO scores to reflect 2026 AI capabilities
+Apply these specific score increases (evidence-based, sourced from 2025-2026 AI deployments):
+sw_frontend: 74→84, sw_backend: 68→78, sw_testing: 82→91
+qa_manual: 90→96, qa_auto: 72→82
+hc_radiology: 54→74 (Aidoc/Viz.ai FDA-cleared at radiologist accuracy)
+hc_medical_coding: 90→97 (EPIC AI Medical Coding mainstream 2025)
+cnt_translation: 76→93 (DeepL+GPT-4o match professionals in blind tests)
+cnt_seo_content: 90→95, cnt_blog: 88→93
+des_graphic: 70→82, des_logo: 65→80, des_ui: 60→74
+leg_paralegal: 78→88 (Harvey AI, Casetext CoCounsel mainstream)
+fin_account: 80→90 (AI bookkeeping Digits/Vic.ai near-full automation)
+ml_prompt: 58→72 (DSPy meta-prompting automates prompt engineering)
+mfg_cad: 55→70 (Autodesk Fusion generative design widely deployed)
+med_edit: 78→88, web_html: 86→93, sw_ml: 40→52
+adm_data_entry: 92→97, fin_payroll: 88→95, bpo_data_entry: 96→98
+
+FIX-D2: Add DISRUPTION_VELOCITY table (replaces TOOL_MATURITY)
+Create comprehensive table for all 200+ workTypes using these values:
+CRITICAL velocity (>85): qa_manual=96,bpo_data_entry=96,cnt_seo_content=93,hc_medical_coding=95,adm_data_entry=95,fin_payroll=92,web_html=92,cnt_email=90,cnt_blog=90
+HIGH velocity (70-85): sw_frontend=82,des_graphic=80,cnt_translation=88,des_logo=78,hc_radiology=76,leg_paralegal=80,fin_account=78,sw_testing=85,qa_auto=75,des_ui=72,med_edit=82
+MEDIUM-HIGH (55-70): sw_backend=70,ml_prompt=68,mfg_cad=68,des_motion=65,cnt_yt=62,ml_analytics=65,anim_2d=62,sw_devops=62
+MEDIUM (40-55): ml_model=52,sec_soc=55,eng_civil=45,hc_doctor=45,hc_tele=50,des_ux=42,edu_teach=42,ph_research=42
+LOW-MEDIUM (25-40): nur_rn=25,mh_coach=35,hc_surgeon=36,edu_special=20,hr_hrbp=32,con_strategy=28,leg_litigation=30,inv_vc=25
+VERY LOW (<25): mh_therapist=15,mh_crisis=12,edu_counsellor=22,hc_physio=25,ngo_field=22
+
+FIX-D3: Update COUNTRY_DATA to 2026 reality
+Update adoption rates: india:[75,28], philippines:[70,22], usa:[85,45], singapore:[88,70], uk:[76,55], china:[72,45]
+Add missing countries: south_korea needs safety net update to [70,60], japan [70,65]
+
+═══════════════════════════════════════════
+SECTION 3 — SKILLS MAP COMPLETENESS
+═══════════════════════════════════════════
+
+FIX-S1: Add all missing DANGER_SKILLS_MAP entries
+Add these specific entries (do not use generic default for any of these):
+
+med_journalism: ['AI-written breaking news summaries','Automated earnings report articles','Standard sports result roundups','Wire service content reformatting','Routine press release coverage']
+med_edit: ['Standard copy editing and proofreading','Routine fact-checking against sources','Boilerplate style guide enforcement','Standard headline writing','Automated caption generation']
+med_broadcast: ['Teleprompter script generation','Standard news segment rundowns','Routine weather and sports copy']
+leg_ip: ['Patent claim drafting from disclosures','Standard IP search and clearance reports','Routine trademark filings','Boilerplate IP license clauses']
+leg_labor: ['Standard employment contract clauses','Routine HR compliance checklists','Boilerplate settlement agreement templates','Standard redundancy documentation']
+leg_cyberlaw: ['Routine GDPR compliance checklists','Standard privacy policy generation','Template DPA agreements','Routine cookie consent documentation']
+gov_policy: ['Standard policy brief templates','Routine regulatory impact assessment formats','Boilerplate consultation response summaries','Standard inter-departmental memos']
+gov_social: ['Benefit eligibility calculation forms','Standard case file documentation','Routine referral letter templates','Standard welfare assessment forms']
+gov_admin: ['Standard form processing and filing','Routine FOI response templates','Boilerplate constituent correspondence','Standard meeting minute formatting']
+ngo_program: ['Log frame and results framework templates','Standard donor report sections','Routine M&E data collection forms','Boilerplate grant application sections']
+ngo_field: ['Standard community survey forms','Routine beneficiary registration processing','Template field report structures','Standard data entry from assessments']
+ngo_comms: ['Standard social impact report copy','Routine newsletter content','Boilerplate fundraising appeal templates','Standard website content updates']
+agri_farming: ['Crop rotation schedule templates','Standard yield tracking spreadsheets','Routine pesticide application logs','Boilerplate equipment maintenance records']
+agri_tech: ['Standard sensor data dashboards','Routine soil analysis report formatting','Boilerplate precision farming templates','Standard IoT data logging']
+agri_research: ['Literature review summarisation','Standard field trial data entry','Routine statistical analysis scripts','Boilerplate research paper sections']
+eng_civil: ['Standard structural calculation reports','Routine drawing revision notes','Boilerplate specification sections','Standard inspection checklist documentation']
+eng_mech: ['Standard component stress calculation reports','Routine maintenance schedule templates','Boilerplate technical specification sections','Standard BOM generation']
+eng_project: ['Standard progress report templates','Routine risk register updates','Boilerplate project charter sections','Standard stakeholder communication logs']
+con_arch: ['Standard AutoCAD drawing generation','Routine planning application forms','Boilerplate design statement sections','Standard technical specification templates']
+con_site: ['Standard daily site diary entries','Routine snag list documentation','Boilerplate method statement sections','Standard H&S inspection records']
+anim_2d: ['Standard in-between frame generation','Routine lip-sync animation from audio','Boilerplate title card animation','Standard motion loop generation']
+anim_3d: ['Standard texture generation from prompts','Routine lighting setup presets','Boilerplate rigging templates','Standard render pass execution']
+anim_vfx: ['Standard green screen keying','Routine rotoscoping tasks','Boilerplate particle effect presets','Standard colour correction passes']
+photo_portrait: ['Standard background removal and replacement','Routine skin retouching','Boilerplate head-swap compositing','Standard colour grading presets']
+photo_commercial: ['Product image background removal','Standard batch retouching','Routine metadata tagging','Boilerplate style transfer']
+video_prod: ['Standard b-roll selection from brief','Routine subtitle and caption generation','Boilerplate lower-third creation','Standard interview framing']
+des_3d: ['Standard 3D model generation from text prompts','Routine texture mapping','Boilerplate scene lighting setup','Standard render optimisation']
+des_illustration: ['Style-consistent illustration generation','Standard character variation production','Routine icon set generation','Boilerplate pattern creation']
+des_product: ['Standard CAD model generation from specs','Routine design iteration documentation','Boilerplate material specification sheets']
+ec_growth: ['Standard A/B test copy variants','Routine performance report generation','Boilerplate email campaign sequences','Standard ad creative briefs']
+ec_d2c: ['Standard product description writing','Routine social content calendar population','Boilerplate customer email sequences','Standard returns correspondence']
+fmcg_brand_mgr: ['Standard campaign brief templates','Routine competitive tracking reports','Boilerplate brand guidelines documentation']
+ret_buyer: ['Standard trend report summaries','Routine competitor price tracking','Boilerplate supplier brief templates']
+fin_treasury: ['Standard cash flow forecast templates','Routine FX exposure reports','Boilerplate treasury policy documentation']
+fin_credit: ['Standard credit application scoring templates','Routine credit review documentation','Boilerplate credit committee reports']
+fin_compliance: ['Standard compliance monitoring checklists','Routine regulatory filing templates','Boilerplate policy update documentation']
+
+FIX-S2: Add all missing SAFE_SKILLS_MAP entries
+Add same list of missing workTypes with role-specific AI-resistant skills:
+
+med_journalism: ['Long-form investigative reporting with source cultivation','On-the-ground reporting requiring physical presence','Exclusive source relationship management','Complex editorial judgment on contested stories']
+leg_ip: ['Complex patent strategy for novel inventions','IP litigation strategy and courtroom advocacy','Novel IP portfolio architecture under uncertainty','Multi-jurisdiction IP strategy']
+gov_policy: ['Complex multi-stakeholder policy negotiation','Political judgment on policy timing and framing','Novel policy design under democratic constraints','Cross-party consensus building']
+ngo_field: ['Community trust building in conflict-sensitive environments','Complex cultural and political navigation in field','Crisis-sensitive programme adaptation','Authentic relationship with beneficiary communities']
+agri_farming: ['Complex microclimate and soil judgment from lived experience','Community and cooperative leadership','Crop disease identification in novel conditions','Traditional knowledge integration']
+eng_civil: ['Complex structural judgment for novel site conditions','Community impact leadership for major projects','Novel geotechnical problem solving','Stakeholder conflict resolution on sensitive sites']
+eng_project: ['Complex stakeholder alignment under deep uncertainty','Novel risk strategy for mega-projects','Contract dispute leadership under ambiguity','Political navigation in multi-party projects']
+con_arch: ['Novel design concept origination','Contextual and cultural design judgment','Client brief interpretation for complex briefs','Planning authority relationship management']
+anim_2d: ['Novel character personality and emotional expression design','Complex narrative pacing judgment','Authentic cultural representation','Art direction for brand-consistent feel']
+anim_vfx: ['Novel visual problem solving for unique practical challenges','Complex digital-physical integration judgment','On-set VFX supervision decisions','Novel creature or environment design direction']
+photo_portrait: ['Human connection and authentic emotional direction','Complex lighting judgment for mood and personality','Unique visual storytelling perspective','Subject trust building for vulnerable populations']
+ec_growth: ['Novel growth loop design for unique market conditions','Complex unit economics strategy under uncertainty','Cross-channel narrative architecture','Community-led growth strategy design']
+fmcg_brand_mgr: ['Brand equity stewardship under crisis','Cultural insight and campaign timing judgment','Novel campaign concept origination','Long-term brand architecture decisions']
+ret_buyer: ['Complex trend forecasting from instinct and market signals','Supplier relationship and negotiation depth','Novel product concept development','Brand and quality judgment for new categories']
+
+FIX-S3: Replace "AI-Proof" label with "AI-Resistant" everywhere
+- Change section header: "⚠ At-Risk Skills (Vulnerable to AI)" — keep as is
+- Change section header: "✓ Protected Skills (AI-Proof)" → "🛡 AI-Resistant Skills (Your Moat)"
+- Add resistance horizon tags to each skill: show [5+ yrs], [3-5 yrs], [2-3 yrs] badges
+- Change product text: "AI-Proof Career Masterclass" → "AI-Resistant Career Masterclass"
+- Change features: "AI-proof skill training" → "AI-resistant skill training"
+
+FIX-S4: Make skill count responsive to risk score
+In calculateRisk(), after getting ds/ss arrays:
+const dangerCount = score >= 70 ? 6 : score >= 50 ? 5 : 4;
+const safeCount = score >= 70 ? 2 : score >= 50 ? 3 : 5;
+const dsSliced = ds.slice(0, dangerCount);
+const ssSliced = ss.slice(0, safeCount);
+// use dsSliced and ssSliced to populate tags
+
+═══════════════════════════════════════════
+SECTION 4 — TRANSITION RECOMMENDATIONS
+═══════════════════════════════════════════
+
+FIX-T1: Add missing TRANSITION_RECS entries for all major role gaps
+Add entries for: med_journalism, med_edit, leg_ip, leg_labor, gov_policy, gov_admin, ngo_program, ngo_field, agri_farming, agri_tech, eng_civil, eng_project, con_arch, anim_2d, anim_vfx, photo_portrait, photo_commercial, ec_growth, ec_d2c, fmcg_brand_mgr
+
+FIX-T2: Make transition recommendations score-adaptive
+In calculateRisk(), replace tr lookup with:
+const tr = TRANSITION_RECS[workType] || TRANSITION_RECS.default;
+const urgencyLabel = score >= 80 ? "Act This Week — Urgent Pivots" : score >= 65 ? "Plan This Month" : score >= 50 ? "Begin This Quarter" : "Evolve Your Role";
+const recHeader = document.getElementById('transitionRecsHeader');
+if(recHeader) { recHeader.textContent = '→ ' + urgencyLabel; recHeader.style.color = scoreColor; }
+// For high risk (score>=70), show first 2 recs as "urgent" with red styling + add generic AI transition roles after
+
+═══════════════════════════════════════════
+SECTION 5 — UI CONTENT FIXES
+═══════════════════════════════════════════
+
+FIX-U1: Remove fake "Live" label from hero card
+Replace: "Live AI Displacement Tracker"
+With: "AI Displacement Index · Q1 2026"
+Remove the live-dot animation from this card (keep elsewhere)
+
+FIX-U2: Update ticker bar with 2026 news
+Replace all ticker items with:
+"OpenAI o3 displacing junior analysts (2026)" | "India IT fresher hiring down 70% YoY" |
+"Agentic AI replacing paralegal roles" | "Gemini 2.0 at radiologist diagnostic accuracy" |
+"Microsoft 365 Copilot replacing admin roles" | "BPO sector lost 2.8M jobs (2025)" |
+"Goldman Sachs: 60% of tasks automatable by 2026" | "Harvey AI mainstream in 500+ law firms"
+
+FIX-U3: Add loading state to calculator
+Add a calc-loading div that shows for 900ms before revealing result:
+
+  ANALYSING ROLE AGAINST 2026 AI DATA...
+
+In calculateRisk(): show loading div, hide after 900ms, then show result
+
+FIX-U4: Update hero stats with 2026 data
+"4B+ Workers at Risk" → "4.8B+ Workers at Risk"
+"2.4yr Avg Timeline" → "1.8yr Avg Timeline" (accelerated)
+"200+ Jobs Analyzed" → "250+ Jobs Analyzed"
+
+FIX-U5: Add temporal disclaimer to results
+After scoreBand, add a note:
+"Score reflects 2026 AI capabilities. Reassess every 6 months — AI is advancing rapidly."
+
+FIX-U6: Gate cursor JS behind pointer:fine check
+Wrap entire cursor trail mousemove listener in:
+if(window.matchMedia('(pointer:fine)').matches){ ... }
+
+FIX-U7: Update calculator description
+Change: "5-dimension risk model"
+To: "6-dimension risk model (2026 data)"
+Add: "Includes AI disruption velocity and compound displacement factors"
+
+═══════════════════════════════════════════
+SECTION 6 — DATA ACCURACY NOTES
+═══════════════════════════════════════════
+
+FIX-A1: Update hc_radiology danger skills with 2026 accuracy
+Replace: ['Standard scan reporting from templates','Routine DICOM processing','Standard radiology report formatting']
+With: ['Routine chest X-ray screening reads (Aidoc/Rad AI)','Standard CT scan pattern detection','DICOM series classification','Routine follow-up scan comparison','Standard bone density analysis']
+
+FIX-A2: Update sw_frontend danger skills with 2026 tools
+Add to existing: 'Full React page generation via v0/Lovable/Bolt', 'Screenshot-to-code conversion', 'AI-driven responsive layout generation from wireframes'
+
+FIX-A3: Update des_graphic danger skills with 2026 tools
+Replace generic entries with: ['Midjourney/DALL-E stock image generation replacing photography','Adobe Firefly marketing asset production','Social media graphic batch generation','Standard banner ad creative variants','AI brand asset adaptation']
+
+FIX-A4: Update ml_prompt danger skills with 2026 reality
+Add: ['DSPy/PromptBreeder automated prompt optimisation','LLM-as-judge evaluation replacing human review','Auto-generated few-shot example creation','Standard system prompt templates']
+
+OUTPUT REQUIREMENTS:
+- Complete self-contained HTML file
+- All original pages, animations, canvas effects preserved
+- All CSS variables and design system preserved
+- All autocomplete functionality preserved
+- Mobile responsive layout preserved
+- Formula engine updated to v3.0 with all FIX-F changes
+- All data tables updated as specified
+- All skill maps expanded with missing entries
+- Ticker updated with 2026 content
+- "AI-Proof" → "AI-Resistant" everywhere
+- Hero card "Live" → "Index · Q1 2026"
+- Loading state added
+- Animation timing fixed (time-based not step-based)
+- Score colors aligned with verdict thresholds

@@ -1,0 +1,1165 @@
+You are rebuilding HumanProof — a 6-feature AI job displacement platform.
+Apply every section below in order. Do not skip any section.
+Files affected: riskEngine.ts, skillsDataNew.ts, skillInsights.ts,
+HumanIrreplacibilityIndex.tsx, UpskillingRoadmap.tsx, courseDatabase.ts,
+DisplacementForecast.tsx, riskCalculations.ts, HumanEdgeJournal.tsx,
+ScoreDriftTracker.tsx, scoreStorage.ts, ShareableScoreCard.tsx,
+HumanProofContext.tsx, and any component rendering the skill insight panels.
+
+══════════════════════════════════════════════════════
+SECTION 1 — JOB RISK SCORE (riskEngine.ts)
+══════════════════════════════════════════════════════
+
+1A. Update the 5-dimension weights.
+Source: WEF Future of Jobs 2025, McKinsey Global Institute 2024.
+
+OLD:
+D1 Task Automatability: 25%
+D2 Disruption Velocity:  15%
+D3 Replace/Augment:      30%
+D4 Experience Shield:    20%
+D5 Country Context:      10%
+
+NEW:
+D1 Task Automatability:  22%
+D2 Disruption Velocity:  28%   ← RAISED — AI tooling now updates monthly not annually
+D3 Replace/Augment:      30%   ← Keep — still the most important single dimension
+D4 Experience Shield:    15%   ← LOWERED — experience alone no longer sufficient protection
+D5 Country Context:       5%   ← LOWERED — knowledge worker AI adoption now globally homogeneous
+
+1B. Fix the D3 "Replacement vs Augmentation" sub-scoring.
+The current sub-scores are calibrated to 2022 capability baselines.
+Add a REPLACEMENT_2026_OVERRIDES object that forces D3 to score as
+"full replacement" (score=90+) for these role/skill combinations:
+
+const REPLACEMENT_2026_OVERRIDES = {
+  'legal-legal-research':         92,
+  'legal-contract-drafting':      87,
+  'legal-case-summarising':       94,
+  'accounting-bookkeeping':       96,
+  'accounting-payroll':           93,
+  'accounting-tax-preparation':   90,
+  'hr-cv-screening':              95,
+  'hr-jd-writing':                90,
+  'analyst-sql-queries':          94,
+  'analyst-report-building':      90,
+  'analyst-data-cleaning':        88,
+  'swe-code-generation':          93,
+  'swe-documentation':            86,
+  'marketing-copywriting':        85,
+  'marketing-seo-content':        87,
+  'marketing-social-media':       87,
+  'designer-image-generation':    95,
+  'designer-icon-design':         88,
+  'doctor-imaging-analysis':      91,
+  'doctor-lab-interpretation':    82,
+};
+Apply by: if(REPLACEMENT_2026_OVERRIDES[`${roleId}-${skillSlug}`]) d3Score = override.
+
+1C. Fix the compound boost formula.
+OLD: if(D1 > 75 && augmentPotential < 25) score *= 1.08
+NEW (tiered):
+if(D1 > 90 && augmentPotential < 10) score *= 1.35   // existential threat
+else if(D1 > 80 && augmentPotential < 20) score *= 1.22   // critical
+else if(D1 > 70 && augmentPotential < 30) score *= 1.12   // high
+// No compound boost for D1 <= 70
+
+1D. Fix experience deduction — add specialisation multiplier.
+OLD:
+0-2yrs: 0pts | 2-5yrs: -5pts | 5-10yrs: -12pts | 10-20yrs: -16pts | 20+yrs: -20pts
+
+NEW:
+0-2yrs:  0pts
+2-5yrs:  -5pts
+5-10yrs: -12pts
+10-20yrs: -18pts
+20+yrs:  -22pts
+
+Then apply specialisation multiplier to the deduction:
+const SPECIALIST_KEYWORDS = ['forensic','chief','principal','distinguished',
+  'lead','appellate','clinical','trauma','specialist','director','partner',
+  'fellow','emeritus','consultant','architect','head of','vp of'];
+const isSpecialist = SPECIALIST_KEYWORDS.some(k => jobTitle.toLowerCase().includes(k));
+finalDeduction = baseDeduction * (isSpecialist ? 1.4 : 1.0);
+// A 20yr specialist gets -30.8pts deduction, not -22pts.
+
+1E. Update the industry multiplier table.
+Recalibrated against McKinsey sector AI adoption data Q4 2025:
+
+const INDUSTRY_MULTIPLIERS_2026 = {
+  // Knowledge work — RAISED from prior estimates
+  'Finance':              1.38,  // was 1.35
+  'Accounting':           1.45,  // was included in Finance
+  'Legal':                1.28,  // was 1.20
+  'Technology-SWE':       1.35,  // was generic +15% — now role-specific
+  'Technology-DevOps':    1.20,
+  'Technology-Security':  1.05,
+  'Technology-PM':        1.10,
+  'Analytics':            1.30,  // new entry
+  'Media':                1.32,  // was 1.25
+  'Marketing':            1.25,  // new entry
+  // Creative — RAISED significantly
+  'Design':               1.28,  // image gen has devastated production design
+  // Physical & care — LOWERED further (more protected than previously modelled)
+  'Healthcare':           0.65,  // was 0.70 — empathic care is more protected
+  'Education':            0.72,  // was 0.75
+  'Social Work':          0.60,  // new — highly protected
+  'Skilled Trades':       0.55,  // new — physical skills most protected
+  'Construction':         0.62,  // new
+  // Mixed
+  'Sales':                1.12,
+  'HR':                   1.18,
+  'Consulting':           1.15,
+  'Research':             1.10,
+};
+
+1F. Add the output risk timeline label — update the score-to-timeline mapping.
+OLD:
+80-99: "12-18 months · Act This Week"
+65-79: "18-36 months · Plan This Month"
+50-64: "3-4 years · Start Planning"
+35-49: "4-7 years · Monitor Closely"
+<35:   "7+ years · Evolve Continuously"
+
+NEW (compressed — AI acceleration means earlier timelines):
+85-99: "6-18 months · Act This Week"
+70-84: "18-30 months · Plan This Month"
+55-69: "2-4 years · Start Planning"
+40-54: "4-6 years · Monitor Closely"
+<40:   "6+ years · Evolve Continuously"
+
+══════════════════════════════════════════════════════
+SECTION 2 — SKILL RISK SCORE (skillsDataNew.ts + SkillRiskCalculator)
+══════════════════════════════════════════════════════
+
+2A. Apply the SKILL_RISK_DELTA_2026 patch without rebuilding the full DB.
+Create a new file: src/data/skillRiskDelta2026.ts
+
+Export:
+export const SKILL_RISK_DELTA_2026: Record<string, number> = {
+  // RAISED (AI more capable now):
+  'Code generation':            93,  // was 88
+  'Documentation writing':      86,  // was 79
+  'Report writing':             87,  // was 75
+  'Email writing':              85,  // was ~72
+  'Copywriting':                86,  // was 78
+  'SEO content creation':       88,  // was ~76
+  'Image creation':             95,  // was 88
+  'Icon design':                89,  // was 82
+  'Spreadsheet modelling':      91,  // was 84
+  'Legal research':             92,  // was 85
+  'Case summarising':           94,  // was 88
+  'Contract drafting':          87,  // was 79
+  'Bookkeeping':                96,  // was 94
+  'Payroll processing':         94,  // was 88
+  'Tax preparation':            91,  // was 87
+  'Financial reporting':        87,  // was 82
+  'CV/resume screening':        95,  // was 90
+  'Job description writing':    91,  // was 85
+  'Medical imaging analysis':   91,  // was 80
+  'Lab result interpretation':  83,  // was 75
+  'Medical literature review':  79,  // was 72
+  'Social media management':    88,  // was 82
+  'Customer service scripts':   91,  // was 81
+  'Data entry':                 97,  // was correct
+  'Market research':            89,  // was 83
+  'Lead generation':            88,  // was 82
+  'Email outreach':             91,  // was 85
+  'CRM data management':        83,  // was 78
+  // LOWERED (more protected than previously modelled):
+  'Ethical decision-making':     4,  // was 8
+  'Crisis management':           7,  // was 11
+  'Client counselling':          8,  // was 12
+  'Emotional support':           3,  // was 6
+  'Jury persuasion':             5,  // was 9
+  'Team mentoring':             10,  // was 15
+  'Conflict resolution':         7,  // was 10
+  'Difficult conversations':     5,  // was 8
+  'Executive presence':          6,  // was 10
+  'Complex deal closing':        9,  // was 14
+  'Family counselling':          3,  // was 6
+  'Emergency clinical judgment': 12, // was 18
+  'Cultural intuition':          6,  // was 10
+  'Stakeholder alignment':       9,  // was 15
+  'Community building':          8,  // was 12
+  'Child safeguarding':          4,  // was ~8
+  'Surgical procedure':         18,  // was 20 — robotics advancing but still human-critical
+};
+
+In skillsDataNew.ts, merge at load time:
+skills.forEach(skill => {
+  if(SKILL_RISK_DELTA_2026[skill.name] !== undefined) {
+    skill.riskScore = SKILL_RISK_DELTA_2026[skill.name];
+  }
+});
+
+2B. Fix the radar chart blank-render bug.
+In SkillRiskCalculator.tsx, replace the current conditional:
+
+OLD:
+{selectedSkills.length >= 3 && <RadarChart skills={selectedSkills} />}
+
+NEW:
+{selectedSkills.length === 0 && (
+  <EmptySkillState message="Select skills above to see your risk profile." />
+)}
+{selectedSkills.length >= 1 && selectedSkills.length < 3 && (
+  <HorizontalBarChart skills={selectedSkills} />
+  // HorizontalBarChart: simple bar for each skill, name + score, color-coded
+)}
+{selectedSkills.length >= 3 && (
+  <RadarChart skills={selectedSkills} />
+)}
+
+2C. Fix custom skill Smart Default keyword scoring.
+OLD (binary):
+const isHuman = humanKeywords.some(k => name.includes(k));
+const isTech = techKeywords.some(k => name.includes(k));
+score = isHuman ? 12 : isTech ? 82 : 50;
+
+NEW (weighted blend):
+const HUMAN_KEYWORDS = ['empathy','relationship','trust','leadership','judgment',
+  'ethics','counsel','mentor','coach','presence','culture','crisis','community',
+  'care','wellbeing','conflict','negotiation','persuasion','diplomacy'];
+const TECH_KEYWORDS = ['code','script','automate','generate','report','analyse',
+  'data','document','draft','write','design','create','process','schedule',
+  'extract','classify','transcribe','summarise','calculate'];
+
+function scoreCustomSkill(name, industry) {
+  const lower = name.toLowerCase();
+  let humanHits = HUMAN_KEYWORDS.filter(k => lower.includes(k)).length;
+  let techHits  = TECH_KEYWORDS.filter(k => lower.includes(k)).length;
+  const total = humanHits + techHits;
+  let base;
+  if(total === 0) base = 50;
+  else if(techHits === 0) base = 10;  // pure human keywords
+  else if(humanHits === 0) base = 82; // pure tech keywords
+  else {
+    // Blend: weighted mix
+    base = Math.round((humanHits * 10 + techHits * 82) / total);
+  }
+  // Apply industry context
+  const industryMult = INDUSTRY_MULTIPLIERS_2026[industry] || 1.0;
+  return Math.min(98, Math.round(base * industryMult));
+}
+
+2D. Persist skill selections and weights.
+In SkillRiskCalculator.tsx:
+
+On every skill add/remove/weight-change:
+localStorage.setItem('hp_skill_selections', JSON.stringify(
+  selectedSkills.map(s => ({ name: s.name, weight: s.weight || 1.0 }))
+));
+
+On component mount:
+const saved = localStorage.getItem('hp_skill_selections');
+if(saved) {
+  const parsed = JSON.parse(saved);
+  const restored = parsed.map(s => {
+    const found = allSkills.find(sk => sk.name === s.name);
+    return found ? { ...found, weight: s.weight } : { name: s.name, riskScore: 50, weight: s.weight };
+  });
+  setSelectedSkills(restored);
+}
+
+2E. Add category-based fallback insight for all skills with no skillInsights.ts entry.
+In the skill insight render logic:
+
+function getSkillInsight(skill, jobContext) {
+  const explicit = skillInsights[skill.name];
+  if(explicit) return explicit;
+
+  // Fallback based on risk band + category
+  if(skill.riskScore >= 80) {
+    return {
+      threat: `AI tools can now automate the majority of ${skill.name.toLowerCase()} tasks. This skill is in the top-risk quartile across all industries in 2026.`,
+      pivot: `Shift to the strategic layer above this task: own the brief, the judgment call, and the quality bar — not the execution.`,
+      aiTools: [],
+      source: 'McKinsey Global Institute, The State of AI 2024'
+    };
+  } else if(skill.riskScore >= 50) {
+    return {
+      threat: `${skill.name} faces moderate AI augmentation. AI handles routine variants; complex, contextual cases remain human.`,
+      pivot: `Deepen expertise in the complex variants AI cannot handle. Build judgment that exceeds AI accuracy in edge cases.`,
+      aiTools: [],
+      source: 'WEF Future of Jobs 2025'
+    };
+  } else {
+    return {
+      why_protected: `${skill.name} requires human judgment, presence, or trust that AI cannot replicate with current 2026 capabilities.`,
+      action: `Formalise and document your expertise in this skill. Make your edge visible through leadership, mentoring, and portfolio evidence.`,
+      source: 'Anthropic Economic Index 2025'
+    };
+  }
+}
+
+══════════════════════════════════════════════════════
+SECTION 3 — HUMAN INDEX (HumanIrreplacibilityIndex.tsx)
+══════════════════════════════════════════════════════
+
+3A. Remove auto-advance. This is the highest-priority UX fix.
+
+FIND:
+setTimeout(() => { setCurrentQuestion(q + 1); }, 350);
+or any similar pattern.
+
+REPLACE with:
+setSelectedAnswer(answerIndex);
+setShowNext(true);
+// Render a "Next →" button that only appears after an answer is selected
+// The button advances to the next question when clicked
+
+Implementation:
+const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+const [showNext, setShowNext] = useState(false);
+
+function handleAnswer(qi: number, ai: number) {
+  setSelectedAnswer(ai);
+  setShowNext(true);
+  recordAnswer(qi, ai);
+}
+
+function handleNext() {
+  if(currentQuestion < QUIZ.length - 1) {
+    setCurrentQuestion(q => q + 1);
+    setSelectedAnswer(null);
+    setShowNext(false);
+  } else {
+    finishQuiz();
+  }
+}
+
+// In JSX:
+{showNext && (
+  <button onClick={handleNext} className="next-btn">
+    {currentQuestion < QUIZ.length - 1 ? 'Next →' : 'See my Human Index →'}
+  </button>
+)}
+
+3B. Add a third Physical Presence question.
+Append to the QUIZ array:
+{
+  id: 'phys-3',
+  dim: 'Physical',
+  q: 'Colleagues and clients who have worked with you remotely and in-person say:',
+  a: [
+    { text: 'Remote works just as well for everything we do',                      score: 1 },
+    { text: 'In-person is better for specific conversations, but remote is fine',   score: 2 },
+    { text: 'My physical skill or craft means I must be there — it cannot transfer', score: 5 },
+    { text: 'Real trust and authority in my field is only built face-to-face',       score: 4 },
+  ]
+}
+
+3C. Fix score inflation — normalise midpoint to 50.
+CURRENT: avg answer 3/5 → raw 3 → × 20 → dim score 60.
+PROBLEM: 60 is not neutral. The colour thresholds (≥75 emerald, 50–74 cyan, <50 orange) 
+         are calibrated to 50 = neutral but the formula means almost no one scores below 50.
+
+FIX: Remap the 1–5 scale to produce a true neutral at 50.
+const normaliseAnswer = (rawAnswer: number): number => {
+  // 1 → 0, 2 → 25, 3 → 50, 4 → 75, 5 → 100
+  return (rawAnswer - 1) * 25;
+};
+
+Replace in dim score calculation:
+dimScore = Σ(normaliseAnswer(answer)) / count  // already 0-100, no ×20 needed
+
+Re-anchor colour thresholds:
+≥75 → Emerald (strongly protected)
+50–74 → Cyan (moderately protected)
+25–49 → Orange (developing)
+<25 → Red (significant gap)
+
+3D. Replace flat-55 radar benchmark with role-specific profiles.
+Create: src/data/humanIndexBenchmarks.ts
+
+export const JOB_INDUSTRY_RADAR_AVG: Record<string, Record<string, number>> = {
+  swe:      { Empathic:52, Moral:54, Creative:62, Physical:35, Social:50, Contextual:51 },
+  analyst:  { Empathic:50, Moral:52, Creative:56, Physical:32, Social:48, Contextual:53 },
+  lawyer:   { Empathic:55, Moral:72, Creative:50, Physical:38, Social:60, Contextual:67 },
+  accountant:{ Empathic:50, Moral:58, Creative:44, Physical:35, Social:48, Contextual:55 },
+  teacher:  { Empathic:74, Moral:65, Creative:58, Physical:56, Social:65, Contextual:56 },
+  doctor:   { Empathic:70, Moral:74, Creative:52, Physical:62, Social:62, Contextual:59 },
+  designer: { Empathic:54, Moral:48, Creative:76, Physical:45, Social:56, Contextual:51 },
+  hr:       { Empathic:70, Moral:63, Creative:50, Physical:42, Social:66, Contextual:58 },
+  sales:    { Empathic:63, Moral:52, Creative:50, Physical:52, Social:74, Contextual:68 },
+  marketing:{ Empathic:58, Moral:50, Creative:66, Physical:40, Social:64, Contextual:54 },
+  default:  { Empathic:57, Moral:57, Creative:57, Physical:47, Social:57, Contextual:57 },
+};
+
+In the radar chart component:
+const jobBenchmark = JOB_INDUSTRY_RADAR_AVG[state.jobId] || JOB_INDUSTRY_RADAR_AVG.default;
+const benchmarkData = DIMENSIONS.map(d => jobBenchmark[d] || 55);
+// Use benchmarkData for the industry average dataset instead of Array(6).fill(55)
+
+3E. Add job-context weighting to Physical Presence dimension.
+For digital-native roles where physical presence is structurally low, reduce the
+weight so it doesn't unfairly penalise remote knowledge workers:
+
+const JOB_DIM_WEIGHTS: Record<string, Partial<Record<Dimension, number>>> = {
+  swe:       { Physical: 0.6, Creative: 1.3 },
+  analyst:   { Physical: 0.6, Contextual: 1.2 },
+  lawyer:    { Moral: 1.4, Contextual: 1.3, Physical: 0.7 },
+  accountant:{ Moral: 1.3, Physical: 0.65 },
+  teacher:   { Empathic: 1.4, Physical: 1.2, Moral: 1.2 },
+  doctor:    { Empathic: 1.3, Moral: 1.4, Physical: 1.2 },
+  designer:  { Creative: 1.5, Physical: 0.75 },
+  hr:        { Empathic: 1.3, Social: 1.2, Moral: 1.2 },
+  sales:     { Social: 1.4, Contextual: 1.3 },
+  marketing: { Creative: 1.3, Social: 1.2 },
+};
+
+Apply after raw dim scoring:
+const weights = JOB_DIM_WEIGHTS[jobId] || {};
+Object.keys(dims).forEach(d => {
+  dims[d] = Math.min(100, Math.round(dims[d] * (weights[d] || 1.0)));
+});
+
+══════════════════════════════════════════════════════
+SECTION 4 — SKILL INSIGHTS (skillInsights.ts)
+══════════════════════════════════════════════════════
+
+4A. Add SKILL_INSIGHTS_2026 with the following required fields per skill:
+{ threat, pivot, why_protected, action, aiTools: string[], source }
+
+Critical skills to add/update (minimum required set):
+
+'Legal research': {
+  threat: 'Harvey AI and Lexis+ AI complete associate-level legal research in minutes. Deployed in 40%+ of Am Law 100 firms as of Q1 2026.',
+  pivot: 'Own the research strategy layer: define scope, validate AI output quality, derive strategic implications. Move to regulatory strategy.',
+  aiTools: ['Harvey AI','Lexis+ AI','CoCounsel','Westlaw Edge'],
+  source: 'American Bar Foundation: AI in Legal Practice 2025'
+},
+'Bookkeeping': {
+  threat: 'Automated bookkeeping is effectively complete. QuickBooks AI, Xero AI, and FreshBooks handle 96% of standard entries with no human input.',
+  pivot: 'Exit bookkeeping entirely. Pivot to CFO advisory, complex tax strategy, M&A due diligence, or financial narrative for investors.',
+  aiTools: ['QuickBooks AI','Xero AI','Sage Copilot','FreshBooks'],
+  source: 'AICPA Future of Finance Report 2025'
+},
+'Code generation': {
+  threat: 'Cursor, Claude Code, GitHub Copilot, and Devin now write 60–80% of routine code autonomously. Junior developer code generation is largely automated.',
+  pivot: 'Shift to AI orchestration: direct, review, validate, and architect the systems AI builds. Own the why and the quality bar, not the typing.',
+  aiTools: ['Cursor','Claude Code','GitHub Copilot','Devin','Replit Agent'],
+  source: 'Anthropic Economic Index 2025 + Stack Overflow Developer Survey 2025'
+},
+'Image creation': {
+  threat: 'Midjourney v7, DALL-E 4, and Adobe Firefly 3 generate production-quality images in seconds. Stock image revenue fell 60%+ in 2024–2025.',
+  pivot: 'Shift to art direction: own the creative brief, the brand vision, and the curation of AI outputs. Become the creative director, not the creator.',
+  aiTools: ['Midjourney v7','DALL-E 4','Adobe Firefly 3','Stable Diffusion 3'],
+  source: 'Getty Images Market Report 2025; Adobe Creative Economy Study 2025'
+},
+'CV/resume screening': {
+  threat: '95%+ of Fortune 500 companies use AI-powered ATS that rank and filter candidates before any human reviews them.',
+  pivot: 'Own the hiring framework design: competency models, structured interview rubrics, assessment centres, and final-round human evaluation.',
+  aiTools: ['Greenhouse AI','Workday AI','HireVue','Paradox Olivia'],
+  source: 'SHRM HR Technology Survey 2025'
+},
+'Medical imaging analysis': {
+  threat: 'Med-Gemini and GPT-4V are deployed clinically and match specialist radiologist accuracy in 12+ scan categories for standard presentations.',
+  pivot: 'Lead AI governance in imaging, specialise in ambiguous/rare presentations, and own the multi-disciplinary clinical integration.',
+  aiTools: ['Med-Gemini','Rad AI','Aidoc','Nuance PowerScribe'],
+  source: 'NEJM AI Clinical Validation Study 2024; FDA AI/ML Medical Devices 2025'
+},
+'Ethical decision-making': {
+  why_protected: 'Licensed professionals carry legal, fiduciary, and reputational accountability that cannot be delegated to AI. Bar rules, medical ethics, and regulatory frameworks require a named, accountable human for every consequential decision.',
+  action: 'Build a visible track record of ethical leadership. Join your professional ethics committee. Write about ethical judgment in your field.',
+  source: 'ABA Model Rules of Professional Conduct 2024; GMC Good Medical Practice 2024'
+},
+'Crisis management': {
+  why_protected: 'Crisis response requires simultaneous reading of political context, personal relationships, institutional stakes, and live emotional dynamics — a multi-dimensional judgment AI produces only stochastic approximations of.',
+  action: 'Lead the next crisis simulation at your organisation. Build a documented crisis response playbook. Study the 2020–2025 corporate crisis archive.',
+  source: 'Harvard Kennedy School Crisis Leadership Programme 2024'
+},
+'Emotional support': {
+  why_protected: 'Authentic emotional attunement — reading unspoken feelings, adapting tone in real time, holding space for another person in distress — is rooted in embodied human experience. Research shows AI-provided emotional support is detected as inauthentic by 78% of users in clinical settings.',
+  action: 'Get trauma-informed care certification. Document your highest-impact emotional support moments in the Journal.',
+  source: 'MIT Media Lab: Human vs AI Emotional Support Study 2024'
+},
+'Complex deal closing': {
+  why_protected: 'High-stakes negotiations involve real-time reading of emotion, live power dynamics, creative option generation, and trust built through sustained human relationship. AI can model these but cannot navigate them.',
+  action: 'Specialise in enterprise or strategic account sales. Complete Ury & Fisher negotiation masterclass. Build a documented $500k+ deal track record.',
+  source: 'Harvard Negotiation Project 2024 Research Update'
+},
+'Courtroom advocacy': {
+  why_protected: 'Jury persuasion, credibility management, real-time adaptation to witness testimony, and reading courtroom dynamics are irreducibly human skills. No AI may currently appear as counsel in any jurisdiction.',
+  action: 'Build courtroom hours aggressively. Complete advanced trial advocacy training. Position this as your primary competitive differentiator.',
+  source: 'American Bar Association: Future of Legal Practice 2025'
+},
+'Patient communication': {
+  why_protected: 'Patients facing life-altering diagnoses require human presence, sustained eye contact, emotional validation, and the trust that comes from a real person who bears accountability for their care.',
+  action: 'Complete Narrative Medicine training (Columbia). Lead shared decision-making initiatives at your institution.',
+  source: 'BMJ: Patient-Clinician Communication in the AI Era 2024'
+},
+
+// Add minimum 40 more entries following this exact schema for all high-traffic skills.
+
+4B. Wire SKILL_INSIGHTS_2026 into both the Skill Risk Calculator results panel
+AND the protected/at-risk insight cards in the Job Risk Score results.
+
+For at-risk skills (riskScore >= 50):
+<div className="skill-insight">
+  <p className="risk-score">{skill.riskScore}% AI risk · 2026</p>
+  {insight.aiTools.length > 0 && (
+    <div className="ai-tools-row">
+      {insight.aiTools.map(t => <span className="ai-chip">{t}</span>)}
+    </div>
+  )}
+  <p className="threat-text">{insight.threat}</p>
+  <p className="pivot-text">→ {insight.pivot}</p>
+  <p className="source-text">Source: {insight.source}</p>
+</div>
+
+For protected skills (riskScore < 50):
+<div className="skill-insight">
+  <p className="safe-score">{skill.riskScore}% AI risk · strongly protected</p>
+  <p className="why-text">{insight.why_protected}</p>
+  <p className="action-text">→ {insight.action}</p>
+  <p className="source-text">Source: {insight.source}</p>
+</div>
+
+If no explicit insight found, use getSkillInsight() fallback from Section 2E — 
+never render an empty card.
+
+══════════════════════════════════════════════════════
+SECTION 5 — MY ROADMAP (UpskillingRoadmap.tsx + courseDatabase.ts)
+══════════════════════════════════════════════════════
+
+5A. Add bespoke roadmaps for the three missing roles.
+These are the highest-traffic missing roles. Add to ROLE_ROADMAPS object:
+
+SOFTWARE_ENGINEER: [
+  {
+    phase: 1, title: 'Master AI collaboration tooling',
+    weeks: '1–3',
+    description: 'Stop competing with AI — start directing it. Learn prompt engineering, AI-assisted architecture review, and how to validate AI-generated code at production quality.',
+    courses: [
+      { name: 'AI for Developers', provider: 'DeepLearning.ai', duration: '6hr', price: 'Free', difficulty: 2, skillImpact: 12, url: 'https://deeplearning.ai' },
+      { name: 'Prompt Engineering Professional', provider: 'Coursera', duration: '8hr', price: '$49', difficulty: 1, skillImpact: 10, url: 'https://coursera.org' },
+    ]
+  },
+  {
+    phase: 2, title: 'Deepen system design and architecture',
+    weeks: '4–8',
+    description: 'Distributed systems architecture and long-horizon design decisions are among the least automatable engineering skills. Invest here to widen the gap between you and AI.',
+    courses: [
+      { name: 'System Design Masterclass', provider: 'Educative', duration: '20hr', price: '$79', difficulty: 3, skillImpact: 15, url: 'https://educative.io' },
+      { name: 'Software Architecture Patterns', provider: "O'Reilly", duration: '12hr', price: '$49/mo', difficulty: 3, skillImpact: 12, url: 'https://oreilly.com' },
+    ]
+  },
+  {
+    phase: 3, title: 'Build technical leadership identity',
+    weeks: '9–12',
+    description: 'Communication, cross-functional influence, mentoring, and engineering strategy are 88%+ safe from AI in 2026. Become the human layer between AI systems and your organisation.',
+    courses: [
+      { name: 'Staff Engineer Career Path', provider: 'StaffEng.com', duration: '8hr', price: 'Free', difficulty: 2, skillImpact: 18, url: 'https://staffeng.com' },
+      { name: 'Engineering Leadership', provider: 'LinkedIn Learning', duration: '5hr', price: '$39', difficulty: 2, skillImpact: 14, url: 'https://linkedin.com/learning' },
+    ]
+  }
+],
+
+DATA_ANALYST: [
+  {
+    phase: 1, title: 'Become AI-augmented, not AI-replaced',
+    weeks: '1–3',
+    description: 'SQL and report-building are 90%+ automated in 2026. Your value is now in directing AI tools, validating outputs, and translating data into human decisions.',
+    courses: [
+      { name: 'AI-Powered Data Analysis', provider: 'Coursera', duration: '10hr', price: '$49', difficulty: 2, skillImpact: 14, url: 'https://coursera.org' },
+      { name: 'Business Intelligence Strategy', provider: 'Udemy', duration: '8hr', price: '$19', difficulty: 1, skillImpact: 10, url: 'https://udemy.com' },
+    ]
+  },
+  {
+    phase: 2, title: 'Master causal inference and strategic narrative',
+    weeks: '4–8',
+    description: 'The most AI-proof analyst skills are causal reasoning (AI does correlation, not causation) and translating data into executive decisions. These are your moat.',
+    courses: [
+      { name: 'Causal Inference Fundamentals', provider: 'Coursera', duration: '15hr', price: '$49', difficulty: 3, skillImpact: 18, url: 'https://coursera.org' },
+      { name: 'Data Storytelling for Executives', provider: 'DataCamp', duration: '6hr', price: '$35', difficulty: 2, skillImpact: 14, url: 'https://datacamp.com' },
+    ]
+  },
+  {
+    phase: 3, title: 'Expand into ML model governance',
+    weeks: '9–12',
+    description: 'Understanding ML models well enough to validate, challenge, and explain them to non-technical stakeholders is a uniquely human skill that will grow in value.',
+    courses: [
+      { name: 'ML Governance for Analysts', provider: 'DataCamp', duration: '8hr', price: '$45', difficulty: 3, skillImpact: 16, url: 'https://datacamp.com' },
+      { name: 'Communicating Data Science to Executives', provider: 'LinkedIn Learning', duration: '4hr', price: '$29', difficulty: 2, skillImpact: 12, url: 'https://linkedin.com/learning' },
+    ]
+  }
+],
+
+MARKETING_MANAGER: [
+  // Same 3-phase structure for Marketing role
+  // Phase 1: AI content operations mastery
+  // Phase 2: Brand strategy and consumer psychology
+  // Phase 3: Crisis communications and community leadership
+]
+
+5B. Fix the "Start Week 1" broken button.
+FIND: onClick={() => alert('Coming soon!')} or similar placeholder.
+REPLACE:
+function startRoadmap() {
+  const roadmapData = {
+    startDate: new Date().toISOString(),
+    jobId: state.jobId,
+    jobTitle: state.jobTitle,
+    score: state.jobRiskScore ?? state.skillRiskScore,
+    phase1Title: currentRoadmap[0]?.title,
+    weekGoals: currentRoadmap[0]?.courses?.map(c => c.name) || [],
+  };
+  localStorage.setItem('hp_roadmap_active', JSON.stringify(roadmapData));
+  
+  // Update progress tracker to show roadmap started
+  dispatch({ type: 'SET_ROADMAP_STARTED', payload: roadmapData });
+  
+  // Show confirmation toast
+  showToast('Week 1 goals saved! Your progress tracker will monitor your score improvement.');
+  
+  // Scroll to the first course
+  document.getElementById('phase-1-courses')?.scrollIntoView({ behavior: 'smooth' });
+}
+
+5C. Show missing personalisation warning when roadmap is in Mode B fallback.
+Add at the top of the roadmap component:
+
+const isPersonalised = state.skillBreakdown?.length > 0;
+const isBespoke = ROLE_ROADMAPS[state.jobId] !== undefined;
+
+if(!isPersonalised && !isBespoke) {
+  return (
+    <div className="personalisation-warning">
+      <p>Your roadmap is using example skills because you haven't completed the Skill Risk Calculator yet.</p>
+      <button onClick={() => switchTab('skill-risk')}>Complete Skill Calculator for a personalised plan →</button>
+    </div>
+  );
+}
+
+5D. Add intent question before skill-based roadmap renders (Mode B only).
+When top-risk skills are identified but before courses are shown, ask:
+
+For each of the top 3 risk skills, render:
+<div className="intent-card">
+  <p className="skill-name">{skill.name} <span className="risk-badge">{skill.riskScore}% AI risk</span></p>
+  <div className="intent-options">
+    <button onClick={() => setIntent(skill.name, 'protect')} className={intent[skill.name]==='protect'?'active':''}>
+      Protect this skill
+    </button>
+    <button onClick={() => setIntent(skill.name, 'pivot')} className={intent[skill.name]==='pivot'?'active':''}>
+      Pivot away from this skill
+    </button>
+  </div>
+</div>
+
+Only generate courses for skills with intent === 'protect'.
+For skills with intent === 'pivot', show alternative career direction suggestions instead.
+
+5E. Wire up difficulty display.
+The difficulty data already exists in courseDatabase.ts but is not rendered.
+In each CourseCard component, add:
+
+const DIFFICULTY_LABELS = { 1: 'Beginner', 2: 'Intermediate', 3: 'Advanced' };
+const DIFFICULTY_DOTS = { 1: '●○○', 2: '●●○', 3: '●●●' };
+
+<span className="difficulty-badge">
+  {DIFFICULTY_DOTS[course.difficulty]} {DIFFICULTY_LABELS[course.difficulty]}
+</span>
+
+Also add: <span className="last-verified">Prices verified {course.lastVerified || '2025'}</span>
+
+══════════════════════════════════════════════════════
+SECTION 6 — JOURNAL (HumanEdgeJournal.tsx)
+══════════════════════════════════════════════════════
+
+6A. Handle null humanScore snapshot gracefully.
+FIND where humanScore is attached to journal entries.
+
+CURRENT:
+const entry = { ...formData, humanScore: state.humanScore, date: new Date() };
+
+ADD null guard in the render:
+{entry.humanScore != null
+  ? <span className="score-badge">Human Index: {entry.humanScore}</span>
+  : <span className="score-prompt" onClick={() => switchTab('assessment')}>
+      Take the Human Index quiz to attach a score →
+    </span>
+}
+
+6B. Fix PDF export line-overflow bug.
+In the jsPDF export function, replace the addText call for entry bodies:
+
+CURRENT (overflows):
+doc.text(entry.body, marginLeft, y);
+
+REPLACE WITH:
+const maxWidth = pageWidth - marginLeft - marginRight;
+const lines = doc.splitTextToSize(entry.body, maxWidth);
+lines.forEach((line: string) => {
+  if(y > pageHeight - 40) {
+    doc.addPage();
+    y = 40;
+  }
+  doc.text(line, marginLeft, y);
+  y += lineHeight;
+});
+
+Also add a safety check at the start of each entry (before title, not just body):
+if(y > pageHeight - 80) {
+  doc.addPage();
+  y = 40;
+}
+
+══════════════════════════════════════════════════════
+SECTION 7 — MY PROGRESS (ScoreDriftTracker.tsx + scoreStorage.ts)
+══════════════════════════════════════════════════════
+
+7A. Fix the axis label to explain the plot score inversion.
+The Y-axis label must communicate that Job/Skill Risk scores are inverted.
+
+In the Recharts chart:
+<YAxis
+  label={{
+    value: 'AI resilience strength (higher = safer)',
+    angle: -90,
+    position: 'insideLeft',
+    style: { fontSize: 11 }
+  }}
+/>
+
+In the custom tooltip:
+function CustomTooltip({ payload, label }) {
+  if(!payload?.length) return null;
+  return (
+    <div className="tooltip">
+      <p>{label}</p>
+      {payload.map(p => (
+        <p key={p.name} style={{ color: p.color }}>
+          {p.name}: {p.value}
+          {p.dataKey.includes('job') || p.dataKey.includes('skill')
+            ? ` (raw score: ${100 - p.value} — inverted for comparison)`
+            : ''
+          }
+        </p>
+      ))}
+    </div>
+  );
+}
+
+7B. Fix deduplication — filter by source before comparing timestamps.
+In scoreStorage.ts getScoreDrift or wherever deduplication runs:
+
+FIND ANY pattern like:
+const last = history[history.length - 1];
+if(Date.now() - last.timestamp < 86400000 && Math.abs(score - last.score) <= 5) return;
+
+REPLACE WITH:
+function shouldSaveScore(newScore: number, source: string, history: ScoreEntry[]): boolean {
+  const sourceHistory = history
+    .filter(e => e.source === source)
+    .sort((a, b) => b.timestamp - a.timestamp);
+  
+  if(sourceHistory.length === 0) return true;
+  
+  const last = sourceHistory[0];
+  const hoursSince = (Date.now() - last.timestamp) / 3600000;
+  const delta = Math.abs(newScore - last.score);
+  
+  // Source-specific thresholds
+  const thresholds: Record<string, number> = {
+    'human-index': 8,   // wider tolerance — quiz variance is natural
+    'job-risk':    4,   // tighter — meaningful change matters more
+    'skill-risk':  6,   // medium
+  };
+  const threshold = thresholds[source] || 5;
+  
+  return hoursSince > 24 || delta > threshold;
+}
+
+7C. Fix single-point chart rendering.
+Recharts LineChart with 1 data point renders a zero-length line — looks broken.
+
+REPLACE the chart render conditional:
+{historyBySource.length === 0 && <EmptyProgressState />}
+{historyBySource.length === 1 && (
+  <SinglePointState score={historyBySource[0].plotScore} date={historyBySource[0].date} />
+  // SinglePointState: a large centred dot with "1 assessment completed. 
+  //   Retake in 2+ weeks for a meaningful trend."
+)}
+{historyBySource.length >= 2 && (
+  <RechartsLineChart data={chartData} />
+)}
+
+7D. Fix drift banner threshold — make it adaptive per score type.
+In the drift detection function:
+
+const DRIFT_THRESHOLDS: Record<string, number> = {
+  'human-index': 8,
+  'job-risk':    4,
+  'skill-risk':  6,
+};
+
+const threshold = DRIFT_THRESHOLDS[entry.source] || 5;
+const driftMagnitude = Math.abs(plotScore - previousPlotScore);
+if(driftMagnitude >= threshold) showDriftBanner(entry.source, driftMagnitude, direction);
+
+7E. Add "Roadmap started" annotation to the progress chart.
+If hp_roadmap_active exists in localStorage, add a vertical reference line annotation
+at the roadmap start date on the Recharts chart:
+
+import { ReferenceLine } from 'recharts';
+const roadmapStart = JSON.parse(localStorage.getItem('hp_roadmap_active') || 'null');
+
+{roadmapStart && (
+  <ReferenceLine
+    x={formatDate(roadmapStart.startDate)}
+    stroke="#3ecfb8"
+    strokeDasharray="4 4"
+    label={{ value: 'Roadmap started', position: 'top', fontSize: 11 }}
+  />
+)}
+
+══════════════════════════════════════════════════════
+SECTION 8 — SHARE CARD (ShareableScoreCard.tsx)
+══════════════════════════════════════════════════════
+
+8A. Fix score display priority — apply polarity correction.
+CURRENT (wrong):
+displayScore = humanScore ?? skillRiskScore ?? jobRiskScore ?? 72
+
+PROBLEM: skillRiskScore and jobRiskScore are danger scores (higher = worse).
+humanScore is a protection score (higher = better). Displaying them raw on the
+same card with no context is misleading.
+
+REPLACE:
+function getDisplayScore(state) {
+  if(state.humanScore != null) return { score: state.humanScore, label: 'Human Index', direction: 'higher' };
+  if(state.skillRiskScore != null) return { score: 100 - state.skillRiskScore, label: 'Skill Safety', direction: 'higher' };
+  if(state.jobRiskScore != null) return { score: 100 - state.jobRiskScore, label: 'Role Safety', direction: 'higher' };
+  return { score: null, label: null, direction: null };
+}
+
+8B. Fix footer year to always be current.
+FIND any hardcoded year string e.g. "Q1 2026" or "2025" or "2026".
+REPLACE:
+const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
+const currentYear = new Date().getFullYear();
+const datestamp = `Q${currentQuarter} ${currentYear}`;
+// Renders: "Q2 2026" etc. — always correct, never stale.
+
+8C. Add 2026 research benchmark context line to the card.
+In the share card JSX, below the score number:
+<p className="benchmark-note">
+  Assessed against 2026 AI displacement benchmarks
+</p>
+<p className="benchmark-source">
+  Sources: WEF 2025 · McKinsey 2024 · Anthropic Economic Index 2025
+</p>
+
+8D. Fix html2canvas CSS variable resolution for PNG export.
+html2canvas cannot resolve CSS custom properties. Add explicit overrides
+on the card element before capture:
+
+async function downloadCard() {
+  const card = document.getElementById('share-card');
+
+  // Temporarily apply hardcoded values
+  const tempStyles = {
+    background: isDark ? '#0f1118' : '#ffffff',
+    color: isDark ? '#e8e5dc' : '#1a1a1a',
+  };
+  Object.assign(card.style, tempStyles);
+  card.querySelectorAll('.score-num').forEach(el => (el.style.color = '#f5a623'));
+  card.querySelectorAll('.safe-label').forEach(el => (el.style.color = '#3ecfb8'));
+  card.querySelectorAll('.risk-label').forEach(el => (el.style.color = '#e05555'));
+
+  const canvas = await html2canvas(card, { scale: 2, useCORS: true });
+
+  // Restore
+  Object.keys(tempStyles).forEach(k => (card.style[k] = ''));
+
+  const link = document.createElement('a');
+  link.download = 'my-humanproof-score.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+══════════════════════════════════════════════════════
+SECTION 9 — GLOBAL CONTEXT + STATE (HumanProofContext.tsx)
+══════════════════════════════════════════════════════
+
+9A. Add missing state fields to the context interface.
+
+interface HumanProofState {
+  // EXISTING
+  jobId: string | null;
+  industry: string | null;
+  jobTitle: string | null;
+  jobRiskScore: number | null;
+  skillRiskScore: number | null;
+  humanScore: number | null;
+  selectedSkills: SkillWithWeight[];
+  skillBreakdown: SkillScore[];
+  humanDimensions: Record<string, number>;
+  userName: string | null;
+  // ADD THESE
+  roadmapStarted: boolean;
+  roadmapStartDate: string | null;
+  roadmapJobId: string | null;
+  skillIntents: Record<string, 'protect' | 'pivot'>;  // from roadmap intent question
+  assessmentTimestamp: number | null;                  // when the latest assessment ran
+  quizAnswers: number[];                               // persist across navigation
+}
+
+Add reducer cases:
+case 'SET_ROADMAP_STARTED':
+  return { ...state, roadmapStarted: true, roadmapStartDate: action.payload.startDate, roadmapJobId: action.payload.jobId };
+case 'SET_SKILL_INTENTS':
+  return { ...state, skillIntents: { ...state.skillIntents, ...action.payload } };
+case 'SET_ASSESSMENT_TIMESTAMP':
+  return { ...state, assessmentTimestamp: Date.now() };
+
+9B. Add SET_JOB_ID action (distinct from SET_JOB_RISK).
+The job ID is a standardised slug (e.g. 'swe', 'lawyer', 'teacher') used to key
+all job-specific data. Job title is the user-typed freeform string. They are different.
+
+case 'SET_JOB_ID':
+  return { ...state, jobId: action.payload };
+
+Dispatch this in the Calculator page's job selection handler,
+wherever the user picks a work type or the system resolves a title to an ID.
+
+9C. Cross-tab dependency warning system.
+Add a helper: getDependencyWarnings(state: HumanProofState): Warning[]
+
+function getDependencyWarnings(state) {
+  const warnings = [];
+  if(!state.skillRiskScore && !state.jobRiskScore) {
+    warnings.push({ tab: 'roadmap', message: 'Complete Job Risk or Skill Risk calculator for a personalised roadmap.', action: 'skill-risk' });
+  }
+  if(!state.humanScore) {
+    warnings.push({ tab: 'progress', message: 'Complete the Human Index quiz to see your full progress chart.', action: 'assessment' });
+  }
+  if(!state.jobId && state.skillRiskScore) {
+    warnings.push({ tab: 'skill-risk', message: 'Complete Job Risk first for role-aware skill insights.', action: 'job-risk' });
+  }
+  return warnings;
+}
+
+Render active warnings as a dismissible banner at the top of the relevant tab.
+
+══════════════════════════════════════════════════════
+SECTION 10 — DISPLACEMENT FORECAST (DisplacementForecast.tsx + riskCalculations.ts)
+══════════════════════════════════════════════════════
+
+10A. Fix year labels — always start from current year.
+const baseYear = new Date().getFullYear();  // 2026
+const FORECAST_LABELS = Array.from({ length: 4 }, (_, i) => String(baseYear + i));
+// Now: ['2026', '2027', '2028', '2029']  — or extend to 6 years for 2031
+
+10B. Replace single-factor scenarios with role-specific decay factors.
+const ROLE_FORECAST_FACTORS: Record<string, { opt: number; base: number; pes: number }> = {
+  accountant:  { opt: 0.9,  base: 4.0,  pes: 7.5  },
+  analyst:     { opt: 0.8,  base: 3.2,  pes: 6.5  },
+  designer:    { opt: 0.7,  base: 3.5,  pes: 7.0  },
+  hr:          { opt: 0.7,  base: 2.8,  pes: 5.5  },
+  swe:         { opt: 0.6,  base: 2.5,  pes: 5.2  },
+  marketing:   { opt: 0.8,  base: 3.0,  pes: 6.2  },
+  lawyer:      { opt: 0.5,  base: 2.2,  pes: 4.5  },
+  sales:       { opt: 0.5,  base: 2.0,  pes: 4.2  },
+  teacher:     { opt: 0.3,  base: 1.2,  pes: 2.5  },
+  doctor:      { opt: 0.2,  base: 1.0,  pes: 2.2  },
+  default:     { opt: 0.7,  base: 2.8,  pes: 5.5  },
+};
+
+const factors = ROLE_FORECAST_FACTORS[state.jobId] || ROLE_FORECAST_FACTORS.default;
+
+10C. Make the displacement threshold line role-specific.
+OLD: const HIGH_RISK_LINE = 70;  // hardcoded
+
+NEW:
+const ROLE_RISK_THRESHOLD: Record<string, number> = {
+  accountant: 72,  analyst: 68,  designer: 65,  hr: 60,
+  swe: 65,  marketing: 68,  lawyer: 55,  sales: 58,
+  teacher: 52,  doctor: 48,  default: 65,
+};
+const threshold = ROLE_RISK_THRESHOLD[state.jobId] || 65;
+
+// Update the reference line:
+<ReferenceLine
+  y={threshold}
+  stroke="#e05555"
+  strokeDasharray="4 4"
+  label={`Displacement threshold (${state.jobTitle || 'your role'}): ${threshold}`}
+/>
+
+10D. Show what score the forecast is based on.
+Add a contextual note below the chart:
+const forecastInput = state.skillRiskScore ?? state.jobRiskScore ?? null;
+const forecastSource = state.skillRiskScore != null ? 'Skill Risk' : state.jobRiskScore != null ? 'Job Risk' : null;
+
+{forecastSource
+  ? <p className="forecast-note">Forecast based on your {forecastSource} score of {forecastInput}/100.</p>
+  : <p className="forecast-note warning">
+      No risk score found. Complete Job Risk or Skill Risk for a personalised forecast.
+      <button onClick={() => switchTab('job-risk')}>Calculate now →</button>
+    </p>
+}
+
+══════════════════════════════════════════════════════
+SECTION 11 — RESEARCH SOURCES (new file: src/data/sources2026.ts)
+══════════════════════════════════════════════════════
+
+11A. Create src/data/sources2026.ts with a RESEARCH_SOURCES_2026 export.
+Surface this as a collapsible "Research sources" section at the bottom
+of results panels in Job Risk, Skill Risk, and Human Index.
+
+export const RESEARCH_SOURCES_2026 = [
+  {
+    name: 'WEF Future of Jobs Report 2025',
+    url: 'https://www.weforum.org/publications/the-future-of-jobs-report-2025/',
+    key_finding: '170M new roles expected by 2030; 70M displaced. 39% of core skills will change by 2030.',
+    applies_to: ['job-risk','skill-risk']
+  },
+  {
+    name: 'McKinsey Global Institute: The State of AI 2024',
+    url: 'https://mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai',
+    key_finding: 'GenAI could automate 70% of knowledge worker hours by 2030. Productivity gains concentrated in top performers.',
+    applies_to: ['job-risk','skill-risk','forecast']
+  },
+  {
+    name: 'Anthropic Economic Index 2025',
+    url: 'https://www.anthropic.com/news/the-anthropic-economic-index',
+    key_finding: '36% of occupations use Claude for 25%+ of tasks. Substitution outpaces augmentation in CS and legal research.',
+    applies_to: ['skill-risk','job-risk']
+  },
+  {
+    name: 'Goldman Sachs: AI and the Labour Market 2024',
+    url: 'https://www.goldmansachs.com/intelligence/pages/generative-ai-could-raise-global-gdp-by-7-percent.html',
+    key_finding: '300M full-time jobs exposed globally. 2/3 of US jobs have significant AI exposure.',
+    applies_to: ['job-risk','forecast']
+  },
+  {
+    name: 'LinkedIn AI Jobs Outlook 2025',
+    url: 'https://economicgraph.linkedin.com/research/future-of-work-report-ai',
+    key_finding: 'AI literacy now top-5 skill requirement for 68% of job postings. Skills changing faster than any prior period.',
+    applies_to: ['skill-risk','roadmap']
+  },
+  {
+    name: 'MIT Work of the Future: AI and Jobs 2024',
+    url: 'https://workofthefuture.mit.edu/',
+    key_finding: 'Task decomposability, not job title, is the primary predictor of AI substitution. Physical and relational tasks most protected.',
+    applies_to: ['human-index','skill-risk']
+  },
+  {
+    name: 'NBER: Generative AI at Work 2024',
+    url: 'https://www.nber.org/papers/w31161',
+    key_finding: 'AI raises productivity 14% avg but reduces skill premium for junior workers by 34%. Experience shield weakening.',
+    applies_to: ['job-risk','human-index']
+  },
+  {
+    name: 'Oxford Martin School: Future of Work 2025',
+    url: 'https://www.oxfordmartin.ox.ac.uk/future-of-work/',
+    key_finding: '47% of US occupations at high automation risk (revised upward). Creative and social roles remain most protected.',
+    applies_to: ['job-risk','human-index']
+  },
+];
+
+══════════════════════════════════════════════════════
+SECTION 12 — UI / ACCESSIBILITY / MOBILE FIXES
+══════════════════════════════════════════════════════
+
+12A. Responsive layout fixes.
+Replace any hardcoded column grids with responsive equivalents:
+grid-template-columns: 1fr 1fr 1fr
+→ grid-template-columns: repeat(auto-fit, minmax(260px, 1fr))
+
+12B. Add ARIA labels to all chart canvases.
+<canvas
+  id="radarChart"
+  role="img"
+  aria-label={`Radar chart showing your 6 human dimension scores. 
+    Highest dimension: ${topDimension} at ${humanDimensions[topDimension]}/100`}
+/>
+
+12C. Add keyboard navigation to the quiz.
+Answer buttons must be focusable and respond to Enter/Space:
+<button
+  className={`answer-btn ${selectedAnswer === ai ? 'selected' : ''}`}
+  onClick={() => handleAnswer(qi, ai)}
+  onKeyDown={e => { if(e.key === 'Enter' || e.key === ' ') handleAnswer(qi, ai); }}
+  tabIndex={0}
+  role="radio"
+  aria-checked={selectedAnswer === ai}
+>
+  {answer.text}
+</button>
+Wrap the answer group in: <div role="radiogroup" aria-label={question.q}>
+
+12D. Add a "Data last updated" timestamp to every results page.
+In footer of Job Risk results, Skill Risk results, and Human Index results:
+<p className="data-timestamp">
+  Risk scores calibrated against 2026 AI capability benchmarks.
+  Last updated: March 2026.
+</p>
+
+══════════════════════════════════════════════════════
+SECTION 13 — QUALITY CHECKLIST (run after all changes)
+══════════════════════════════════════════════════════
+
+Verify each item before marking complete:
+
+JOB RISK:
+[ ] D2 weight is 28%, not 15%
+[ ] D5 weight is 5%, not 10%
+[ ] Compound boost uses tiered ×1.12/1.22/1.35, not flat ×1.08
+[ ] Technology industry split into sub-sectors
+[ ] Experience specialist multiplier applies correctly for titled roles
+[ ] Score timeline labels are compressed (85-99 = 6-18 months, not 12-18)
+
+SKILL RISK:
+[ ] SKILL_RISK_DELTA_2026 patch applied — verify 'Code generation' shows 93, not 88
+[ ] Radar chart renders horizontal bars for 1-2 skills, not blank canvas
+[ ] Custom skill keyword blend works — "automated leadership reporting" ≠ 12 and ≠ 82
+[ ] Skill selections AND weights persist in localStorage through navigation
+[ ] Every skill card has at least a fallback insight — zero empty cards
+
+HUMAN INDEX:
+[ ] Auto-advance 350ms removed — "Next →" button required to advance
+[ ] Physical Presence has 3 questions
+[ ] Score midpoint normalised: answer 3/5 now produces dimScore 50 not 60
+[ ] Radar benchmark uses role-specific JOB_INDUSTRY_RADAR_AVG, not flat 55
+[ ] Colour thresholds updated: ≥75 emerald, 50-74 cyan, 25-49 orange, <25 red
+
+ROADMAP:
+[ ] Software Engineer has a bespoke 3-phase plan (not Mode B fallback)
+[ ] Data Analyst has a bespoke 3-phase plan
+[ ] Marketing Manager has a bespoke 3-phase plan
+[ ] "Start Week 1" saves to localStorage and shows toast — no more alert()
+[ ] Personalisation warning shown when roadmap is generic
+[ ] Intent question appears for Mode B before courses render
+[ ] Difficulty badges (●○○/●●○/●●●) render on every course card
+
+JOURNAL:
+[ ] Null humanScore shows "Take the quiz" prompt, not empty field
+[ ] PDF addPage() triggers before page overflow, not after
+
+PROGRESS:
+[ ] Y-axis label says "AI resilience strength (higher = safer)"
+[ ] Tooltip shows raw score alongside plotted score with inversion note
+[ ] Deduplication filters by source BEFORE comparing timestamps
+[ ] 1-point chart renders as large dot + message, not broken line
+[ ] Drift thresholds: human-index=8, job-risk=4, skill-risk=6
+[ ] Roadmap start date shown as reference line annotation
+
+SHARE CARD:
+[ ] displayScore uses humanScore or 100-riskScore, not raw riskScore
+[ ] Footer year uses dynamic currentQuarter + currentYear
+[ ] "2026 AI displacement benchmarks" context line present
+[ ] html2canvas capture applies hardcoded hex override before capture
+
+GLOBAL:
+[ ] All 8 research sources in sources2026.ts
+[ ] sources2026.ts renders as collapsible section on results pages
+[ ] Cross-tab dependency warnings render for incomplete journeys
+[ ] All chart Y-axes start at 0, max at 100
+[ ] No hardcoded year strings anywhere except dynamically computed
+
+END OF MASTER PROMPT.

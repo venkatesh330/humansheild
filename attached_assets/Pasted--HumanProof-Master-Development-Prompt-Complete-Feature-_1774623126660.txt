@@ -1,0 +1,524 @@
+# HumanProof — Master Development Prompt
+### Complete Feature Build Guide (v2.0)
+---
+
+## CRITICAL RULE — READ FIRST
+
+> **DO NOT modify, remove, or refactor the existing Job-Based Risk Score Calculator in any way.**
+> It is the current live feature. All new features are additive — they extend the app, they do not replace anything.
+> The existing calculator remains fully functional and visible at all times.
+> Treat the existing code as read-only unless explicitly stated otherwise below.
+
+---
+
+## APP CONTEXT
+
+**App name:** HumanProof — AI Job Displacement Risk Calculator
+**Current live feature:** Job-Based Risk Score Calculator (scores risk by job title)
+**Stack:** React + Tailwind CSS (Lovable/Vite project)
+**Design language:** Clean, modern, professional. Dark-friendly. No gradients.
+
+---
+
+## ARCHITECTURE OVERVIEW
+
+The app will now have TWO parallel calculators + a suite of supporting features:
+
+```
+HumanProof
+├── [EXISTING — DO NOT TOUCH] Job Risk Calculator     ← scores by job title
+├── [NEW] Skill Risk Calculator                        ← scores by individual skills
+├── [NEW] Human Irreplaceability Index                 ← psychometric quiz
+├── [NEW] Displacement Timeline Forecast               ← 1yr/3yr/5yr projections
+├── [NEW] Shareable Score Card                         ← viral share image
+├── [NEW] Upskilling Roadmap                           ← course recommendations
+├── [NEW] Weekly Digest Signup                         ← email capture
+├── [NEW] Score Drift Tracker                          ← change over time
+└── [NEW] Human Edge Journal                           ← personal log
+```
+
+Navigation should use a top tab bar or sidebar. The existing calculator lives under a tab labelled **"Job Risk Score"**. New features get their own tabs.
+
+---
+
+## FEATURE 1 — SKILL-BASED RISK SCORE CALCULATOR (NEW — HIGH PRIORITY)
+
+### What to build
+A second calculator that scores individual skills (not job titles) against current AI capability. Users add their skills manually or from a preset list. Each skill gets a risk score 0–100. The output is a radar/spider chart of their full skill profile.
+
+### UI requirements
+- Input: searchable dropdown of 200+ pre-loaded skills + free-text "add your own skill"
+- User can add up to 20 skills
+- Each skill shows: skill name, risk score (0–100), risk label (Safe / Moderate / At Risk / Critical)
+- Output view: radar chart (use Recharts RadarChart) showing all skills
+- Below chart: top 3 safest skills highlighted in green, top 3 most at-risk in red
+- CTA button: "See your upskilling roadmap" (links to Feature 5)
+- CTA button: "Share your skill profile" (links to Feature 4)
+
+### Skill taxonomy data (seed this as a JS constant — `skillsData.js`)
+Build the following categories with at least 15 skills each and a riskScore (0–100):
+
+```js
+// Example structure — expand to 200+ skills
+export const skillsData = [
+  // TECHNICAL
+  { id: 1, name: "Data entry", category: "Technical", riskScore: 97, trend: "rising" },
+  { id: 2, name: "Basic coding", category: "Technical", riskScore: 71, trend: "rising" },
+  { id: 3, name: "System architecture", category: "Technical", riskScore: 28, trend: "stable" },
+  { id: 4, name: "Spreadsheet modelling", category: "Technical", riskScore: 84, trend: "rising" },
+  { id: 5, name: "Cybersecurity analysis", category: "Technical", riskScore: 32, trend: "stable" },
+  // CREATIVE
+  { id: 6, name: "Graphic design (templates)", category: "Creative", riskScore: 79, trend: "rising" },
+  { id: 7, name: "Brand strategy", category: "Creative", riskScore: 21, trend: "stable" },
+  { id: 8, name: "Original illustration", category: "Creative", riskScore: 44, trend: "rising" },
+  { id: 9, name: "Creative direction", category: "Creative", riskScore: 18, trend: "stable" },
+  // INTERPERSONAL
+  { id: 10, name: "Negotiation", category: "Interpersonal", riskScore: 9, trend: "stable" },
+  { id: 11, name: "Cold calling/sales", category: "Interpersonal", riskScore: 52, trend: "rising" },
+  { id: 12, name: "Leadership coaching", category: "Interpersonal", riskScore: 7, trend: "stable" },
+  { id: 13, name: "Crisis counselling", category: "Interpersonal", riskScore: 4, trend: "stable" },
+  // ANALYTICAL
+  { id: 14, name: "Financial modelling", category: "Analytical", riskScore: 68, trend: "rising" },
+  { id: 15, name: "Strategic planning", category: "Analytical", riskScore: 22, trend: "stable" },
+  { id: 16, name: "Data visualisation", category: "Analytical", riskScore: 61, trend: "rising" },
+  { id: 17, name: "Legal research", category: "Analytical", riskScore: 88, trend: "rising" },
+  // PHYSICAL/TRADE
+  { id: 18, name: "Plumbing", category: "Trades", riskScore: 11, trend: "stable" },
+  { id: 19, name: "Electrical wiring", category: "Trades", riskScore: 13, trend: "stable" },
+  { id: 20, name: "Surgical procedures", category: "Trades", riskScore: 15, trend: "stable" },
+];
+// Add 180+ more skills across all categories following this exact structure
+```
+
+### Risk label logic
+```js
+const getRiskLabel = (score) => {
+  if (score >= 85) return { label: "Critical", color: "red" };
+  if (score >= 65) return { label: "At Risk", color: "orange" };
+  if (score >= 40) return { label: "Moderate", color: "yellow" };
+  return { label: "Safe", color: "green" };
+};
+```
+
+### Component file: `SkillRiskCalculator.jsx`
+
+---
+
+## FEATURE 2 — HUMAN IRREPLACEABILITY INDEX (NEW)
+
+### What to build
+A 15-question psychometric quiz that scores the user across 6 "human dimensions" that AI cannot replicate. Output: a pentagon/spider chart showing their Human Signature + an overall Human Score out of 100.
+
+### The 6 dimensions
+1. **Empathic reasoning** — reading emotion, building trust
+2. **Moral judgment** — ethics in ambiguous situations
+3. **Creative intuition** — making leaps without data
+4. **Physical presence** — embodied, tactile skills
+5. **Social influence** — leadership, persuasion, charisma
+6. **Contextual trust** — relationships that can't be transferred
+
+### Sample questions (build all 15, 2–3 per dimension)
+```js
+export const quizQuestions = [
+  {
+    id: 1,
+    dimension: "empathic",
+    question: "A colleague seems distracted in a meeting but isn't saying anything. What do you do?",
+    options: [
+      { text: "Continue the meeting — not my place to ask", score: 1 },
+      { text: "Note it and check in privately afterwards", score: 3 },
+      { text: "Gently create space for them to speak if they want to", score: 5 },
+      { text: "Pause the meeting and address the room", score: 4 },
+    ]
+  },
+  // ... 14 more questions
+];
+```
+
+### Output
+- Spider/radar chart (Recharts) with 6 axes — one per dimension
+- Overall Human Score: weighted average × 20 (scale 0–100)
+- Personalised statement: "Your strongest human edge is [top dimension]"
+- Share button (links to Feature 4)
+
+### Component file: `HumanIrreplacibilityIndex.jsx`
+
+---
+
+## FEATURE 3 — DISPLACEMENT TIMELINE FORECAST (NEW)
+
+### What to build
+After the user completes either calculator, show a line chart projecting their risk score over 1, 3, and 5 years. Based on a growth curve applied to their current score.
+
+### Projection logic
+```js
+// Conservative growth model based on historical automation adoption curves
+const projectRisk = (currentScore, years) => {
+  // Scores above 70 grow faster (already in automation zone)
+  // Scores below 30 grow slowly (human-critical roles)
+  const accelerationFactor = currentScore > 70 ? 1.4 : currentScore > 40 ? 1.15 : 1.04;
+  return Math.min(99, Math.round(currentScore * Math.pow(accelerationFactor, years / 3)));
+};
+
+// Output 3 scenarios: Optimistic, Base, Pessimistic
+const scenarios = {
+  optimistic: { factor: 0.85, label: "If you upskill actively" },
+  base: { factor: 1.0, label: "Current trajectory" },
+  pessimistic: { factor: 1.2, label: "If AI adoption accelerates" },
+};
+```
+
+### UI
+- Recharts LineChart with 3 lines (green=optimistic, gray=base, red=pessimistic)
+- X axis: Now / 1 year / 3 years / 5 years
+- Y axis: Risk score 0–100
+- Annotation: "At current pace, your risk could reach [X] by [year]"
+- CTA: "Start your upskilling plan now" (links to Feature 5)
+
+### Component file: `DisplacementForecast.jsx`
+
+---
+
+## FEATURE 4 — SHAREABLE SCORE CARD (NEW — VIRAL LOOP)
+
+### What to build
+A visually designed card that users can download as a PNG or share directly to LinkedIn/X/WhatsApp. Generated from their assessment results using `html2canvas` or `dom-to-image`.
+
+### Card design spec (build as a React component that gets screenshotted)
+```
+┌─────────────────────────────────────┐
+│  HumanProof                    2026 │
+│                                     │
+│  [USER NAME]                        │
+│  [Job Title]                        │
+│                                     │
+│      HUMAN SCORE                    │
+│         78/100                      │
+│                                     │
+│  ● Safe skills: 4                   │
+│  ● At-risk skills: 2                │
+│  ● Top strength: Negotiation        │
+│                                     │
+│  "More human-proof than 71% of      │
+│   people in your industry"          │
+│                                     │
+│  humanproof.app  [QR or URL]        │
+└─────────────────────────────────────┘
+```
+
+### Share mechanics
+```jsx
+// Share button logic
+const shareToLinkedIn = (imageDataUrl) => {
+  // LinkedIn sharing API — opens compose window with image
+  const url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent('https://human-edge-finder.lovable.app')}`;
+  window.open(url, '_blank');
+};
+
+const downloadCard = async () => {
+  const canvas = await html2canvas(document.getElementById('score-card'));
+  const link = document.createElement('a');
+  link.download = 'my-humanproof-score.png';
+  link.href = canvas.toDataURL();
+  link.click();
+};
+```
+
+### Dependencies to install
+```bash
+npm install html2canvas
+```
+
+### Component file: `ShareableScoreCard.jsx`
+
+---
+
+## FEATURE 5 — PERSONALISED UPSKILLING ROADMAP (NEW — REVENUE)
+
+### What to build
+After scoring, the app generates a 90-day upskilling plan targeting the user's 3 highest-risk skills. Each skill maps to 2–3 recommended courses. All course links are affiliate links.
+
+### Course database structure
+```js
+// courseDatabase.js
+export const courseDatabase = {
+  "Data entry": [
+    {
+      title: "Power Automate for Business",
+      provider: "Coursera",
+      duration: "8 hours",
+      price: "$49",
+      affiliateUrl: "https://coursera.org/...",
+      skillImpact: "+12 safety points",
+      description: "Learn to automate repetitive tasks instead of doing them"
+    },
+  ],
+  "Financial modelling": [
+    {
+      title: "Advanced Financial Modelling",
+      provider: "LinkedIn Learning",
+      duration: "12 hours",
+      price: "$39",
+      affiliateUrl: "https://linkedin.com/learning/...",
+      skillImpact: "+9 safety points",
+      description: "Move from execution to strategic interpretation"
+    },
+  ],
+  // Map every skill in skillsData to 2-3 courses
+};
+```
+
+### UI requirements
+- Show 3 skill cards (highest risk skills)
+- Each card expands to show 2–3 course options
+- Show "Projected score improvement" for each course
+- Week-by-week 90-day plan timeline (visual)
+- Total estimated time investment shown
+- "Start Week 1" CTA
+
+### Component file: `UpskillingRoadmap.jsx`
+
+---
+
+## FEATURE 6 — SCORE DRIFT TRACKER (NEW — RETENTION)
+
+### What to build
+Store the user's score in localStorage with a timestamp. On return visits, compare to previous score and show change. Surface a "Your score changed" banner when drift > 5 points.
+
+### Implementation
+```js
+// scoreStorage.js
+export const saveScore = (score, source) => {
+  const entry = {
+    score,
+    source, // 'job' | 'skill' | 'human-index'
+    timestamp: new Date().toISOString(),
+  };
+  const history = JSON.parse(localStorage.getItem('hp_score_history') || '[]');
+  history.push(entry);
+  localStorage.setItem('hp_score_history', JSON.stringify(history));
+};
+
+export const getScoreHistory = () => {
+  return JSON.parse(localStorage.getItem('hp_score_history') || '[]');
+};
+
+export const getScoreDrift = () => {
+  const history = getScoreHistory();
+  if (history.length < 2) return null;
+  const latest = history[history.length - 1].score;
+  const previous = history[history.length - 2].score;
+  return {
+    change: latest - previous,
+    direction: latest > previous ? 'increased' : 'decreased',
+    previousDate: history[history.length - 2].timestamp,
+  };
+};
+```
+
+### UI
+- On app load: check for drift. If drift > 5, show a banner: "Your risk score increased by 8 points since your last visit — here's why"
+- History view: small line chart of all past scores over time
+- Explanation of why scores drift (link to AI news feed)
+
+### Component file: `ScoreDriftTracker.jsx`
+
+---
+
+## FEATURE 7 — HUMAN EDGE JOURNAL (NEW — RETENTION)
+
+### What to build
+A private journaling feature where users log moments their human skills made a difference. Entries are stored in localStorage. Users can export all entries as a "Human Edge Report" PDF.
+
+### Data structure
+```js
+// journal entry structure
+{
+  id: uuid(),
+  date: "2026-03-27",
+  dimension: "empathic", // one of the 6 dimensions
+  title: "Resolved team conflict",
+  body: "Mediated a heated disagreement between two developers by reading the underlying tension...",
+  tags: ["leadership", "conflict resolution"],
+  humanScore: 78, // their score at time of writing
+}
+```
+
+### UI requirements
+- "New Entry" button → modal with dimension picker, title, free-text body, tags
+- Journal feed: reverse-chronological list of entries with dimension badge
+- Search/filter by dimension or tag
+- Export button: generates styled PDF of all entries titled "My Human Edge Report"
+- Stats: "You've logged [X] human-edge moments" counter
+
+### PDF export
+Use `jsPDF` for export. Each entry on a clean page with the HumanProof header.
+```bash
+npm install jspdf
+```
+
+### Component file: `HumanEdgeJournal.jsx`
+
+---
+
+## FEATURE 8 — WEEKLY DIGEST EMAIL SIGNUP (NEW — GROWTH)
+
+### What to build
+A non-intrusive email capture widget that appears after the user completes any assessment. Promises personalised weekly AI threat news for their role.
+
+### UI
+- Modal or slide-in panel: "Get your weekly AI threat brief"
+- Copy: "Every Monday — 5 AI developments that affect [their job title] specifically. No fluff."
+- Email input + "Subscribe free" button
+- Store in localStorage to never show again after signup
+- Connect to Mailchimp / ConvertKit API (or just store emails in a Supabase table for now)
+
+### Component file: `DigestSignup.jsx`
+
+---
+
+## NAVIGATION STRUCTURE
+
+Build a clean top navigation with these tabs:
+
+```
+[Job Risk Score] [Skill Risk Score] [Human Index] [My Roadmap] [Journal] [My Progress]
+```
+
+Rules:
+- "Job Risk Score" tab = existing calculator. Do not modify its internal code.
+- All other tabs = new components mounted alongside it
+- Active tab highlighted with underline/accent
+- Mobile: collapse to hamburger menu or bottom tab bar
+- User's latest scores shown in a persistent top bar: "Job Risk: 68 | Skill Risk: 54 | Human Score: 79"
+
+---
+
+## SHARED STATE — GLOBAL CONTEXT
+
+Create a `HumanProofContext.jsx` that holds:
+
+```js
+const defaultState = {
+  // Job calculator (existing — read only from here, do not modify source)
+  jobRiskScore: null,
+  jobTitle: null,
+  // Skill calculator (new)
+  skillRiskScore: null,
+  selectedSkills: [],
+  skillBreakdown: [],
+  // Human index (new)
+  humanScore: null,
+  humanDimensions: {},
+  // Meta
+  userName: null,
+  industry: null,
+  lastUpdated: null,
+};
+```
+
+Use `React.createContext` + `useReducer`. Wrap the entire app in this provider. This allows the share card, roadmap, journal, and drift tracker to all read from one source of truth.
+
+---
+
+## DESIGN SYSTEM
+
+Follow the existing app's design language. Apply these rules to all new components:
+
+- **Colors:** Use Tailwind classes only. No hardcoded hex.
+- **Risk colours:** green-500 (safe), yellow-500 (moderate), orange-500 (at risk), red-600 (critical)
+- **Cards:** `bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6`
+- **Buttons primary:** `bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 font-medium`
+- **Section headers:** `text-2xl font-semibold text-gray-900 dark:text-white`
+- **Body text:** `text-gray-600 dark:text-gray-400 text-sm leading-relaxed`
+- **Charts:** Use Recharts exclusively (already in Lovable stack)
+- **No gradients. No shadows heavier than shadow-sm. No decorative borders.**
+
+---
+
+## FILE STRUCTURE TO CREATE
+
+```
+src/
+├── components/
+│   ├── [EXISTING — DO NOT TOUCH] existing calculator files
+│   ├── SkillRiskCalculator.jsx          ← Feature 1
+│   ├── HumanIrreplacibilityIndex.jsx    ← Feature 2
+│   ├── DisplacementForecast.jsx         ← Feature 3
+│   ├── ShareableScoreCard.jsx           ← Feature 4
+│   ├── UpskillingRoadmap.jsx            ← Feature 5
+│   ├── ScoreDriftTracker.jsx            ← Feature 6
+│   ├── HumanEdgeJournal.jsx             ← Feature 7
+│   ├── DigestSignup.jsx                 ← Feature 8
+│   └── Navigation.jsx                  ← New top nav
+├── context/
+│   └── HumanProofContext.jsx            ← Global state
+├── data/
+│   ├── skillsData.js                   ← 200+ skills with risk scores
+│   ├── courseDatabase.js               ← Courses mapped to skills
+│   └── quizQuestions.js               ← 15 psychometric questions
+└── utils/
+    ├── scoreStorage.js                 ← localStorage score history
+    ├── riskCalculations.js             ← shared scoring logic
+    └── shareCard.js                   ← html2canvas share logic
+```
+
+---
+
+## BUILD ORDER (follow this sequence exactly)
+
+**Phase 1 — Foundation (do first, no user-visible changes)**
+1. Create `HumanProofContext.jsx` with global state
+2. Create `skillsData.js` with 200+ skills
+3. Create `scoreStorage.js` for localStorage
+4. Create `Navigation.jsx` — add tabs but keep existing calculator as default active tab
+5. Wrap App.jsx in the new context provider
+
+**Phase 2 — Core new features**
+6. Build `SkillRiskCalculator.jsx` — the second main calculator
+7. Build `DisplacementForecast.jsx` — timeline chart
+8. Integrate ScoreDriftTracker into the app shell (runs on load silently)
+
+**Phase 3 — Engagement features**
+9. Build `HumanIrreplacibilityIndex.jsx`
+10. Build `UpskillingRoadmap.jsx` with course links
+11. Build `ShareableScoreCard.jsx`
+
+**Phase 4 — Retention features**
+12. Build `HumanEdgeJournal.jsx`
+13. Build `DigestSignup.jsx`
+14. Final QA: confirm existing Job Risk Calculator is 100% unchanged
+
+---
+
+## ABSOLUTE RULES FOR THE AI CODING AGENT
+
+1. **Never edit or delete any existing calculator component, hook, or utility.**
+2. **Never change the existing routing or entry point of the current calculator.**
+3. **All new features are new files only.** Additive, never destructive.
+4. **If you need to modify `App.jsx` or `main.jsx`, only ADD new routes/tabs. Never remove existing ones.**
+5. **All new components must be fully self-contained** — they import from context and data files, not from the existing calculator's internal state.
+6. **Mobile responsive is mandatory** for every new component. Test at 375px width.
+7. **Dark mode support is mandatory** — use Tailwind `dark:` variants on every element.
+8. **No external API calls in Phase 1–3** — all data is local constants. API integration comes later.
+9. **localStorage is the only persistence layer** for now — no Supabase/Firebase until explicitly requested.
+10. **All Recharts components must have `ResponsiveContainer` as their wrapper** — no fixed pixel widths.
+
+---
+
+## TESTING CHECKLIST (verify after each phase)
+
+- [ ] Original job-based risk calculator still works exactly as before
+- [ ] Navigation tabs all render correctly on desktop and mobile
+- [ ] Skill calculator accepts input, renders radar chart, shows breakdown
+- [ ] Displacement forecast chart renders with 3 scenario lines
+- [ ] Share card generates a downloadable PNG
+- [ ] Upskilling roadmap shows correct courses for the highest-risk skills
+- [ ] Journal creates, displays, and exports entries correctly
+- [ ] Score history is saved and loaded from localStorage correctly
+- [ ] All components render correctly in dark mode
+- [ ] No console errors on any route
+
+---
+
+*End of master prompt. Use this document as the complete specification when prompting Lovable, Cursor, Bolt, or any AI coding agent. Feed it section by section — start with Phase 1, confirm it works, then proceed to Phase 2.*

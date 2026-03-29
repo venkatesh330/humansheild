@@ -1,0 +1,806 @@
+# HumanProof Platform — Master Fix Prompt
+
+You are a senior full-stack engineer and UX architect working on the HumanProof platform — a React + Vite SPA with six interconnected AI-risk assessment tools. Your task is to systematically fix every accuracy, logic, UX, data, and navigation issue identified in the full platform audit. Work through each section in order. Do not skip sections. Every fix must maintain full backward compatibility with existing localStorage keys and context schema unless explicitly told to migrate them.
+
+---
+
+## SECTION 1 — Job Risk Score (riskEngine.ts)
+
+### 1.1 Fix D2/D3 Multicollinearity
+D2 (Disruption Velocity, 28%) and D3 (AI Replaceability, 30%) are correlated constructs and double-count displacement pressure. Rebalance the formula weights as follows:
+
+```
+NEW formula: Score = D1×0.25 + D2×0.18 + D3×0.27 + D4×0.18 + D5×0.12
+```
+
+Rationale: D5 (Country) weight increases from 5% to 12% to reflect 2026 geopolitical AI divergence. D4 (Experience) increases from 15% to 18% — seniority is more protective in 2026 as entry-level automation accelerates. D2 decreases to 18% to reduce double-counting with D3. Keep D1 and D3 as primary drivers.
+
+### 1.2 Smooth the Compound Boost — Remove Hard Cliffs
+Replace the three hard-threshold boost tiers with a continuous sigmoid-style multiplier:
+
+```typescript
+// OLD — creates score cliffs at exact threshold values
+if (D1 > 90 && augmentation < 10) score *= 1.35;
+else if (D1 > 80 && augmentation < 20) score *= 1.22;
+else if (D1 > 70 && augmentation < 30) score *= 1.12;
+
+// NEW — smooth continuous boost, no cliff at D1=89 vs D1=91
+const displacementPressure = (D1 / 100) * (1 - augmentation / 100);
+const boostMultiplier = 1 + (0.35 * Math.pow(displacementPressure, 2.5));
+score *= Math.min(boostMultiplier, 1.40); // cap at 1.40x
+```
+
+### 1.3 Widen the Score Clamp
+Change the clamp from 8-99 to 3-97:
+```typescript
+// OLD
+return Math.min(99, Math.max(8, Math.round(score)));
+// NEW
+return Math.min(97, Math.max(3, Math.round(score)));
+```
+
+Roles like clinical therapist, trauma surgeon, and master craftsperson should be able to score 3-7. Roles like telephone data entry operator should be able to reach 97.
+
+### 1.4 Fix D5 Country Data for 2026
+Update COUNTRY_DATA to reflect 2026 AI adoption benchmarks. The format is [AI_adoption_percentage, digital_infrastructure_index]. Apply these updated values for key markets that have shifted significantly:
+
+```typescript
+// Significantly updated 2026 values (sample — apply pattern to all 70+ countries)
+'United States': [0.87, 0.93],   // was ~0.78, 0.89 — accelerated enterprise AI deployment
+'China': [0.82, 0.88],           // was ~0.71, 0.82 — domestic LLM rollout at scale
+'United Kingdom': [0.74, 0.86],  // was ~0.66, 0.83
+'India': [0.58, 0.71],           // was ~0.48, 0.65 — significant jump
+'Germany': [0.69, 0.88],         // was ~0.61, 0.87
+'Brazil': [0.42, 0.61],          // was ~0.38, 0.58
+'Nigeria': [0.28, 0.41],         // was ~0.22, 0.36
+'Japan': [0.71, 0.90],           // was ~0.62, 0.88
+'Australia': [0.76, 0.90],       // was ~0.68, 0.88
+'Canada': [0.79, 0.91],          // was ~0.72, 0.88
+```
+
+D5 score formula: `D5 = (adoption * 0.65 + infrastructure * 0.35) * 100`
+
+### 1.5 Expand REPLACEMENT_2026_OVERRIDES
+The current 20-role override list is insufficient. Expand to cover at minimum the top 60 highest-traffic role/industry combinations. Add the following categories of roles that are currently unoverridden but have high 2026 displacement:
+
+```typescript
+// Add these role patterns with their 2026 override scores
+'paralegal_legal': { D3: 88, D2: 82 },           // LexisAI, Harvey AI expansion
+'junior_accountant_finance': { D3: 91, D2: 87 },  // AI bookkeeping maturation
+'radiologist_healthcare': { D3: 72, D2: 78 },     // FDA-cleared AI diagnostics
+'content_moderator_tech': { D3: 94, D2: 91 },     // multimodal AI moderation
+'travel_agent_hospitality': { D3: 89, D2: 84 },   // AI itinerary generation
+'insurance_underwriter_finance': { D3: 85, D2: 83 },
+'loan_officer_finance': { D3: 88, D2: 85 },
+'junior_designer_creative': { D3: 79, D2: 86 },   // Midjourney, Firefly gen 3+
+'market_research_analyst_marketing': { D3: 82, D2: 79 },
+'customer_service_rep_retail': { D3: 93, D2: 90 },
+// ... extend to 60 total
+```
+
+### 1.6 Update Industry Multipliers for 2026
+```typescript
+// Review and update these multipliers to reflect 2026 AI penetration rates
+finance_fintech: 1.42,    // was 1.38 — agentic trading and compliance AI accelerated
+healthcare: 0.60,         // was 0.65 — slight decrease: FDA-cleared diagnostics AI now certified
+mental_health: 0.48,      // was 0.60 — human requirement remains strong; therapists MORE valued
+education: 0.68,          // was 0.72 — AI tutors growing but human teachers needed for complex pedagogy
+legal: 1.18,              // NEW — legal research/drafting heavily automated by Harvey, CoCounsel
+manufacturing: 1.28,      // NEW — physical + cognitive automation (robotics + LLMs combined)
+logistics: 1.35,          // NEW — route optimization + warehouse AI
+creative_agency: 1.15,    // NEW — generative AI disrupting junior creative roles
+architecture: 0.78,       // NEW — complex physical judgment + client relationship protection
+social_work: 0.42,        // NEW — human-irreplaceable relationships and legal authority
+```
+
+---
+
+## SECTION 2 — Skill Risk Calculator (SkillRiskCalculator.tsx + skillsDataNew.ts + skillInsights.ts)
+
+### 2.1 Apply 2026 Delta Patches to All 228 Skills
+Currently only 45 of 228 skills have 2026 score patches. Apply updated risk scores to ALL skills. Use this framework to update the remaining 183:
+
+Group the unpatch skills by category and apply calibration adjustments:
+
+```typescript
+// Technology category — accelerate risk scores upward for routine tech skills
+const TECH_2026_ADJUSTMENTS = {
+  'SQL querying': 71,          // AI can write SQL (GitHub Copilot, Cursor)
+  'HTML/CSS coding': 68,       // v0, Webflow AI, Cursor handle most HTML
+  'Excel formulas': 79,        // Copilot for Excel automates formula creation
+  'PowerPoint design': 73,     // Copilot, Gamma, Beautiful.ai
+  'Basic Python scripting': 65, // Cursor, Copilot write most utility scripts
+  'API integration': 58,       // still requires judgment but tooling is AI-assisted
+};
+
+// Interpersonal/Human category — protect and reduce risk scores
+const HUMAN_2026_ADJUSTMENTS = {
+  'Conflict resolution': 8,    // no AI substitute for human mediators
+  'Cultural sensitivity': 6,   // requires lived human experience
+  'Mentoring and coaching': 9, // trust-dependent, human-essential
+  'Grief counselling': 4,      // deeply irreplaceable
+  'Team motivation': 11,       // partially aided by AI analytics but execution is human
+  'Stakeholder persuasion': 14, // nuanced relationship work
+  'Crisis communication': 16,  // requires real-time human judgment
+};
+
+// Apply these calibration groups to generate a complete updated skill array
+// Every skill must have an explicit 2026 riskScore — no skill should use a default
+```
+
+### 2.2 Fix Custom Skill Scoring — Replace Keyword Heuristic
+The current system (keyword hit ratio × 86) has no semantic understanding. Replace with a two-layer scoring approach:
+
+```typescript
+function scoreCustomSkill(skillName: string, industry: string | null): number {
+  const name = skillName.toLowerCase();
+  
+  // Layer 1: Hard override blocklist — skills that contain tech keywords 
+  // but are actually PROTECTIVE in 2026
+  const PROTECTIVE_DESPITE_TECH = [
+    'ai ethics', 'ai governance', 'ai audit', 'machine learning ethics',
+    'algorithm bias', 'responsible ai', 'ai policy', 'tech regulation',
+    'data privacy', 'cybersecurity strategy', 'digital transformation leadership',
+    'prompt engineering oversight', 'ai risk management'
+  ];
+  if (PROTECTIVE_DESPITE_TECH.some(p => name.includes(p))) {
+    return Math.round(8 + Math.random() * 7); // 8-15 range — highly protective
+  }
+  
+  // Layer 2: Hard override list — skills that sound human but are automatable
+  const AUTOMATABLE_DESPITE_HUMAN_SOUND = [
+    'data entry', 'form filling', 'scheduling', 'appointment booking',
+    'invoice processing', 'expense reporting', 'basic bookkeeping',
+    'file organization', 'meeting notes', 'email sorting'
+  ];
+  if (AUTOMATABLE_DESPITE_HUMAN_SOUND.some(p => name.includes(p))) {
+    return Math.round(82 + Math.random() * 10); // 82-92 range
+  }
+  
+  // Layer 3: Existing keyword scoring with improved weights
+  const HUMAN_KEYWORDS = [/* existing 31 */];
+  const TECH_KEYWORDS = [/* existing 28 */];
+  const humanHits = HUMAN_KEYWORDS.filter(k => name.includes(k)).length;
+  const techHits = TECH_KEYWORDS.filter(k => name.includes(k)).length;
+  const total = humanHits + techHits || 1;
+  
+  // Base score — use a more conservative range (10-82 instead of 10-86)
+  let base = (techHits / total) * 82 + (humanHits / total) * 10;
+  
+  // Layer 4: Industry context modifier
+  const INDUSTRY_RISK_MODIFIERS: Record<string, number> = {
+    'finance': 1.12, 'legal': 1.10, 'marketing': 1.08,
+    'healthcare': 0.82, 'mental_health': 0.72, 'education': 0.88,
+    'social_work': 0.70, 'architecture': 0.85
+  };
+  const industryKey = industry?.toLowerCase().replace(/\s+/g, '_') || null;
+  if (industryKey && INDUSTRY_RISK_MODIFIERS[industryKey]) {
+    base *= INDUSTRY_RISK_MODIFIERS[industryKey];
+  }
+  
+  return Math.min(92, Math.max(8, Math.round(base)));
+}
+```
+
+### 2.3 Fix At-Risk Skill Suggestions — Make aiTools[] Industry-Aware
+Currently `aiTools[]` arrays on skill cards are hardcoded regardless of user's industry. Fix this:
+
+```typescript
+// In the riskiest skills panel, filter aiTools by industry relevance
+function getRelevantAITools(skill: WeightedSkill, industry: string | null): string[] {
+  const allTools = skill.aiTools || [];
+  
+  // Tools that are industry-inappropriate — filter out by industry context
+  const TOOL_INDUSTRY_EXCLUSIONS: Record<string, string[]> = {
+    healthcare: ['Midjourney', 'DALL-E', 'Jasper', 'Copy.ai', 'Gamma'],
+    legal: ['Midjourney', 'DALL-E', 'Stable Diffusion', 'RunwayML'],
+    education: ['RunwayML', 'Sora', 'ElevenLabs'],
+    social_work: ['Midjourney', 'DALL-E', 'Jasper', 'RunwayML', 'Sora'],
+    mental_health: ['Midjourney', 'DALL-E', 'Jasper', 'Copy.ai']
+  };
+  
+  const industryKey = industry?.toLowerCase().replace(/\s+/g, '_') || null;
+  if (!industryKey || !TOOL_INDUSTRY_EXCLUSIONS[industryKey]) return allTools;
+  
+  const excluded = TOOL_INDUSTRY_EXCLUSIONS[industryKey];
+  const filtered = allTools.filter(tool => !excluded.includes(tool));
+  return filtered.length > 0 ? filtered : allTools.slice(0, 2); // always show ≥1 tool
+}
+```
+
+### 2.4 Fix Protected Skills — Replace Category Fallbacks with Skill-Specific Insights
+The current getSkillInsight() returns generic category advice for ~183 of 228 skills. Expand SKILL_INSIGHTS_2026 to cover all 228 skills. Each entry must be unique and specific. Structure:
+
+```typescript
+interface SkillInsight {
+  why_protected: string;    // specific reason THIS skill is protected (not just category)
+  action: string;           // specific action for THIS skill in 2026
+  source: string;           // specific research citation
+  industry_note?: string;   // optional — if protection varies significantly by industry
+  risk_horizon?: string;    // when might this change? "2027+" "2030+" "Protected indefinitely"
+}
+
+// Example of the specificity required (do this for all 228):
+SKILL_INSIGHTS_2026['Conflict Resolution'] = {
+  why_protected: 'Requires trust, physical presence, and cultural nuance that AI cannot replicate — mediators consistently outperform AI in emotionally charged disputes',
+  action: 'Pursue formal accreditation (CPP, CMC) and document case outcomes as evidence of irreplaceability',
+  source: 'Harvard Negotiation Project 2024; MIT Sloan AI + Human Work Study 2025',
+  industry_note: 'Especially protected in legal, HR, and social work contexts',
+  risk_horizon: 'Protected indefinitely for complex disputes; AI may handle simple conflicts by 2028'
+};
+```
+
+### 2.5 Add Skill Trend Direction Indicators
+Each skill card should show whether the risk is trending up or down based on the delta between the pre-2026 score and the 2026 score. Add a `trendDelta` field to SkillEntry:
+
+```typescript
+// In skillRiskDelta2026.ts, when patching skills, compute delta
+const originalScore = originalSkill.riskScore;
+const updatedScore = patch.riskScore;
+skill.trendDelta = updatedScore - originalScore; // positive = getting riskier, negative = getting safer
+skill.trendLabel = trendDelta > 5 ? '↑ Accelerating risk' : trendDelta < -5 ? '↓ Risk declining' : '→ Stable';
+```
+
+Display this trend direction on skill cards with colour coding (red arrow up, green arrow down).
+
+---
+
+## SECTION 3 — Human Irreplacibility Index (HumanIrreplacibilityIndex.tsx + quizQuestions.ts)
+
+### 3.1 Expand Quiz from 15 to 30 Questions
+15 questions across 6 dimensions gives 2.5 questions per dimension — statistically unreliable (Cronbach α ~0.4). Expand to 30 questions (5 per dimension minimum):
+
+```typescript
+// Each dimension must have exactly 5 questions minimum
+// Question format:
+{
+  id: 16, // continue from existing IDs
+  dimension: 'empathic',
+  text: 'When someone in your team is struggling personally, what do you typically do?',
+  options: [
+    { text: 'I focus on the work — personal issues should be kept separate', score: 1 },
+    { text: 'I acknowledge the situation briefly then redirect to tasks', score: 2 },
+    { text: 'I check in genuinely and adjust workload if needed', score: 3 },
+    { text: 'I take time to understand fully, adjust plans, and follow up over days', score: 4 }
+  ]
+}
+```
+
+Add 3 reverse-scored questions per quiz (one per two dimensions) to detect acquiescence bias:
+```typescript
+// Reverse-scored: a person with high empathic intelligence should score LOW on these
+{
+  id: 28,
+  dimension: 'empathic',
+  reverse_scored: true, // flag for scoring engine
+  text: 'When someone becomes emotional in a meeting, what is your first instinct?',
+  options: [
+    { text: 'I feel uncomfortable and want to move past it quickly', score: 4 }, // reverse: high score = low empathy
+    { text: 'I acknowledge it briefly but steer back to the agenda', score: 3 },
+    { text: 'I pause and let them express themselves', score: 2 },
+    { text: 'I fully engage with what they are feeling before continuing', score: 1 }
+  ]
+}
+// In scoring engine: if question.reverse_scored, flip score: adjustedScore = 5 - rawScore
+```
+
+### 3.2 Add Behavioral Anchors to Answer Options
+Replace vague "1-4" options with behaviorally anchored rating scale (BARS) descriptions as shown in 3.1. Every question must have concrete behavioral descriptors, not abstract scales.
+
+### 3.3 Expand JOB_DIM_WEIGHTS Coverage
+Document and verify that JOB_DIM_WEIGHTS covers at minimum these 30 job types (add any missing):
+
+doctor, nurse, therapist, teacher, lawyer, architect, engineer, data_scientist, product_manager, designer, writer, marketer, sales_rep, customer_service, accountant, hr_manager, social_worker, police_officer, military, chef, artist, journalist, consultant, project_manager, entrepreneur, researcher, pharmacist, physical_therapist, real_estate_agent, financial_advisor
+
+For each: define weights for all 6 dimensions (empathic, moral, creative, physical, social, contextual) that sum to approximately 6.0 (equal weighting × number of dimensions).
+
+### 3.4 Add Quiz Progress Save to localStorage
+Currently answers are only in local state — navigating away loses all progress. Save progress:
+
+```typescript
+// On each answer, persist to localStorage
+const QUIZ_PROGRESS_KEY = 'hp_quiz_progress';
+localStorage.setItem(QUIZ_PROGRESS_KEY, JSON.stringify({ 
+  answers: currentAnswers, 
+  currentQuestion: questionIndex,
+  timestamp: Date.now()
+}));
+
+// On component mount, check for saved progress and offer resume
+const saved = localStorage.getItem(QUIZ_PROGRESS_KEY);
+if (saved) {
+  const { answers, currentQuestion, timestamp } = JSON.parse(saved);
+  const ageHours = (Date.now() - timestamp) / 3600000;
+  if (ageHours < 24) {
+    setShowResumePrompt(true); // show "Resume quiz?" banner
+  } else {
+    localStorage.removeItem(QUIZ_PROGRESS_KEY); // expire after 24h
+  }
+}
+```
+
+---
+
+## SECTION 4 — My Roadmap (UpskillingRoadmap.tsx + DisplacementForecast.tsx + courseDatabase.ts)
+
+### 4.1 Expand Curated Job Roadmaps — Minimum 20 Role Types
+Currently only 3 job types have curated roadmaps (software engineer, data analyst, marketing). Add curated roadmaps for at minimum:
+
+lawyer, doctor, teacher, nurse, accountant, hr_manager, designer, product_manager, writer, consultant, architect, social_worker, financial_advisor, real_estate_agent, project_manager, researcher, journalist, chef, engineer (non-software), customer_service_manager
+
+Each roadmap must follow the existing 3-phase structure (Phase 1: Foundation, Phase 2: Differentiation, Phase 3: Leadership/Specialisation) with:
+- Phase label + realistic week count
+- Minimum 3 weekly milestones per phase
+- Minimum 4 course cards per phase (title, description, provider, duration, price, difficulty, skillImpact)
+- At least 2 of the 4 courses must be free or under $100
+
+### 4.2 Expand deriveJobKey() — 30+ Role Categories
+Replace the 10-category system with at minimum 30 categories, with broader keyword matching:
+
+```typescript
+function deriveJobKey(jobTitle: string | null): string {
+  if (!jobTitle) return 'generic';
+  const t = jobTitle.toLowerCase();
+  
+  // Legal
+  if (/lawyer|solicitor|barrister|attorney|legal|paralegal|counsel/.test(t)) return 'legal';
+  // Healthcare — clinical
+  if (/doctor|physician|surgeon|gp|consultant physician/.test(t)) return 'physician';
+  // Healthcare — nursing
+  if (/nurse|midwife|health visitor|district nurse/.test(t)) return 'nurse';
+  // Healthcare — therapy
+  if (/therapist|counsellor|psychologist|psychiatrist|social worker/.test(t)) return 'therapist';
+  // Education
+  if (/teacher|lecturer|professor|tutor|educator|teaching assistant/.test(t)) return 'teacher';
+  // Finance
+  if (/accountant|auditor|bookkeeper|cpa|chartered/.test(t)) return 'accountant';
+  if (/financial advisor|wealth manager|financial planner/.test(t)) return 'financial_advisor';
+  if (/analyst|investment|portfolio|equities|trading/.test(t)) return 'finance_analyst';
+  // Architecture + Design
+  if (/architect(?! data|software|enterprise)/.test(t)) return 'architect';
+  if (/interior design|ux designer|ui designer|graphic design|product design/.test(t)) return 'designer';
+  // Engineering
+  if (/software engineer|software developer|full.?stack|backend|frontend/.test(t)) return 'software_engineer';
+  if (/data engineer|data scientist|ml engineer|machine learning/.test(t)) return 'data_scientist';
+  if (/mechanical engineer|civil engineer|structural engineer/.test(t)) return 'mechanical_engineer';
+  // ... extend for all 30+ categories
+  
+  return 'generic';
+}
+```
+
+### 4.3 Fix the Fallback Skills — Make them Context-Aware
+Replace the three hardcoded fallback skills (Data entry, Spreadsheet modelling, Market research) with context-aware defaults based on the user's industry from context:
+
+```typescript
+const INDUSTRY_FALLBACK_SKILLS: Record<string, Array<{name: string, riskScore: number}>> = {
+  healthcare: [
+    { name: 'Medical documentation', riskScore: 72 },
+    { name: 'Clinical coding', riskScore: 68 },
+    { name: 'Patient intake processing', riskScore: 81 }
+  ],
+  legal: [
+    { name: 'Legal research', riskScore: 83 },
+    { name: 'Contract drafting', riskScore: 78 },
+    { name: 'Case file management', riskScore: 86 }
+  ],
+  education: [
+    { name: 'Lesson plan creation', riskScore: 64 },
+    { name: 'Grading and assessment', riskScore: 71 },
+    { name: 'Administrative reporting', riskScore: 79 }
+  ],
+  finance: [
+    { name: 'Financial reporting', riskScore: 82 },
+    { name: 'Data reconciliation', riskScore: 88 },
+    { name: 'Compliance documentation', riskScore: 76 }
+  ],
+  // default fallback if no industry match
+  default: [
+    { name: 'Data entry', riskScore: 97 },
+    { name: 'Spreadsheet modelling', riskScore: 84 },
+    { name: 'Market research', riskScore: 83 }
+  ]
+};
+
+// In UpskillingRoadmap.tsx, use industry from context:
+const fallbackSkills = INDUSTRY_FALLBACK_SKILLS[state.industry || 'default'] 
+  || INDUSTRY_FALLBACK_SKILLS.default;
+```
+
+### 4.4 Add Roadmap Progress Tracking
+Currently "Start Week 1" saves the start date but no completion tracking exists within the roadmap. Add course-level completion:
+
+```typescript
+// New localStorage key: hp_roadmap_progress
+// Structure:
+interface RoadmapProgress {
+  startDate: string;
+  completedCourses: Record<string, boolean>; // key = courseId (slugified title)
+  completedPhases: Record<string, boolean>;  // key = phaseIndex string
+  weeklyCheckIns: Array<{ week: number; notes: string; date: string }>;
+}
+
+// Add checkbox to each course card:
+// [ ] Enrol → [x] Completed ✓
+// When a phase's courses are all complete, auto-mark phase as complete
+// Show % completion in the tab label: "My Roadmap (23%)"
+```
+
+### 4.5 Update DisplacementForecast Role Decay Factors for 2026
+Apply research-calibrated 2026 annual decay rates for each role category:
+
+```typescript
+// Format: { opt: optimistic_annual_decay, base: baseline_decay, pes: pessimistic_decay }
+// Higher decay = risk grows faster
+const ROLE_DECAY_FACTORS_2026 = {
+  software_engineer: { opt: 0.04, base: 0.09, pes: 0.16 },  // GitHub Copilot → agentic coding
+  data_scientist:    { opt: 0.05, base: 0.10, pes: 0.18 },  // AutoML maturation
+  marketing:         { opt: 0.06, base: 0.12, pes: 0.20 },  // generative content explosion
+  finance_analyst:   { opt: 0.07, base: 0.14, pes: 0.22 },  // agentic trading + reporting
+  lawyer:            { opt: 0.03, base: 0.08, pes: 0.14 },  // Harvey AI adoption
+  teacher:           { opt: 0.02, base: 0.05, pes: 0.10 },  // human pedagogy still essential
+  physician:         { opt: 0.01, base: 0.04, pes: 0.09 },  // diagnostic AI aiding not replacing
+  nurse:             { opt: 0.01, base: 0.03, pes: 0.07 },  // physical care irreplaceable
+  therapist:         { opt: 0.01, base: 0.02, pes: 0.05 },  // trust + human connection core
+  architect:         { opt: 0.02, base: 0.06, pes: 0.11 },  // AI design tools expanding
+  designer:          { opt: 0.05, base: 0.11, pes: 0.19 },  // generative design pressure
+  customer_service:  { opt: 0.09, base: 0.16, pes: 0.25 },  // agentic AI customer service
+  accountant:        { opt: 0.07, base: 0.13, pes: 0.21 },  // AI bookkeeping acceleration
+  researcher:        { opt: 0.03, base: 0.07, pes: 0.13 },  // AI literature review tools
+  social_worker:     { opt: 0.01, base: 0.02, pes: 0.04 },  // legally protected human role
+  generic:           { opt: 0.04, base: 0.09, pes: 0.16 }   // baseline
+};
+```
+
+---
+
+## SECTION 5 — Human Edge Journal (HumanEdgeJournal.tsx)
+
+### 5.1 Fix Modal Data Loss — Confirm Before Closing
+The modal currently closes on outside click, silently losing unsaved entry data. Fix:
+
+```typescript
+// Add a dirty state tracker to the modal
+const [isDirty, setIsDirty] = useState(false);
+
+// Mark dirty on any field change
+<textarea onChange={(e) => { setBody(e.target.value); setIsDirty(true); }} />
+
+// On backdrop click:
+const handleBackdropClick = () => {
+  if (isDirty) {
+    if (window.confirm('You have unsaved changes. Discard this entry?')) {
+      setIsModalOpen(false);
+      setIsDirty(false);
+    }
+  } else {
+    setIsModalOpen(false);
+  }
+};
+```
+
+### 5.2 Add Entry Editing
+Replace delete-only with edit + delete:
+
+```typescript
+// In entry card, add edit button alongside delete
+// Clicking edit opens the modal pre-populated with entry data
+// editingEntryId state: null (new entry) | string (editing existing)
+// On save: if editingEntryId, update existing entry in array; if null, push new entry
+// Update the hp_journal_entries localStorage after every edit
+
+const handleEdit = (entry: JournalEntry) => {
+  setEditingEntryId(entry.id);
+  setDimension(entry.dimension);
+  setTitle(entry.title);
+  setBody(entry.body);
+  setTags(entry.tags.join(', '));
+  setIsModalOpen(true);
+};
+```
+
+### 5.3 Attach All Three Risk Scores to Entries
+Currently only humanScore is snapshotted. Attach all available scores at time of entry creation:
+
+```typescript
+interface JournalEntry {
+  // existing fields...
+  humanScore: number | null;
+  jobRiskScore: number | null;   // ADD
+  skillRiskScore: number | null; // ADD
+  assessmentDate: string | null; // ADD — date of most recent assessment
+}
+
+// On entry creation:
+humanScore: state.humanScore,
+jobRiskScore: state.jobRiskScore,
+skillRiskScore: state.skillRiskScore,
+assessmentDate: state.lastUpdated,
+```
+
+### 5.4 Add Tag Autocomplete from Existing Tags
+```typescript
+// Compute all unique tags from existing entries
+const existingTags = useMemo(() => 
+  [...new Set(entries.flatMap(e => e.tags))].sort(), 
+  [entries]
+);
+
+// Show as datalist on the tags input:
+<input list="tag-suggestions" ... />
+<datalist id="tag-suggestions">
+  {existingTags.map(tag => <option key={tag} value={tag} />)}
+</datalist>
+```
+
+### 5.5 Add Pattern Insight Panel
+After 5+ entries, show an auto-generated insight banner summarising which dimensions appear most often in the user's journal. This shows the user their strongest human edge pattern:
+
+```typescript
+const dimensionFrequency = entries.reduce((acc, entry) => {
+  acc[entry.dimension] = (acc[entry.dimension] || 0) + 1;
+  return acc;
+}, {} as Record<string, number>);
+
+const topDimension = Object.entries(dimensionFrequency)
+  .sort(([,a],[,b]) => b - a)[0]?.[0];
+
+// If entries.length >= 5, show:
+// "Your journal shows {count} entries across {topDimension} — your most documented human edge.
+//  This pattern suggests your competitive advantage is [dimension-specific message]."
+```
+
+---
+
+## SECTION 6 — My Progress (ScoreDriftTracker.tsx + ShareableScoreCard.tsx)
+
+### 6.1 Fix plotScore Inversion — Add Clear Explanation
+The Y-axis currently shows "AI resilience strength (higher = safer)" which is easy to miss. Add an inline explanation banner that appears on first view:
+
+```typescript
+// Add to chart header area, above the Recharts component:
+<div style tooltip explaining the inversion>
+  <span>📈 Higher on this chart = more AI-resilient</span>
+  <span>Risk scores are inverted — a falling job risk score shows here as a rising line</span>
+</div>
+
+// Also update Y-axis label: 
+// OLD: "AI resilience strength (higher = safer)"
+// NEW: "AI resilience (↑ = safer, risk scores inverted)"
+```
+
+### 6.2 Calibrate Drift Thresholds to Score Volatility
+The current fixed thresholds (Job Risk: 4pts, Skill Risk: 6pts, Human Index: 8pts) are arbitrary. Calibrate to the typical score ranges:
+
+```typescript
+// Job Risk ranges 8-99 (91pt range) — 4pt threshold = 4.4% of range ✓ keep
+// Skill Risk ranges 8-97 (89pt range) — 6pt threshold = 6.7% of range ✓ keep  
+// Human Index ranges 0-100 (100pt range) — 8pt threshold = 8% of range ✓ keep
+// BUT: also add a time-weighted significance factor:
+// If drift happened within 24h: threshold × 0.75 (more sensitive)
+// If drift happened > 7 days ago: threshold × 1.25 (less sensitive — fade older drift)
+
+function getScoreDrift(): DriftResult | null {
+  const history = getScoreHistory();
+  if (history.length < 2) return null;
+  const latest = history[history.length - 1];
+  const previous = history[history.length - 2];
+  const change = Math.abs(latest.plotScore - previous.plotScore);
+  
+  const baseThreshold = { 'job': 4, 'skill': 6, 'human-index': 8 }[latest.source] || 5;
+  const ageHours = (Date.now() - previous.timestamp) / 3600000;
+  const timeMultiplier = ageHours < 24 ? 0.75 : ageHours > 168 ? 1.25 : 1.0;
+  const threshold = baseThreshold * timeMultiplier;
+  
+  if (change < threshold) return null;
+  return { change, direction: latest.plotScore > previous.plotScore ? 'up' : 'down', previousDate: new Date(previous.timestamp).toLocaleDateString() };
+}
+```
+
+### 6.3 Fix ScoreDriftBanner — One Dismiss Per Tab Per Session
+Currently dismissed globally for the session. Change so it's dismissable per-tab independently:
+
+```typescript
+// In ToolsPage, track dismissed state per tab:
+const [dismissedDriftTabs, setDismissedDriftTabs] = useState<Set<string>>(new Set());
+
+// Pass to ScoreDriftBanner:
+<ScoreDriftBanner 
+  dismissed={dismissedDriftTabs.has(activeTab)}
+  onDismiss={() => setDismissedDriftTabs(prev => new Set([...prev, activeTab]))}
+/>
+```
+
+### 6.4 Fix Share Card — Compute Quarter Dynamically
+```typescript
+// OLD: static string "Q2 2026" in template
+// NEW:
+function getCurrentQuarter(): string {
+  const now = new Date();
+  const quarter = Math.ceil((now.getMonth() + 1) / 3);
+  return `Q${quarter} ${now.getFullYear()}`;
+}
+// Use: getCurrentQuarter() in the share card footer
+```
+
+### 6.5 Fix hp_digest_subscribed Storage Bug
+```typescript
+// OLD: localStorage.setItem('hp_digest_subscribed', 'true') then check === 'true'
+// FIX: Standardise — store as JSON boolean to prevent type confusion:
+localStorage.setItem('hp_digest_subscribed', JSON.stringify(true));
+const isSubscribed = JSON.parse(localStorage.getItem('hp_digest_subscribed') || 'false');
+
+// Also move the DigestSignup overlay trigger from 45s to 120s minimum,
+// and only trigger if the user has completed at least one assessment:
+const hasAnyAssessment = (state.jobRiskScore !== null) || (state.skillRiskScore !== null) || (state.humanScore !== null);
+if (hasAnyAssessment && !isSubscribed) {
+  setTimeout(() => setShowDigestOverlay(true), 120000); // 2 minutes minimum
+}
+```
+
+---
+
+## SECTION 7 — UI, Performance, and Navigation
+
+### 7.1 Fix Tab Mounting Performance
+Currently all 6 tab components mount on page load (CSS display:none). This causes unnecessary API lookups, chart renders, and localStorage reads on load. Switch to conditional rendering with state-preservation:
+
+```typescript
+// Replace CSS display:none tabs with conditional rendering + memoization
+const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
+
+// Mount a tab once it is visited; keep it mounted thereafter
+useEffect(() => {
+  setMountedTabs(prev => new Set([...prev, activeTab]));
+}, [activeTab]);
+
+// In tab rendering:
+{mountedTabs.has('job-risk') && (
+  <div style={{ display: activeTab === 'job-risk' ? 'block' : 'none' }}>
+    <CalculatorPage />
+  </div>
+)}
+// This preserves state while avoiding the upfront mount cost of all 6 components
+```
+
+### 7.2 Add Responsive Breakpoints
+The platform has no documented mobile breakpoints. Add at minimum:
+
+```css
+/* Mobile: < 768px */
+@media (max-width: 768px) {
+  .tab-bar { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .tab-bar button { min-width: 120px; font-size: 13px; }
+  .global-score-bar { flex-wrap: wrap; gap: 8px; }
+  .calculator-grid { grid-template-columns: 1fr; } /* stack inputs vertically */
+  .radar-chart { width: 100%; height: 260px; } /* shrink radar on mobile */
+  .score-card-download { width: 100%; } /* full-width share card */
+}
+
+/* Tablet: 768px – 1100px */  
+@media (min-width: 768px) and (max-width: 1100px) {
+  .skill-cards-grid { grid-template-columns: repeat(2, 1fr); }
+  .audit-grid { grid-template-columns: repeat(2, 1fr); }
+}
+```
+
+### 7.3 Fix Tab Bar Position Calculation
+The `top: 70px` sticky offset assumes fixed nav height. Replace with CSS variable or dynamic calculation:
+
+```css
+/* In globals or component CSS: */
+:root { --nav-height: 70px; }
+.tab-bar { position: sticky; top: var(--nav-height); }
+
+/* In JS, measure actual nav height on mount and update the variable: */
+useEffect(() => {
+  const nav = document.querySelector('nav');
+  if (nav) {
+    document.documentElement.style.setProperty('--nav-height', nav.offsetHeight + 'px');
+  }
+}, []);
+```
+
+### 7.4 Add Keyboard Navigation for Tabs
+```typescript
+// In the tab bar, add keyboard handler:
+const handleTabKeyDown = (e: React.KeyboardEvent, tabIndex: number) => {
+  if (e.key === 'ArrowRight') navigateToTabByIndex((tabIndex + 1) % tabs.length);
+  if (e.key === 'ArrowLeft') navigateToTabByIndex((tabIndex - 1 + tabs.length) % tabs.length);
+  if (e.key === 'Home') navigateToTabByIndex(0);
+  if (e.key === 'End') navigateToTabByIndex(tabs.length - 1);
+};
+// Also add role="tablist", role="tab", aria-selected, aria-controls to all tab elements
+```
+
+### 7.5 Fix Score Color Thresholds — Add Explicit Labels
+Current thresholds (green<35, cyan 35-50, yellow 50-65, orange 65-80, red 80+) are undocumented in the UI. Every score output should show the label alongside the colour:
+
+```typescript
+function getRiskLabel(score: number): { label: string; color: string; description: string } {
+  if (score < 20) return { label: 'Very Low Risk', color: 'var(--emerald)', description: 'Highly resilient to AI displacement' };
+  if (score < 35) return { label: 'Low Risk', color: 'var(--emerald)', description: 'Well-positioned against automation' };
+  if (score < 50) return { label: 'Low-Moderate', color: 'var(--cyan)', description: 'Some exposure, manageable with action' };
+  if (score < 65) return { label: 'Moderate Risk', color: 'var(--yellow)', description: 'Notable AI pressure in this area' };
+  if (score < 80) return { label: 'High Risk', color: 'var(--orange)', description: 'Significant displacement risk within 3 years' };
+  return { label: 'Critical Risk', color: 'var(--red)', description: 'Urgent action required' };
+}
+```
+
+---
+
+## SECTION 8 — Global State and Data Integrity
+
+### 8.1 Add assessmentVersion to All Score Saves
+When saving scores, tag them with the data version so future calibration updates can be identified:
+
+```typescript
+// In saveScore():
+const entry = {
+  score,
+  plotScore: source === 'human-index' ? score : 100 - score,
+  source,
+  timestamp: Date.now(),
+  dataVersion: '2026.1', // increment when recalibrating data
+  appVersion: import.meta.env.VITE_APP_VERSION || '1.0'
+};
+```
+
+### 8.2 Add Data Staleness Warning
+If the last assessment was > 90 days ago, show a soft warning that data may have changed:
+
+```typescript
+const daysSinceLastAssessment = state.assessmentTimestamp 
+  ? (Date.now() - state.assessmentTimestamp) / 86400000 
+  : null;
+
+if (daysSinceLastAssessment && daysSinceLastAssessment > 90) {
+  // Show banner: "Your last assessment was X days ago. 
+  // AI capabilities have advanced significantly — consider re-assessing."
+}
+```
+
+### 8.3 Fix getMissingDependencies Warning Messages
+Current dependency warnings are functional but not actionable. Each warning must include a direct CTA button that navigates to the required tab, not just a text description. Ensure every dependency warning follows this pattern:
+
+```typescript
+// Each dependency warning must render:
+<button onClick={() => onNavigate('job-risk')}>
+  Calculate Job Risk Score →
+</button>
+// Not just: "Please complete the Job Risk Calculator first"
+```
+
+---
+
+## SECTION 9 — Research Citations Update
+
+Update all research citations across the platform to include 2025-2026 sources. The following sources should be referenced where appropriate:
+
+- **WEF Future of Jobs Report 2025** (primary) — job displacement timelines
+- **McKinsey Global Institute: The State of AI 2025** — enterprise AI adoption
+- **Anthropic Economic Index 2025** — task-level AI capability benchmarks
+- **Stanford HAI AI Index 2025** — country-level AI adoption metrics
+- **Goldman Sachs: AI and the Labor Market 2025** — displacement by occupation
+- **LinkedIn Future of Work Report 2025** — skill demand shifts
+- **OECD Employment Outlook 2025: AI and Labour Markets** — OECD country data
+- **Harvard Business Review: Human Skills in the AI Era 2025** — protective human skills
+- **MIT Work of the Future 2024-2025** — task-level automation measurement
+- **Brookings Institution: AI and Occupational Change 2025** — sector-specific impact
+
+Replace any citation labelled "McKinsey 2024" in the Research Sources accordion with the 2025 update where available. Add the new sources as additional entries.
+
+---
+
+## IMPLEMENTATION NOTES
+
+1. **Do not break existing localStorage keys** — migration only if schema changes (add fields, never remove or rename).
+2. **Maintain the HumanProofContext schema** — add new fields via additive dispatch actions only.
+3. **Test the score range** after applying formula changes: run the formula against 20 edge case inputs (highest-risk role, lowest-risk role, missing optional fields) to verify the 3-97 clamp works correctly.
+4. **The plotScore inversion must be documented in code comments** wherever it appears — future maintainers must understand that higher plotScore always means safer/more resilient, regardless of source.
+5. **All new localStorage keys must be documented** in a central KEY_REGISTRY comment block at the top of scoreStorage.ts.
+6. **Course database refresh**: flag any course with a last-verified date older than 6 months using a `stale: true` field and display a "Verify availability" note on stale course cards.
+
+---
+
+*End of master fix prompt. Apply all sections in order. Report any conflicts between sections before implementing.*

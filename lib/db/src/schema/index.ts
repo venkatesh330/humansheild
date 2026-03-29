@@ -1,0 +1,2 @@
+// Digest subscribers table for newsletter subscriptions
+export * from "./digest_subscribers";

@@ -1,0 +1,193 @@
+import { createContext, useContext, useReducer, useEffect, useState, ReactNode } from 'react';
+import { saveScore } from '../utils/scoreStorage';
+import { KEY_REGISTRY } from '../data/riskData';
+
+interface SkillEntry {
+  id: number;
+  name: string;
+  category: string;
+  riskScore: number;
+  trend: string;
+}
+
+interface HumanProofState {
+  jobRiskScore: number | null;
+  jobTitle: string | null;
+  jobId: string | null;
+  skillRiskScore: number | null;
+  selectedSkills: SkillEntry[];
+  skillBreakdown: SkillEntry[];
+  humanScore: number | null;
+  humanDimensions: Record<string, number>;
+  userName: string | null;
+  industry: string | null;
+  lastUpdated: string | null;
+  activeToolTab: string;
+  jobSpecificInsights: any[] | null;
+  roadmapStartDate: string | null;
+  assessmentTimestamp: number | null;
+  roadmapStarted: boolean;
+  skillIntents: Record<string, 'protect' | 'pivot'>;
+  quizAnswers: Record<number, number>;
+}
+
+type Action =
+  | { type: 'SET_JOB_RISK'; score: number; title: string; industry?: string }
+  | { type: 'SET_SKILL_RISK'; score: number; skills: SkillEntry[]; breakdown: SkillEntry[] }
+  | { type: 'SET_HUMAN_SCORE'; score: number; dimensions: Record<string, number> }
+  | { type: 'SET_USER_NAME'; name: string }
+  | { type: 'SET_ACTIVE_TAB'; tab: string }
+  | { type: 'SET_JOB_ID'; payload: string }
+  | { type: 'SET_ROADMAP_STARTED'; startDate: string }
+  | { type: 'SET_SKILL_INTENTS'; intents: Record<string, 'protect' | 'pivot'> }
+  | { type: 'SET_QUIZ_ANSWERS'; answers: Record<number, number> }
+  | { type: 'HYDRATE'; payload: Partial<HumanProofState> };
+
+const defaultState: HumanProofState = {
+  jobRiskScore: null,
+  jobTitle: null,
+  jobId: null,
+  skillRiskScore: null,
+  selectedSkills: [],
+  skillBreakdown: [],
+  humanScore: null,
+  humanDimensions: {},
+  userName: null,
+  industry: null,
+  lastUpdated: null,
+  activeToolTab: 'job-risk',
+  jobSpecificInsights: null,
+  roadmapStartDate: null,
+  assessmentTimestamp: null,
+  roadmapStarted: false,
+  skillIntents: {},
+  quizAnswers: {},
+};
+
+function reducer(state: HumanProofState, action: Action): HumanProofState {
+  switch (action.type) {
+    case 'HYDRATE':
+      return { ...state, ...action.payload };
+    case 'SET_JOB_RISK':
+      saveScore(action.score, 'job');
+      return {
+        ...state,
+        jobRiskScore: action.score,
+        jobTitle: action.title,
+        industry: action.industry ?? state.industry,
+        lastUpdated: new Date().toISOString(),
+        assessmentTimestamp: Date.now(),
+      };
+    case 'SET_SKILL_RISK':
+      saveScore(action.score, 'skill');
+      localStorage.setItem(KEY_REGISTRY.SKILL_BREAKDOWN, JSON.stringify(action.breakdown ?? []));
+      return {
+        ...state,
+        skillRiskScore: action.score,
+        selectedSkills: action.skills,
+        skillBreakdown: action.breakdown,
+        lastUpdated: new Date().toISOString(),
+        assessmentTimestamp: Date.now(),
+      };
+    case 'SET_HUMAN_SCORE':
+      saveScore(action.score, 'human-index');
+      return {
+        ...state,
+        humanScore: action.score,
+        humanDimensions: action.dimensions,
+        lastUpdated: new Date().toISOString(),
+        assessmentTimestamp: Date.now(),
+      };
+    case 'SET_USER_NAME':
+      return { ...state, userName: action.name };
+    case 'SET_ACTIVE_TAB':
+      return { ...state, activeToolTab: action.tab };
+    case 'SET_JOB_ID':
+      return { ...state, jobId: action.payload };
+    case 'SET_ROADMAP_STARTED':
+      localStorage.setItem(KEY_REGISTRY.ROADMAP_START_DATE, action.startDate);
+      return { ...state, roadmapStarted: true, roadmapStartDate: action.startDate };
+    case 'SET_SKILL_INTENTS':
+      return { ...state, skillIntents: action.intents };
+    case 'SET_QUIZ_ANSWERS':
+      return { ...state, quizAnswers: action.answers };
+    default:
+      return state;
+  }
+}
+
+
+interface HumanProofContextValue {
+  state: HumanProofState;
+  dispatch: React.Dispatch<Action>;
+  isHydrated: boolean;
+}
+
+const HumanProofContext = createContext<HumanProofContextValue | null>(null);
+
+function LoadingScreen() {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'var(--bg, #0A0A14)', flexDirection: 'column', gap: 16,
+    }}>
+      <div style={{ fontFamily: 'var(--mono)', color: 'var(--cyan)', fontSize: '1.2rem', letterSpacing: '0.1em' }}>
+        HumanProof
+      </div>
+      <div style={{ width: 200, height: 2, background: 'rgba(0,245,255,0.15)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', background: 'var(--cyan)', borderRadius: 2,
+          animation: 'loading-bar 1.2s ease-in-out infinite',
+          width: '40%',
+        }} />
+      </div>
+    </div>
+  );
+}
+
+export function HumanProofProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(reducer, defaultState);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const history = JSON.parse(localStorage.getItem(KEY_REGISTRY.SCORE_HISTORY) || '[]');
+      const lastJobScore    = [...history].filter((e: any) => e.source === 'job').at(-1);
+      const lastSkillScore  = [...history].filter((e: any) => e.source === 'skill').at(-1);
+      const lastHumanScore  = [...history].filter((e: any) => e.source === 'human-index').at(-1);
+      const skills          = JSON.parse(localStorage.getItem(KEY_REGISTRY.SKILL_SELECTIONS) || '[]');
+      const breakdown       = JSON.parse(localStorage.getItem(KEY_REGISTRY.SKILL_BREAKDOWN) || '[]');
+      const roadmapStart    = localStorage.getItem(KEY_REGISTRY.ROADMAP_START_DATE) || null;
+
+      dispatch({
+        type: 'HYDRATE',
+        payload: {
+          jobRiskScore:    lastJobScore?.score   ?? null,
+          skillRiskScore:  lastSkillScore?.score ?? null,
+          humanScore:      lastHumanScore?.score ?? null,
+          selectedSkills:  skills,
+          skillBreakdown:  breakdown,
+          roadmapStartDate: roadmapStart,
+          roadmapStarted:  !!roadmapStart,
+        },
+      });
+    } catch {
+      // Graceful degradation if localStorage is unavailable
+    }
+    setIsHydrated(true);
+  }, []);
+
+  if (!isHydrated) return <LoadingScreen />;
+
+  return (
+    <HumanProofContext.Provider value={{ state, dispatch, isHydrated }}>
+      {children}
+    </HumanProofContext.Provider>
+  );
+}
+
+export function useHumanProof() {
+  const ctx = useContext(HumanProofContext);
+  if (!ctx) throw new Error('useHumanProof must be used within HumanProofProvider');
+  return ctx;
+}
