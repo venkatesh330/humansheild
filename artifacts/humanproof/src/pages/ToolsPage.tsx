@@ -8,8 +8,10 @@ import HumanEdgeJournal from '../components/HumanEdgeJournal';
 import ScoreDriftTracker, { ScoreDriftBanner, PlotScoreInversionBanner } from '../components/ScoreDriftTracker';
 import DisplacementForecast from '../components/DisplacementForecast';
 import DigestSignup from '../components/DigestSignup';
+import ResilienceBadge from '../components/ResilienceBadge';
+import DailyChallenge from '../components/DailyChallenge';
 import { useHumanProof } from '../context/HumanProofContext';
-import { getScoreHistory } from '../utils/scoreStorage';
+import { getScoreHistory, getEverCompletedFlags, hasLegacyVersionEntries } from '../utils/scoreStorage';
 import { getActionTimeline, validateJobSkillMatch } from '../utils/riskCalculations';
 import { generateAssessmentSnapshot, generateShareableLink } from '../utils/assessmentExport';
 
@@ -79,21 +81,43 @@ function isStale(): boolean {
   return daysSince > STALE_DAYS;
 }
 
+const SESSION_DRIFT_KEY = 'hp_drift_banner_seen_session';
+
 export default function ToolsPage() {
   const { state, dispatch } = useHumanProof();
   const [activeTab, setActiveTab] = useState<string>(state.activeToolTab || 'job-risk');
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([state.activeToolTab || 'job-risk']));
-  const [dismissedDriftTabs, setDismissedDriftTabs] = useState<Set<string>>(new Set());
+  // v3 FIX: drift banner shows ONCE per session, not on every tab switch
+  const [showDriftBannerState, setShowDriftBannerState] = useState(false);
   const [showDigest, setShowDigest] = useState(false);
   const [showStalenessBanner, setShowStalenessBanner] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [jobSkillMismatch, setJobSkillMismatch] = useState(false);
+  const [showLegacyVersionBanner, setShowLegacyVersionBanner] = useState(false);
   const tablistRef = useRef<HTMLDivElement>(null);
   const digestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setShowStalenessBanner(isStale());
   }, [activeTab]);
+
+  // v3 FIX: Drift banner shows ONCE per session using sessionStorage
+  useEffect(() => {
+    const alreadySeen = sessionStorage.getItem(SESSION_DRIFT_KEY);
+    if (alreadySeen) return;
+    const history = getScoreHistory();
+    if (history.length >= 2) {
+      setShowDriftBannerState(true);
+      sessionStorage.setItem(SESSION_DRIFT_KEY, '1');
+    }
+  }, []);
+
+  // v3 FIX: Data version migration warning (one-time, dismissible)
+  useEffect(() => {
+    if (hasLegacyVersionEntries()) {
+      setShowLegacyVersionBanner(true);
+    }
+  }, []);
 
   useEffect(() => {
     const subscribed = JSON.parse(localStorage.getItem('hp_digest_subscribed') || 'false');
@@ -134,16 +158,53 @@ export default function ToolsPage() {
   }, [activeTab, switchTab]);
 
   const missingDeps = useMemo(() => {
-    const missing: string[] = [];
-    if (activeTab === 'skill-risk' && state.jobRiskScore === null) missing.push('Job Risk Score');
-    if (activeTab === 'roadmap' && state.skillRiskScore === null) missing.push('Skill Risk Calculator');
-    if (activeTab === 'roadmap' && state.humanScore === null) missing.push('Human Irreplaceability Index');
-    if (activeTab === 'drift' && state.jobRiskScore === null && state.skillRiskScore === null && state.humanScore === null) missing.push('any assessment');
-    if (activeTab === 'forecast' && state.jobRiskScore === null) missing.push('Job Risk Score (required for forecasting)');
+    const missing: { label: string; message: string }[] = [];
+    if (activeTab === 'skill-risk' && state.jobRiskScore === null) {
+      missing.push({
+        label: 'Job Risk Score',
+        message: 'Add a Job Risk Score to unlock industry-filtered AI threat tags for each of your skills — so you see the exact tools targeting your domain, not generic ones.',
+      });
+    }
+    if (activeTab === 'roadmap' && state.skillRiskScore === null) {
+      missing.push({
+        label: 'Skill Risk Calculator',
+        message: 'Add your Skill Risk profile to replace generic course suggestions with a plan targeting your top 3 highest-risk skills specifically.',
+      });
+    }
+    if (activeTab === 'roadmap' && state.jobRiskScore === null) {
+      missing.push({
+        label: 'Job Risk Score',
+        message: 'Add a Job Risk Score to unlock the role-specific 90-day roadmap for your job type.',
+      });
+    }
+    if (activeTab === 'drift' && state.jobRiskScore === null && state.skillRiskScore === null && state.humanScore === null) {
+      missing.push({
+        label: 'any assessment',
+        message: 'Complete at least one assessment to start tracking your AI resilience trend over time.',
+      });
+    }
+    if (activeTab === 'forecast' && state.jobRiskScore === null) {
+      missing.push({
+        label: 'Job Risk Score',
+        message: 'Complete all 3 assessments to unlock personalised displacement scenario probabilities for your specific role and skill set.',
+      });
+    }
     return missing;
   }, [activeTab, state.jobRiskScore, state.skillRiskScore, state.humanScore]);
 
-  const completionCount = [state.jobRiskScore, state.skillRiskScore, state.humanScore].filter(s => s !== null).length;
+  // v3 FIX: Use "ever completed" flags to prevent progress bar flickering during retakes
+  const everCompleted = useMemo(() => getEverCompletedFlags(), []);
+  const liveCompleted = {
+    job:   state.jobRiskScore !== null,
+    skill: state.skillRiskScore !== null,
+    hii:   state.humanScore !== null,
+  };
+  const completionFlags = {
+    job:   everCompleted.job   || liveCompleted.job,
+    skill: everCompleted.skill || liveCompleted.skill,
+    hii:   everCompleted.hii  || liveCompleted.hii,
+  };
+  const completionCount = Object.values(completionFlags).filter(Boolean).length;
   const completionPct = Math.round((completionCount / 3) * 100);
 
   // Check job-skill industry match
@@ -207,9 +268,7 @@ export default function ToolsPage() {
     }
   }, [state]);
 
-  const showDriftBanner = useMemo(() => {
-    return !dismissedDriftTabs.has(activeTab) && getScoreHistory().length > 0;
-  }, [activeTab, dismissedDriftTabs]);
+  const showDriftBanner = showDriftBannerState;
 
   return (
     <div className="tools-page" style={{ minHeight: '100vh', paddingTop: 'calc(var(--nav-height, 70px) + 1rem)' }}>
@@ -253,8 +312,30 @@ export default function ToolsPage() {
         </div>
       )}
 
+      {/* v3 FIX: Drift banner shows ONCE per session, auto-dismissed on click */}
       {showDriftBanner && (
-        <ScoreDriftBanner onDismiss={() => setDismissedDriftTabs(prev => new Set([...prev, activeTab]))} />
+        <ScoreDriftBanner onDismiss={() => setShowDriftBannerState(false)} />
+      )}
+
+      {/* v3 FIX: Legacy version migration warning */}
+      {showLegacyVersionBanner && (
+        <div style={{
+          background: 'rgba(251,191,36,0.08)',
+          border: '1px solid rgba(251,191,36,0.3)',
+          borderRadius: 8,
+          padding: '10px 20px',
+          margin: '0 auto 12px',
+          maxWidth: 1200,
+          fontSize: '0.8rem',
+          color: '#FCD34D',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <span>📊</span>
+          <span>Your score history includes entries from a previous model version. These may not be directly comparable to your latest score.</span>
+          <button onClick={() => setShowLegacyVersionBanner(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#FCD34D', cursor: 'pointer', fontSize: '1rem' }}>×</button>
+        </div>
       )}
 
       <div
@@ -342,18 +423,35 @@ export default function ToolsPage() {
           </div>
         )}
 
+        {/* v3 FIX: Specific dependency messages per tab instead of generic "complete these first" */}
         {missingDeps.length > 0 && activeTab !== 'job-risk' && (
-          <div style={{
-            background: 'rgba(124,58,255,0.08)',
-            border: '1px solid rgba(124,58,255,0.25)',
-            borderRadius: 10,
-            padding: '16px 20px',
-            marginBottom: 24,
-            fontSize: '0.85rem',
-            color: 'var(--text2, #9BA5B4)',
-          }}>
-            <strong style={{ color: 'var(--violet, #7C3AFF)' }}>Complete these first: </strong>
-            {missingDeps.join(', ')} — your results will be more accurate and personalized.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+            {missingDeps.map((dep, i) => (
+              <div key={i} style={{
+                background: 'rgba(124,58,255,0.08)',
+                border: '1px solid rgba(124,58,255,0.25)',
+                borderRadius: 10,
+                padding: '14px 18px',
+                fontSize: '0.85rem',
+                color: 'var(--text2, #9BA5B4)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+              }}>
+                <span style={{ color: 'var(--violet, #7C3AFF)', flexShrink: 0 }}>💡</span>
+                <div>
+                  <strong style={{ color: 'var(--violet, #7C3AFF)' }}>{dep.label} needed: </strong>
+                  {dep.message}
+                  {' '}
+                  <button
+                    onClick={() => switchTab('job-risk')}
+                    style={{ background: 'none', border: 'none', color: 'var(--violet, #7C3AFF)', cursor: 'pointer', fontSize: '0.85rem', padding: 0, textDecoration: 'underline' }}
+                  >
+                    Start now →
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -437,13 +535,15 @@ export default function ToolsPage() {
             {mountedTabs.has(tab.id) && (
               <TabErrorBoundary key={`eb-${tab.id}`} tabId={tab.id}>
                 {tab.id === 'job-risk' && <CalculatorPage />}
-                {tab.id === 'skill-risk' && <SkillRiskCalculator />}
+                {tab.id === 'skill-risk' && <SkillRiskCalculator onNavigate={switchTab} />}
                 {tab.id === 'hii' && <HumanIrreplacibilityIndex />}
                 {tab.id === 'roadmap' && <UpskillingRoadmap />}
                 {tab.id === 'journal' && <HumanEdgeJournal />}
                 {tab.id === 'drift' && (
                   <>
                     <PlotScoreInversionBanner />
+                    {/* NEW-07: Resilience Badge — appears when all three thresholds met */}
+                    <ResilienceBadge />
                     <ScoreDriftTracker />
                   </>
                 )}
@@ -453,6 +553,9 @@ export default function ToolsPage() {
           </div>
         ))}
       </div>
+
+      {/* NEW-10: Daily Micro-Challenge floating widget */}
+      <DailyChallenge onNavigateJournal={() => switchTab('journal')} />
 
       {showDigest && (
         <div style={{

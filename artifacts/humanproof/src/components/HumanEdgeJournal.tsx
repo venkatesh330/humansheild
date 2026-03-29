@@ -17,9 +17,20 @@ interface JournalEntry {
 }
 
 const STORAGE_KEY = 'hp_journal_entries';
+const JOURNAL_MAX_ENTRIES = 500;
+const JOURNAL_WARN_AT = 450;
 
 const loadEntries = (): JournalEntry[] => JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-const saveEntries = (entries: JournalEntry[]) => localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+
+// v3 FIX: Storage management — cap at 500 entries, warn at 450, prune oldest 50 if over cap
+const saveEntries = (entries: JournalEntry[]) => {
+  let toSave = entries;
+  if (toSave.length > JOURNAL_MAX_ENTRIES) {
+    // Prune oldest 50 entries (entries are stored newest-first, so prune the tail)
+    toSave = toSave.slice(0, JOURNAL_MAX_ENTRIES - 50);
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+};
 
 const dimColors: Record<Dimension, string> = {
   empathic: 'var(--cyan)',

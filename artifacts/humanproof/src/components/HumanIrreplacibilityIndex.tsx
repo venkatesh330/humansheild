@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PeerBenchmark from './PeerBenchmark';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip,
 } from 'recharts';
@@ -304,6 +305,14 @@ export default function HumanIrreplacibilityIndex({ onNavigate }: { onNavigate?:
           )}
         </div>
 
+        {/* NEW-01: Peer Benchmark for Human Index */}
+        <PeerBenchmark
+          score={humanScore}
+          scoreType="hii"
+          jobTitle={state.jobTitle}
+          industry={state.industry ?? undefined}
+        />
+
         <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 24 }}>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Human Signature Profile</div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text2)', marginBottom: 16, display: 'flex', gap: 16 }}>
@@ -420,7 +429,12 @@ export default function HumanIrreplacibilityIndex({ onNavigate }: { onNavigate?:
       </div>
 
       {/* UX FIX 2: Halfway provisional score banner at Q15 */}
+      {/* v3 FIX: Only show provisional when 4+ dimensions are covered (spec §5.4) */}
       {currentQ === HALFWAY_Q && (() => {
+        const coveredDims = new Set(
+          quizQuestions.filter(q => answers[q.id] !== undefined).map(q => q.dimension)
+        ).size;
+        if (coveredDims < 4) return null;
         const provisional = computeProvisionalScore(answers, state.jobTitle, state.jobId);
         if (provisional === null) return null;
         const color = provisional >= 65 ? 'var(--emerald)' : provisional >= 45 ? 'var(--cyan)' : 'var(--orange)';

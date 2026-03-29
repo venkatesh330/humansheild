@@ -1,0 +1,774 @@
+# HumanProof v3.0 — Master Build Prompt
+
+> Copy this entire prompt as your system prompt when building, rebuilding, or extending the HumanProof platform. It incorporates all bug fixes, corrected formulas, architectural upgrades, and market-validated features from the v2.0 audit.
+
+---
+
+## 1. PLATFORM IDENTITY
+
+You are building **HumanProof** — a career AI-resilience assessment platform. It is a React + Vite single-page application that helps workers understand, measure, and improve their resistance to AI-driven job displacement.
+
+**Core promise:** Give any worker a credible, data-backed score of their AI displacement risk and a personalised action plan to improve it.
+
+**Design philosophy:**
+- Every number shown must be explainable — show the formula behind every score
+- Every risk statement must be actionable — pair every warning with a concrete next step
+- Trust is the product — cite every data source, show confidence intervals, never overstate certainty
+- Progressive disclosure — tools unlock as the user completes prior assessments
+
+---
+
+## 2. TECHNICAL STACK
+
+```
+Framework:       React 18 + Vite
+State:           React Context (domain-sliced — see Section 5)
+Storage:         localStorage (all user data is client-side)
+Styling:         Tailwind CSS or CSS Modules (your choice, be consistent)
+Charts:          Recharts (radar, line) or Chart.js (bar, gauge)
+Routing:         React Router v6
+No backend.      No user accounts. No database.
+```
+
+---
+
+## 3. GLOBAL STATE ARCHITECTURE (FIXED)
+
+### 3.1 Split into 3 domain contexts — NOT one monolithic context
+
+**Reason:** A single context causes all 7 tools to re-render on every dispatch. Split as follows:
+
+```javascript
+// Context 1: Assessment scores and results
+AssessmentContext = {
+  jobRiskScore,        // number 3–97 | null
+  jobTitle,            // string | null
+  industry,            // string | null
+  skillRiskScore,      // number 3–97 | null
+  selectedSkills,      // array
+  humanScore,          // number 0–100 | null
+  humanDimensions,     // object { empathic, moral, creative, physical, social, contextual }
+  skillIntents,        // object { skillId: 'protect' | 'pivot' }
+}
+
+// Context 2: UI and navigation state
+UIContext = {
+  activeToolTab,       // string
+  roadmapStarted,      // boolean
+  assessmentProgress,  // 0 | 1 | 2 | 3 (how many of 3 core assessments complete)
+  driftBannerSeen,     // boolean — show once per session, not on every tab
+}
+
+// Context 3: Quiz in-progress state
+QuizContext = {
+  quizAnswers,         // array of { questionId, answer, timestamp }
+  quizResumePoint,     // number (question index) | null
+}
+```
+
+### 3.2 localStorage keys (complete, de-duplicated)
+
+| Key | Contents | Size risk | Notes |
+|-----|----------|-----------|-------|
+| `hp_score_history` | Array of score entries | Medium | Prune to last 200 entries |
+| `hp_skill_selections` | Skill portfolio array | Low | One key only — no duplicate |
+| `hp_skill_breakdown` | Enriched skill data for roadmap | Low | |
+| `hp_roadmap_start_date` | ISO date string | Low | |
+| `hp_roadmap_start` | Roadmap start object | Low | |
+| `hp_roadmap_progress` | Completed courses/milestones | Low | |
+| `hp_journal_entries` | Array of journal entries | HIGH | Cap at 500 entries, warn at 450 |
+| `hp_quiz_progress` | In-progress quiz state | Low | 7-day TTL — discard if older |
+| `hp_digest_subscribed` | Boolean | Low | |
+| `hp_visited` | Boolean | Low | |
+| `hp_waitlist_email` | String | Low | |
+| `hp_last_save_job` | Unix timestamp | Low | |
+| `hp_last_save_skill` | Unix timestamp | Low | |
+| `hp_last_save_hii` | Unix timestamp | Low | |
+| `hp_history_warned` | Boolean | Low | Show data-loss warning once only |
+| `hp_drift_banner_seen` | Boolean | Low | Reset each session |
+| `hp_data_version` | String e.g. "2026-Q1" | Low | For migration detection |
+
+### 3.3 Score save deduplication guard (fixed)
+
+```javascript
+function shouldSaveScore(sourceType, newScore, lastScore) {
+  const thresholds = { job: 4, skill: 6, hii: 8 };
+  const threshold = thresholds[sourceType];
+
+  // Condition 1: Score must have changed meaningfully
+  const scoreDiff = Math.abs(newScore - (lastScore ?? 0));
+  if (scoreDiff < threshold) return false;
+
+  // REMOVED: 30-minute time gate (was blocking legitimate intra-session recalculations)
+  // The score-diff threshold alone is sufficient deduplication
+
+  return true;
+}
+```
+
+**IMPORTANT:** Do NOT add a time gate. The 4/6/8 point threshold is sufficient. A user changing their experience level from 5–10 to 10–20 years gets a genuinely different score and it SHOULD be saved.
+
+### 3.4 Score history entry schema
+
+```javascript
+{
+  id: crypto.randomUUID(),
+  rawScore: number,           // original 3–97 score
+  plotScore: number,          // for chart: 100 − rawScore for risk scores; raw for HII
+  sourceType: 'job' | 'skill' | 'hii',
+  timestamp: Date.now(),      // Unix ms
+  dataVersion: '2026-Q1',     // bump when scoring model changes
+  appVersion: '3.0.0',
+  metadata: {                 // optional, for migration handling
+    jobTitle: string | null,
+    industry: string | null,
+  }
+}
+```
+
+---
+
+## 4. THE 6-DIMENSION SCORING ENGINE (CORRECTED FORMULAS)
+
+### 4.1 Core formula
+
+```
+rawScore = D1×0.26 + D2×0.18 + D3×0.20 + D4×0.16 + D5×0.09 + D6×0.11
+```
+Weights sum to exactly 1.00. Do not change these without re-running validation.
+
+### 4.2 D1 — Task Automatability (weight: 0.26)
+- Source: Oxford/GPT-4 occupational task audits
+- Range: 0–100 (higher = more automatable)
+- Look up from `roleTaskAutomatability` dataset by `jobId`
+- No transformation — use raw lookup value
+
+### 4.3 D2 — AI Tool Maturity (weight: 0.18)
+- Source: Internal assessment of production AI tooling per role
+- Range: 0–100
+- Look up from `roleAIMaturity` dataset by `jobId`
+
+### 4.4 D3 — Human Amplification (weight: 0.20) — CORRECTED
+
+```javascript
+function computeD3(augmentationValue, jobTitle) {
+  // Curved inversion: preserves mid-range nuance
+  // Exponent 0.70 makes mid-range roles more protected than neutral
+  const EXPONENT = 0.70;
+  const normaliser = Math.pow(100, EXPONENT); // = 100^0.70 ≈ 25.12
+  const d3Raw = 100 - (Math.pow(augmentationValue, EXPONENT) / normaliser) * 100;
+  // Example: augVal=50 → d3 = 100 - (50^0.70 / 25.12)*100 ≈ 37 ✓
+
+  // Governance keyword boost
+  // Applies ONLY when role explicitly involves governing/auditing AI
+  const governanceKeywords = [
+    'oversight', 'governance', 'ethics', 'regulation', 'audit',
+    'policy', 'accountability', 'compliance'
+  ];
+  const titleLower = (jobTitle || '').toLowerCase();
+  const hasGovernanceKeyword = governanceKeywords.some(k => titleLower.includes(k));
+
+  let d3Final = d3Raw;
+  if (hasGovernanceKeyword && augmentationValue > 60) {
+    d3Final = Math.min(d3Raw + 8, 85); // +8 boost, hard cap at 85
+    // Source: governance role protection rationale (cite specific paper here)
+  }
+
+  return Math.max(0, Math.min(100, d3Final));
+}
+```
+
+### 4.5 D4 — Experience Shield (weight: 0.16) — CORRECTED FLOOR LOGIC
+
+```javascript
+function computeD4(baseRoleRisk, yearsOfExperience) {
+  // Experience reduces risk proportionally
+  const experienceFactors = {
+    '0-2':  0.00,
+    '2-5':  0.15,
+    '5-10': 0.30,
+    '10-20':0.50,
+    '20+':  0.65,
+  };
+  const factor = experienceFactors[yearsOfExperience] || 0;
+  const reduction = baseRoleRisk * factor;
+
+  // BUG FIX: Floor only applies to HIGH-risk roles
+  // Original: always floored at 25% of base — incorrectly inflated safe-role seniors
+  // Fixed: floor only activates when base risk > 50
+  let d4 = baseRoleRisk - reduction;
+  if (baseRoleRisk > 50) {
+    const floor = baseRoleRisk * 0.25; // can never reduce by more than 75%
+    d4 = Math.max(d4, floor);
+  }
+  // If base risk ≤ 50, experience can reduce freely (safe role = no artificial floor)
+
+  return Math.max(0, Math.min(100, d4));
+}
+```
+
+### 4.6 D5 — Country Context (weight: 0.09)
+
+```javascript
+function computeD5(countryAdoption, countryRegulation) {
+  // adoption: 0–100 (how widely deployed AI is in this country)
+  // regulation: 0–100 (how strictly AI is regulated; higher = more protected)
+  // Both sourced from OECD AI Policy Observatory data
+
+  // Direction check:
+  // High adoption + low regulation = high risk (e.g. USA: adoption~85, reg~30) → D5~75
+  // High adoption + high regulation = moderate (e.g. EU: adoption~70, reg~80) → D5~34
+  // Low adoption + any regulation = low (e.g. many developing markets) → D5~22–40
+
+  const raw = countryAdoption * (1 - countryRegulation / 100) * 0.80 + 22;
+
+  // Clamp: formula is well-calibrated for OECD data; clamping should be rare
+  return Math.max(20, Math.min(85, raw));
+}
+// NOTE: If raw value > 85 or < 20 more than ~10% of the time,
+// recalibrate the 0.80 scalar and +22 offset against updated OECD data.
+```
+
+### 4.7 D6 — Social Capital Moat (weight: 0.11)
+- Source: MIT Sloan 2024 — cite specific paper title + DOI in UI transparency panel
+- Range: 0–100 (lower = stronger moat = MORE protected)
+- Senior roles get a bonus that lowers D6 (more network = more protected)
+- Look up from `roleSocialCapital` dataset; apply years-of-experience modifier
+
+### 4.8 Post-formula adjustments (apply in this exact order)
+
+```javascript
+function finaliseScore(rawScore, D1, D2, jobTitle, industry, yearsOfExperience) {
+  let score = rawScore;
+
+  // Step 1: Additive D1/D2 interaction boost (CORRECTED — no double-counting)
+  // Only activates when BOTH D1 AND D2 are simultaneously very high
+  // (emergent risk from AI being both capable AND deployed in this role)
+  if (D1 > 70 && D2 > 70) {
+    const interactionBoost = (D1 - 70) * (D2 - 70) * 0.001;
+    // Example: D1=90, D2=85 → boost = 20*15*0.001 = 0.3 (small, appropriate)
+    // Example: D1=95, D2=95 → boost = 25*25*0.001 = 0.625
+    score += interactionBoost;
+  }
+  // REMOVED: original (weighted avg − 50) × 0.15 formula — caused double-counting
+
+  // Step 2: Industry multiplier
+  const industryMultipliers = {
+    'finance':     1.15,
+    'accounting':  1.10,
+    'legal':       1.05,
+    'technology':  1.00,
+    'healthcare':  0.88,
+    'education':   0.85,
+    'social-work': 0.80,
+    // add others...
+  };
+  score *= (industryMultipliers[industry] || 1.00);
+
+  // Step 3: Specialist title deduction
+  const specialistKeywords = [
+    'senior', 'lead', 'principal', 'architect', 'chief', 'director',
+    'vp', 'head', 'partner', 'fellow', 'distinguished'
+  ];
+  const titleLower = (jobTitle || '').toLowerCase();
+  const isSpecialist = specialistKeywords.some(k => titleLower.includes(k));
+  const yearsMultiplier = isSpecialist ? 1.4 : 1.0;
+  const experienceDeductions = { '0-2':0, '2-5':3, '5-10':7, '10-20':12, '20+':16 };
+  const baseDeduction = (experienceDeductions[yearsOfExperience] || 0) * yearsMultiplier;
+  const cappedDeduction = Math.min(baseDeduction, 18); // hard cap
+  score -= cappedDeduction;
+
+  // Step 4: Specificity markers
+  const specificityKeywords = [
+    'custom', 'bespoke', 'embedded', 'niche', 'experimental', 'novel', 'pioneering'
+  ];
+  if (specificityKeywords.some(k => titleLower.includes(k))) {
+    score -= 8;
+  }
+
+  // Step 5: Final clamp
+  return Math.round(Math.max(3, Math.min(97, score)));
+}
+```
+
+---
+
+## 5. HUMAN IRREPLACEABILITY INDEX — HII (CORRECTED)
+
+### 5.1 Six dimensions
+| Dimension | Abbreviation | What it measures |
+|-----------|-------------|-----------------|
+| Empathic Reasoning | EMP | Emotional intelligence, compassion, active listening |
+| Moral Judgment | MOR | Ethics, values application, accountability |
+| Creative Synthesis | CRE | Novel idea combination, imagination, innovation |
+| Physical Presence | PHY | Embodied skill, dexterity, spatial judgment |
+| Social Navigation | SOC | Relationship building, coalition forming, influence |
+| Contextual Adaptation | CON | Reading the room, cultural sensitivity, situational judgment |
+
+### 5.2 Scoring formula (corrected weighted mean)
+
+```javascript
+function computeHII(dimensionAverages, jobTypeWeights) {
+  // dimensionAverages: { emp: 3.4, mor: 4.1, cre: 2.8, phy: 3.9, soc: 3.6, con: 4.0 }
+  // jobTypeWeights: { emp: 1.5, mor: 1.0, cre: 1.0, phy: 0.8, soc: 1.2, con: 1.0 }
+  // (weights vary by job type — 30 job types have custom weight sets)
+
+  const dims = ['emp', 'mor', 'cre', 'phy', 'soc', 'con'];
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const dim of dims) {
+    const rawScore = (dimensionAverages[dim] - 1) * 25; // map 1–5 → 0–100
+    const weight = jobTypeWeights[dim] || 1.0;
+    weightedSum += rawScore * weight;
+    totalWeight += weight;
+  }
+
+  // CORRECTED: divide by sum of weights, not by 6
+  // This ensures weights affect relative importance only, not absolute scale
+  const hiiScore = weightedSum / totalWeight;
+  return Math.round(Math.max(0, Math.min(100, hiiScore)));
+}
+```
+
+### 5.3 Reverse-scored questions (explicit list — required for data integrity)
+Maintain a hardcoded array:
+```javascript
+const REVERSE_SCORED_QUESTIONS = [3, 7, 11, 15, 19, 23, 27];
+// When scoring: reverseScore = 6 - rawAnswer (flips 1↔5, 2↔4, 3=3)
+// Document this array in code comments explaining WHY each question is reversed
+```
+
+### 5.4 Provisional score at Q15
+```javascript
+function showProvisionalScore(answeredQuestions) {
+  // Only show provisional if answers cover at least 4 of 6 dimensions
+  const coveredDimensions = new Set(answeredQuestions.map(q => q.dimension));
+  if (coveredDimensions.size < 4) return null; // don't show — too unreliable
+
+  const provisional = computeHIIFromPartial(answeredQuestions);
+  return {
+    score: provisional,
+    disclaimer: "Provisional estimate — based on 50% of questions. Final score may vary by ±15 points."
+  };
+}
+```
+
+---
+
+## 6. DISPLACEMENT FORECAST — CORRECTED S-CURVE
+
+### 6.1 Projection formula (corrected — starts from current score)
+
+```javascript
+function projectScore(currentScore, years, decayRate, scenario) {
+  // scenario multipliers on the decay rate
+  const scenarioMultipliers = {
+    optimistic:   0.4,  // user upskills 3+ hrs/week
+    baseline:     1.0,  // no change
+    pessimistic:  1.8,  // AI adoption accelerates
+  };
+
+  const k = decayRate * scenarioMultipliers[scenario];
+  const MAX_RISK = 97;
+
+  // Shifted logistic: starts at currentScore, asymptotes toward MAX_RISK
+  // NOT the standard logistic starting at 0 — must start at current score
+  const projectedScore = currentScore + (MAX_RISK - currentScore) /
+    (1 + Math.exp(-k * (years - (MAX_RISK - currentScore) / (2 * k * (MAX_RISK - currentScore)))));
+
+  // Simplified equivalent for implementation:
+  // projection(t) = maxRisk - (maxRisk - currentScore) * e^(-k*t)
+  // This is a saturating exponential — simpler and equally valid
+  const simpleProjection = MAX_RISK - (MAX_RISK - currentScore) * Math.exp(-k * years);
+
+  return Math.round(Math.max(currentScore, Math.min(MAX_RISK, simpleProjection)));
+}
+
+// Role-specific annual decay rates (baseline scenario)
+// Source: WEF Future of Jobs 2025 + McKinsey 2024 occupational transition data (cite both)
+const ROLE_DECAY_RATES = {
+  'customer-service-rep':   0.18,
+  'data-entry-clerk':       0.22,
+  'paralegal':              0.14,
+  'software-engineer':      0.10,
+  'data-scientist':         0.08,
+  'teacher':                0.05,
+  'therapist':              0.02,
+  'nurse':                  0.03,
+  'surgeon':                0.02,
+  'creative-director':      0.04,
+  // ... 20+ more roles
+  'default':                0.09,
+};
+```
+
+### 6.2 Chart requirements
+- Y-axis label: "Displacement risk score" (NOT inverted — show raw risk)
+- X-axis: Current year to current year + 5
+- Three lines: green (optimistic), grey dashed (baseline), red (pessimistic)
+- Horizontal dashed red line: role-specific displacement threshold
+- Vertical dashed line: roadmap start date (if started)
+- Y-axis range: start at max(0, currentScore − 10) to 100 — never start at 0 when current score is 60+
+
+---
+
+## 7. SKILL RISK CALCULATOR
+
+### 7.1 Custom skill scoring (corrected three-layer logic)
+
+```javascript
+function scoreCustomSkill(skillName, userIndustry) {
+  const name = skillName.toLowerCase();
+
+  // GOVERNANCE/OVERSIGHT keywords (truly protective regardless of tech context)
+  const governanceKeywords = ['ethics', 'governance', 'compliance', 'audit', 'oversight',
+    'regulation', 'policy', 'accountability', 'responsible ai'];
+
+  // TECH keywords (not inherently protective — need governance context to be protective)
+  const techKeywords = ['ai', 'ml', 'automation', 'llm', 'neural', 'algorithm',
+    'machine learning', 'deep learning'];
+
+  // AUTOMATABLE keywords (high risk regardless of how they sound)
+  const automatableKeywords = ['invoice', 'data entry', 'processing', 'filing',
+    'scheduling', 'transcription', 'copy', 'template'];
+
+  // Layer 1: Automatable check (highest priority — overrides tech-sounding names)
+  if (automatableKeywords.some(k => name.includes(k))) return 75 + Math.random() * 15;
+
+  // Layer 2: Truly protective (governance PLUS or WITHOUT tech)
+  const hasGovernance = governanceKeywords.some(k => name.includes(k));
+  const hasTech = techKeywords.some(k => name.includes(k));
+
+  if (hasGovernance) {
+    // "AI Ethics" → protective. "AI Infrastructure" → NOT protective (no governance keyword)
+    return 15 + Math.random() * 20; // low risk: 15–35
+  }
+
+  // Layer 3: Tech-only skills (risky — AI can replace AI engineers too)
+  if (hasTech && !hasGovernance) {
+    return 55 + Math.random() * 25; // moderate-high risk: 55–80
+  }
+
+  // Layer 4: Industry-aware human-skill keyword matching
+  const humanKeywords = ['empathy', 'facilitation', 'mentoring', 'negotiation',
+    'coaching', 'leadership', 'strategy', 'storytelling', 'persuasion'];
+  if (humanKeywords.some(k => name.includes(k))) return 20 + Math.random() * 20;
+
+  // Default: moderate risk
+  return 45 + Math.random() * 20;
+}
+```
+
+### 7.2 Radar chart threshold (corrected)
+```javascript
+// Show radar when 4+ skills (triangle at 3 is technically valid but looks odd)
+// Show bar chart when 3 or fewer skills
+const useRadar = selectedSkills.length >= 4;
+```
+
+---
+
+## 8. SCORE DRIFT TRACKER
+
+### 8.1 Y-axis inversion — label requirement (bug fix)
+```javascript
+// Chart Y-axis MUST be labelled clearly to explain inversion
+const yAxisLabel = "Resilience strength →";
+const yAxisTooltip = {
+  job: "Job safety = 100 − your Job Risk Score. Higher = safer.",
+  skill: "Skill safety = 100 − your Skill Risk Score. Higher = safer.",
+  hii: "Human Index score used directly. Higher = more human-irreplaceable."
+};
+
+// Plot scores correctly:
+const plotScore = (entry) => {
+  if (entry.sourceType === 'hii') return entry.rawScore; // direct
+  return 100 - entry.rawScore; // inverted for risk scores
+};
+```
+
+### 8.2 Score drift banner — show ONCE per session (bug fix)
+```javascript
+// WRONG (current): Banner appears on every tab
+// FIXED: Show drift banner once per session, auto-dismiss after 8 seconds or on click
+
+const [driftShown, setDriftShown] = useState(false);
+const sessionDriftKey = 'hp_drift_banner_seen_session';
+
+useEffect(() => {
+  const alreadySeen = sessionStorage.getItem(sessionDriftKey);
+  if (!alreadySeen && hasMeaningfulDrift) {
+    setDriftShown(true);
+    sessionStorage.setItem(sessionDriftKey, '1');
+  }
+}, [hasMeaningfulDrift]);
+// Note: use sessionStorage (not localStorage) so it resets on new session
+```
+
+### 8.3 Data version migration warning
+```javascript
+// When loading score history, check for version mismatches
+function loadScoreHistory() {
+  const history = JSON.parse(localStorage.getItem('hp_score_history') || '[]');
+  const currentVersion = '2026-Q1';
+  const hasOldVersionEntries = history.some(e => e.dataVersion !== currentVersion);
+
+  if (hasOldVersionEntries) {
+    // Show a one-time banner: "Some older scores were calculated with a previous model version
+    // and may not be directly comparable to your latest results."
+    // Tag old entries visually on the chart (e.g. dashed border on the point)
+  }
+  return history;
+}
+```
+
+---
+
+## 9. UPSKILLING ROADMAP
+
+### 9.1 Intent fallback chain (complete)
+```javascript
+const getRoadmapInput = (context) => {
+  // Priority: skill breakdown > skill score > job score > defaults
+  if (context.skillBreakdown?.length > 0) return { source: 'skills', data: context.skillBreakdown };
+  if (context.skillRiskScore != null) return { source: 'skillScore', data: context.skillRiskScore };
+  if (context.jobRiskScore != null) return { source: 'jobScore', data: context.jobRiskScore };
+  return { source: 'default', data: null }; // show generic industry examples
+};
+```
+
+### 9.2 Pace tracking (new — ENHANCE-04)
+```javascript
+// Track when each course was completed
+// hp_roadmap_progress: { [courseId]: { completed: true, completedAt: timestamp } }
+function estimateCompletionDate(phase, progressData) {
+  const completedThisWeek = Object.values(progressData)
+    .filter(p => p.completedAt > Date.now() - 7 * 24 * 60 * 60 * 1000).length;
+  const coursesPerWeek = Math.max(completedThisWeek, 0.5); // avoid division by zero
+  const remaining = phase.courses.filter(c => !progressData[c.id]?.completed).length;
+  const weeksRemaining = Math.ceil(remaining / coursesPerWeek);
+  return weeksRemaining;
+}
+```
+
+---
+
+## 10. HUMAN EDGE JOURNAL
+
+### 10.1 Storage management (new — size safety)
+```javascript
+const JOURNAL_MAX_ENTRIES = 500;
+const JOURNAL_WARN_AT = 450;
+
+function saveJournalEntry(entry) {
+  const entries = getJournalEntries();
+  if (entries.length >= JOURNAL_MAX_ENTRIES) {
+    // Prune oldest 50 entries before saving
+    entries.splice(0, 50);
+  }
+  if (entries.length >= JOURNAL_WARN_AT && entries.length < JOURNAL_MAX_ENTRIES) {
+    showStorageWarning('Your journal is nearly full. Oldest entries may be removed soon.');
+  }
+  entries.push({ ...entry, id: crypto.randomUUID(), createdAt: Date.now() });
+  localStorage.setItem('hp_journal_entries', JSON.stringify(entries));
+}
+```
+
+---
+
+## 11. DEPENDENCY BANNERS — IMPROVED COPY
+
+Replace generic "complete these first" banners with specific benefit messaging:
+
+```javascript
+const DEPENDENCY_MESSAGES = {
+  skillRisk: {
+    missingJobRisk: "Add a Job Risk Score to unlock industry-filtered AI threat tags for each of your skills — so you see the exact tools targeting your domain, not generic ones.",
+  },
+  roadmap: {
+    missingSkills: "Add your Skill Risk profile to replace generic course suggestions with a plan targeting YOUR top 3 highest-risk skills specifically.",
+    missingJobRisk: "Add a Job Risk Score to unlock the role-specific 90-day roadmap for your job type.",
+  },
+  forecast: {
+    missingAll: "Complete all 3 assessments to unlock personalised displacement scenario probabilities for your specific role and skill set.",
+  }
+};
+```
+
+---
+
+## 12. ASSESSMENT PROGRESS BAR — FIXED
+
+```javascript
+// Track whether each assessment has EVER been completed (not just "currently has score")
+// This prevents the bar from flickering during quiz retakes
+
+const assessmentEverCompleted = {
+  jobRisk:  localStorage.getItem('hp_ever_completed_job') === 'true',
+  skillRisk: localStorage.getItem('hp_ever_completed_skill') === 'true',
+  hii:      localStorage.getItem('hp_ever_completed_hii') === 'true',
+};
+
+// When an assessment completes for the first time:
+// localStorage.setItem('hp_ever_completed_job', 'true')
+
+// Progress bar count = sum of `assessmentEverCompleted` values
+// Bar hides when count === 3, never reappears even if HII is being retaken
+```
+
+---
+
+## 13. NEW FEATURES TO IMPLEMENT (MARKET-VALIDATED)
+
+### 13.1 Career Pivot Simulator (NEW-04 — high priority)
+```
+Location:    Results panel of Job Risk Calculator (Tool 1)
+Trigger:     User clicks any "Recommended Career Pivot" suggestion
+Behaviour:   Run the full 6D formula for the target role using same industry/country/experience
+Display:     Side-by-side: Current Role [72] vs Target Role [34]
+             Skill gap list: 3–5 skills the user would need
+             Estimated transition effort: Easy / Moderate / Major
+             "See upskilling plan for this pivot →" links to Roadmap
+```
+
+### 13.2 Peer Benchmark Mode (NEW-01 — high priority)
+```
+Location:    Results panel of all 3 core assessments
+Data:        Static percentile bands per jobId + industry (pre-computed from dataset)
+Display:     "You are in the top 28% of resilience for [role] in [industry]"
+             Anonymous distribution bar showing where the user sits
+             Threshold markers: "Bottom 25% need urgent action"
+Opt-in:      "Contribute your score to improve benchmarks" toggle (stores anonymously)
+```
+
+### 13.3 Resilience Badge (NEW-07 — low effort, high virality)
+```
+Unlock:      HII > 70 AND Job Risk < 40 AND Skill Risk < 45
+Format:      SVG badge, downloadable as PNG
+Content:     "AI-Resilient Professional · HumanProof 2026 · Score: [composite]"
+             Verify URL: humanproof.app/verify/[token]
+Sharing:     Pre-filled LinkedIn post copy
+Freemium:    Free users get the badge image; paid users get the verify link
+```
+
+### 13.4 Daily Micro-Challenges (NEW-10 — retention)
+```
+Location:    Persistent floating widget or home page card
+Cadence:     1 challenge per day, refreshes at midnight
+Content:     Tied to user's highest-risk dimension from HII
+             E.g. low Empathic Reasoning: "Today: In your next meeting, paraphrase 
+             what someone else said before responding. Log how it went."
+Journal link: One-tap to create a journal entry from the challenge
+Streak:      Visual streak counter, resets if missed a day
+```
+
+### 13.5 What Changed? AI News Panel (NEW-03 — retention)
+```
+Location:    Home page (secondary section) and Tools page header
+Content:     3–5 curated AI news items filtered by user's industry + role
+             Each item shows: "Impact on your role: [Low/Medium/High]"
+             "Would this change my score? Re-run assessment →" CTA
+Data:        RSS/API aggregation from Google News, filtered by keywords
+Cadence:     Updated weekly (or on demand for Pro users)
+```
+
+---
+
+## 14. UI/UX RULES
+
+### 14.1 Score colours (consistent across all tools)
+| Range | Colour | Label |
+|-------|--------|-------|
+| 3–25 | Green | Low Risk |
+| 26–45 | Teal | Moderate-Low |
+| 46–60 | Amber | Moderate Risk |
+| 61–75 | Orange | High Risk |
+| 76–97 | Red | Critical Risk |
+
+### 14.2 Confidence interval visualisation (ENHANCE-01)
+- Do NOT show confidence as text only (e.g. "±7%")
+- Render as a shaded band on the gauge/score display
+- Roles with full data: ±3% band (narrow, precise)
+- Roles with partial data: ±7% band (wider, clearly uncertain)
+
+### 14.3 Page structure
+```
+/ (Home)         → Marketing, hero, stats, CTA to /tools
+/tools           → Tabbed container with all 7 tools
+/resources       → Product/tool catalogue with category filters
+/pricing         → Plans + waitlist email capture (RFC5322 validation)
+```
+
+### 14.4 Loading states
+- First load: context reads localStorage → show skeleton screens per tool (not a blank page)
+- Score calculating: show progress indicator on the Calculate button, not a page-level spinner
+- Chart rendering: show chart skeleton until data is ready
+
+---
+
+## 15. RESEARCH CITATIONS — REQUIRED IN TRANSPARENCY PANELS
+
+Every score result must include a collapsible "How was this calculated?" panel that cites:
+
+1. Oxford Martin School — "The Future of Employment" (Frey & Osborne, 2013, updated 2023)
+2. McKinsey Global Institute — "The Future of Work After COVID-19" (2021)
+3. McKinsey Global Institute — "Generative AI and the Future of Work" (2023)
+4. World Economic Forum — "Future of Jobs Report 2025"
+5. Stanford HAI — "Artificial Intelligence Index Report 2024"
+6. MIT Sloan Management Review — [specific paper title + DOI for D6 social capital research]
+7. OECD AI Policy Observatory — country adoption and regulation data (for D5)
+8. GPT-4 Occupational Task Audit — [internal methodology note for D1]
+
+**Rule:** If you cannot cite a specific paper for a claim, remove the claim or mark it as "internal model assumption — not from published research."
+
+---
+
+## 16. ACCESSIBILITY & PERFORMANCE
+
+- All interactive elements: keyboard navigable, ARIA labels on all icon-only buttons
+- Gauge/radar charts: include text alternative (e.g. "Your score of 65 places you in the High Risk zone")
+- Colour is never the ONLY differentiator — always pair colour with a text label or icon
+- Lazy load: Tool tabs should load their heaviest components (charts, skill database) only when that tab is first activated
+- Skill database (228 skills): load asynchronously, show "Loading skill database..." rather than blocking the tab
+- localStorage read on startup: wrap in try/catch — if storage is unavailable (incognito in some browsers), fall back gracefully to in-memory state with a warning banner
+
+---
+
+## 17. ERROR HANDLING
+
+```javascript
+// Each tool tab wrapped in an independent error boundary
+class ToolErrorBoundary extends React.Component {
+  state = { hasError: false, error: null };
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  render() {
+    if (this.state.hasError) return (
+      <ErrorCard
+        message="Something went wrong in this tool."
+        detail={this.state.error?.message}
+        onRetry={() => this.setState({ hasError: false, error: null })}
+      />
+    );
+    return this.props.children;
+  }
+}
+// Each of the 7 tool tabs must be individually wrapped in ToolErrorBoundary
+// If one tab crashes, the other 6 continue working normally
+```
+
+---
+
+## 18. VERSIONING & DATA MIGRATION
+
+When you update the scoring model (change weights, formula, or role data):
+1. Bump `DATA_VERSION` constant (e.g. `'2026-Q2'`)
+2. On app load, detect entries with older versions in `hp_score_history`
+3. Show a one-time dismissible banner: "Your score history includes entries from a previous model version. These may not be directly comparable to your latest score."
+4. Tag older entries on the drift chart with a visual indicator (e.g. hollow circle vs filled circle)
+5. Never silently delete or re-score old entries
+
+---
+
+*End of HumanProof v3.0 Master Prompt. Use this as your system context when building any part of the platform.*

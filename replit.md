@@ -105,18 +105,35 @@ HumanProof v2.0 — AI job displacement intelligence platform. Dark cyberpunk Re
 - Boost: `displacementPressure = D1*0.6 + D2*0.4`, boostMultiplier clamped to 1.42
 
 **Tools (all 7 tabs functional):**
-- **Tab 1 – Job Risk Score** (`CalculatorPage`): 6D formula, D6 bar in breakdown, data freshness chip (Q1 2026), network moat display
-- **Tab 2 – Skill Risk** (`SkillRiskCalculator`): 200+ skills, portfolio radar/bar, projection
-- **Tab 3 – Human Irreplaceability** (`HumanIrreplacibilityIndex`): 30-question BARS quiz
+- **Tab 1 – Job Risk Score** (`CalculatorPage`): 6D formula, D6 bar in breakdown, data freshness chip (Q1 2026), network moat display; **v3**: Career Pivot Simulator (click-to-simulate target role risk), Peer Benchmark (percentile vs peers), updated transparency panel with v3 boost formula
+- **Tab 2 – Skill Risk** (`SkillRiskCalculator`): 200+ skills, portfolio radar (4+ skills) / bar (≤3), projection; **v3**: Peer Benchmark added to results
+- **Tab 3 – Human Irreplaceability** (`HumanIrreplacibilityIndex`): 30-question BARS quiz; **v3**: provisional score requires 4+ dimensions, Peer Benchmark added to results
 - **Tab 4 – Upskilling Roadmap** (`UpskillingRoadmap`): 20 role-specific roadmaps
-- **Tab 5 – Human Edge Journal** (`HumanEdgeJournal`): Entry editing with dirty state
-- **Tab 6 – Progress Tracker** (`ScoreDriftTracker`): PlotScore inversion, time-weighted drift, 90-day staleness
-- **Tab 7 – Displacement Forecast** (`DisplacementForecast`): S-curve projection by role — **NEW**
+- **Tab 5 – Human Edge Journal** (`HumanEdgeJournal`): Entry editing with dirty state; **v3**: 500 entry cap (warn at 450, prune 50 oldest)
+- **Tab 6 – Progress Tracker** (`ScoreDriftTracker`): PlotScore inversion, time-weighted drift, 90-day staleness; **v3**: Resilience Badge (unlocks HII>70 AND JobRisk<40 AND SkillRisk<45, downloadable SVG, LinkedIn post copy)
+- **Tab 7 – Displacement Forecast** (`DisplacementForecast`): S-curve projection by role
 
-**ToolsPage v2 improvements:**
-- Assessment completion progress bar (0/1/2/3 of 3 complete)
-- Completion-gated newsletter popup (fires immediately on 3/3 complete, 3-min timer otherwise)
-- `forecast` tab dependency check (requires Job Risk Score)
+**v3.0 Formula fixes (riskFormula.ts):**
+- D4 floor: only applied when `base > 50` (low-risk roles reduce freely)
+- D1/D2 boost: interaction term `(D1-70)*(D2-70)*0.001` only when BOTH D1>70 AND D2>70 (was average-based)
+- `projectScore`: saturating exponential `MAX_RISK - (MAX_RISK - baseline) * e^(-k*t)` (never goes below baseline)
+
+**v3.0 Storage (scoreStorage.ts):**
+- 30-min time gate removed; saves on meaningful delta (≥4/6/8 pts for job/skill/hii)
+- 200-entry pruning; "ever completed" flags (`hp_ever_completed_job/skill/hii`)
+- `hasLegacyVersionEntries()` and `getEverCompletedFlags()` exported
+
+**v3.0 New components:**
+- `PeerBenchmark.tsx`: percentile ranking vs peers in same role (pre-computed medians, WEF/McKinsey data). Used in all 3 assessment results.
+- `ResilienceBadge.tsx`: achievement badge unlocked when HII>70, JobRisk<40, SkillRisk<45. SVG download + LinkedIn post copy.
+- `DailyChallenge.tsx`: floating widget with daily micro-challenge tied to lowest HII dimension; streak counter, one-tap journal link.
+
+**ToolsPage v3 improvements:**
+- Session drift banner: shows once per session via sessionStorage (not per-render)
+- Assessment completion progress bar uses "ever completed" flags (no flicker on retake)
+- Dependency banners: specific benefit messages per tab + "Start now →" button
+- Legacy version migration banner when old data entries detected
+- Daily Micro-Challenge floating widget (bottom-right)
 - Keyboard navigation, lazy mounting, ARIA roles
 
 **Architecture split (v2):**

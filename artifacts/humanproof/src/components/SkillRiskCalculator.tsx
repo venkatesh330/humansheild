@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import PeerBenchmark from './PeerBenchmark';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, Cell,
@@ -176,8 +177,8 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
     const q = search.toLowerCase().trim();
     const selectedIds = new Set(selectedSkills.map(s => s.id));
     return q
-      ? skillsDataNew.filter(s => !selectedIds.has(s.id) && (s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q))).slice(0, 50)
-      : skillsDataNew.filter(s => !selectedIds.has(s.id)).slice(0, 60);
+      ? skillsDataNew.filter(s => !selectedIds.has(s.id) && (s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)))
+      : skillsDataNew.filter(s => !selectedIds.has(s.id));
   }, [search, selectedSkills]);
 
   const addSkill = (skill: Skill) => {
@@ -221,8 +222,10 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
     : 0;
 
   const sorted = [...selectedSkills].sort((a, b) => a.riskScore - b.riskScore);
-  const safest = sorted.slice(0, 3);
-  const riskiest = sorted.slice(-3).reverse();
+  const safestTake = Math.min(3, Math.max(1, Math.floor(sorted.length / 2)));
+  const safest = sorted.slice(0, safestTake);
+  const safestIds = new Set(safest.map(s => s.id));
+  const riskiest = [...sorted].reverse().slice(0, 3).filter(s => !safestIds.has(s.id));
 
   const radarData = selectedSkills.map(s => ({
     skill: s.name.length > 14 ? s.name.slice(0, 13) + '…' : s.name,
@@ -436,7 +439,16 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
             </div>
           </div>
 
-          {selectedSkills.length >= 3 ? (
+          {/* NEW-01: Peer Benchmark for Skill Risk */}
+          <PeerBenchmark
+            score={weightedScore}
+            scoreType="skill"
+            jobTitle={state.jobTitle}
+            industry={state.industry}
+          />
+
+          {/* v3 FIX: show radar at 4+ skills (triangle at 3 looks odd); bar chart for ≤3 */}
+          {selectedSkills.length >= 4 ? (
             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 24 }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Skill Risk Radar</div>
               <ResponsiveContainer width="100%" height={320}>

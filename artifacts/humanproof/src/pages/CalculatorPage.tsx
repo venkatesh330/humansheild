@@ -11,6 +11,78 @@ import {
   getAutomationExp,
 } from '../data/riskEngine';
 import { DANGER_SKILLS, SAFE_SKILLS, TRANSITION_RECS } from '../data/skillsData';
+import { useHumanProof } from '../context/HumanProofContext';
+import PeerBenchmark from '../components/PeerBenchmark';
+
+// NEW-08: Career Pivot Simulator — map common pivot labels to known work type keys
+// Allows calculateScore to estimate risk for a pivot target
+const PIVOT_WORK_KEY_MAP: Record<string, string> = {
+  'ai engineering lead': 'sw_ml',
+  'platform engineering': 'sw_devops',
+  'developer relations': 'sw_lead',
+  'ai product designer': 'des_ux',
+  'full-stack ai integrations': 'sw_fullstack',
+  'developer advocate': 'cnt_tech_write',
+  'ai application developer': 'sw_fullstack',
+  'saas product manager': 'sw_lead',
+  'indie hacker': 'sw_fullstack',
+  'ai infrastructure engineer': 'sw_devops',
+  'platform engineer': 'sw_devops',
+  'cloud finops specialist': 'sw_cloud',
+  'chief ai officer': 'sw_arch',
+  'ai systems architect': 'sw_arch',
+  'technology advisory': 'con_it',
+  'ai quality engineer': 'sw_testing',
+  'ai governance analyst': 'fin_compliance',
+  'process automation designer': 'con_it',
+  'cfo office ai strategist': 'fin_fp',
+  'fp&a analyst': 'fin_fp',
+  'financial controller': 'fin_reporting',
+  'hr technology consultant': 'hr_hris',
+  'people analytics manager': 'hr_ld',
+  'compensation & benefits specialist': 'hr_comp',
+  'ai content strategist': 'cnt_blog',
+  'brand narrative lead': 'mkt_brand',
+  'content operations manager': 'cnt_blog',
+  'seo strategy lead': 'mkt_seo',
+  'content marketing manager': 'cnt_blog',
+  'digital pr specialist': 'mkt_brand',
+  'customer experience designer': 'des_ux',
+  'cx technology specialist': 'hr_hris',
+  'voice of customer analyst': 'mkt_analytics',
+  'ai operations specialist': 'con_it',
+  'process improvement analyst': 'con_change',
+  'data quality manager': 'sw_db',
+  'clinical documentation specialist': 'hc_admin_hc',
+  'health informatics analyst': 'sw_db',
+  'healthcare operations manager': 'hc_admin_hc',
+  'ai radiology specialist': 'hc_radiology',
+  'clinical ai trainer': 'sw_ml',
+  'radiology research lead': 'hc_radiology',
+  'legal technology specialist': 'leg_legaltech',
+  'legal project manager': 'leg_compliance',
+  'contract intelligence analyst': 'leg_legaltech',
+  'creative director': 'des_graphic',
+  'ai art director': 'des_graphic',
+  'brand experience designer': 'mkt_brand',
+  'talent intelligence specialist': 'hr_recruit',
+  'employer brand manager': 'mkt_brand',
+  'people analytics lead': 'hr_hris',
+  'seo strategy director': 'mkt_seo',
+  'content intelligence lead': 'cnt_seo_content',
+  'digital marketing director': 'mkt_brand',
+  'ai augmentation specialist': 'con_it',
+  'change management consultant': 'con_change',
+  'learning & development designer': 'hr_ld',
+};
+
+function pivotLabelToWorkKey(pivotLabel: string): string | null {
+  const lower = pivotLabel.toLowerCase().split(' — ')[0].trim();
+  for (const [keyword, key] of Object.entries(PIVOT_WORK_KEY_MAP)) {
+    if (lower.includes(keyword)) return key;
+  }
+  return null;
+}
 
 function highlight(text: string, query: string): React.ReactNode {
   if (!query) return text;
@@ -186,8 +258,10 @@ function getScoreGradient(score: number): string {
 }
 
 function ResultPanel({ data }: { data: ResultData }) {
-  const { score, d1, d2, d3, d4, d5, d6, augVal, networkMoat, workTypeKey, workTypeLabel, exp, countryLabel } = data;
+  const { score, d1, d2, d3, d4, d5, d6, augVal, networkMoat, workTypeKey, workTypeLabel, exp, countryLabel, countryKey, industryKey } = data;
   const [showCalcPanel, setShowCalcPanel] = useState(false);
+  const [selectedPivot, setSelectedPivot] = useState<string | null>(null);
+  const [pivotResult, setPivotResult] = useState<{ score: number; label: string } | null>(null);
   const color = getScoreColor(score);
   const conf = getConfidence(workTypeKey);
   const dangerList = DANGER_SKILLS[workTypeKey] || DANGER_SKILLS.default;
@@ -312,7 +386,9 @@ function ResultPanel({ data }: { data: ResultData }) {
               <div><span style={{ color: '#a78bfa' }}>D6={d6}</span> · Social Capital Moat (MIT Sloan 2024)</div>
             </div>
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10, fontSize: '0.76rem' }}>
-              <strong style={{ color: 'var(--text)' }}>Boost:</strong> Additive excess-risk boost applied when D1/D2 average exceeds 50, capped at +20% of rawScore.
+              {/* v3 FIX: Updated boost formula description — interaction term, not average-based */}
+              <strong style={{ color: 'var(--text)' }}>v3 Boost:</strong> Interaction term applied only when both D1&gt;70 AND D2&gt;70: <span style={{ fontFamily: 'var(--mono)', color: 'var(--cyan)' }}>boost = (D1−70)×(D2−70)×0.001</span>. Models compounding risk when tasks are highly automatable AND mature AI tools exist.
+              &nbsp;·&nbsp;<strong style={{ color: 'var(--text)' }}>D4 floor:</strong> Experience shield only activates for high-risk roles (base&gt;50).
               &nbsp;·&nbsp;<strong style={{ color: 'var(--text)' }}>Final range:</strong> 3–97 (hard clamp).
             </div>
           </div>
@@ -344,13 +420,106 @@ function ResultPanel({ data }: { data: ResultData }) {
         </div>
       </div>
 
+      {/* NEW-01: Peer Benchmark Panel — below score breakdown */}
+      <PeerBenchmark
+        score={score}
+        scoreType="job"
+        jobTitle={workTypeLabel}
+        industry={industryKey}
+      />
+
       <div className="transition-section">
         <h4>→ Recommended Career Pivots</h4>
-        <ul className="transition-list">
-          {transList.slice(0, 3).map((t, i) => (
-            <li key={i}><span className="arrow-bullet">→</span><span>{t}</span></li>
-          ))}
-        </ul>
+
+        {/* NEW-08: Career Pivot Simulator */}
+        <div style={{ marginBottom: 12, fontSize: '0.8rem', color: 'var(--text2)' }}>
+          Click any pivot below to simulate your AI risk score in that role.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {transList.slice(0, 3).map((t, i) => {
+            const pivotTitle = t.split(' — ')[0];
+            const pivotDesc = t.split(' — ').slice(1).join(' — ');
+            const targetKey = pivotLabelToWorkKey(t);
+            const isSelected = selectedPivot === t;
+
+            const handleSimulate = () => {
+              if (isSelected) {
+                setSelectedPivot(null);
+                setPivotResult(null);
+                return;
+              }
+              setSelectedPivot(t);
+              if (targetKey) {
+                const { score: pivotScore } = calculateScore(industryKey, targetKey, exp, countryKey, pivotTitle);
+                setPivotResult({ score: pivotScore, label: pivotTitle });
+              } else {
+                setPivotResult(null);
+              }
+            };
+
+            return (
+              <div key={i} style={{ borderRadius: 10, overflow: 'hidden', border: isSelected ? '1px solid rgba(0,245,255,0.4)' : '1px solid rgba(255,255,255,0.06)' }}>
+                <button
+                  onClick={handleSimulate}
+                  style={{
+                    width: '100%', background: isSelected ? 'rgba(0,245,255,0.06)' : 'rgba(255,255,255,0.03)',
+                    border: 'none', padding: '12px 16px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
+                  }}
+                >
+                  <span style={{ color: 'var(--cyan)', fontSize: '1rem', flexShrink: 0 }}>→</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: 'var(--text)', fontWeight: 600, fontSize: '0.88rem', marginBottom: 2 }}>{pivotTitle}</div>
+                    {pivotDesc && <div style={{ color: 'var(--text2)', fontSize: '0.75rem' }}>{pivotDesc}</div>}
+                  </div>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--cyan)', flexShrink: 0, opacity: isSelected ? 1 : 0.6 }}>
+                    {isSelected ? '▲ Hide' : targetKey ? '▼ Simulate' : '— No data'}
+                  </span>
+                </button>
+
+                {isSelected && (
+                  <div style={{ padding: '12px 16px', background: 'rgba(0,245,255,0.04)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    {pivotResult ? (
+                      <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--text2)', marginBottom: 4 }}>CURRENT · {workTypeLabel}</div>
+                          <div style={{ fontSize: '2rem', fontWeight: 700, color: getScoreColor(score) }}>{score}</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text2)' }}>{getVerdict(score)}</div>
+                        </div>
+                        <div style={{ fontSize: '1.5rem', color: 'var(--text2)' }}>→</div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--text2)', marginBottom: 4 }}>TARGET · {pivotResult.label}</div>
+                          <div style={{ fontSize: '2rem', fontWeight: 700, color: getScoreColor(pivotResult.score) }}>{pivotResult.score}</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text2)' }}>{getVerdict(pivotResult.score)}</div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                          {pivotResult.score < score ? (
+                            <div style={{ color: 'var(--emerald)', fontSize: '0.82rem', lineHeight: 1.5 }}>
+                              <strong>↓ {score - pivotResult.score} point improvement</strong> in AI resilience. This pivot reduces your displacement risk{score - pivotResult.score > 20 ? ' significantly' : ''}.
+                            </div>
+                          ) : pivotResult.score > score ? (
+                            <div style={{ color: 'var(--orange)', fontSize: '0.82rem', lineHeight: 1.5 }}>
+                              <strong>↑ {pivotResult.score - score} point increase</strong> in risk. This pivot may expose you to more automation pressure — weigh the trade-offs.
+                            </div>
+                          ) : (
+                            <div style={{ color: 'var(--text2)', fontSize: '0.82rem' }}>Similar risk profile. Your resilience transfers well to this role.</div>
+                          )}
+                          <div style={{ marginTop: 6, fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--text2)' }}>
+                            Same country · Same experience · Same industry
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: 'var(--text2)', fontSize: '0.82rem' }}>
+                        Score estimate not available for this pivot — insufficient role data. Use the calculator above to manually evaluate this role.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="result-disclaimer">
@@ -361,6 +530,7 @@ function ResultPanel({ data }: { data: ResultData }) {
 }
 
 export default function CalculatorPage() {
+  const { dispatch } = useHumanProof();
   const [industryKey, setIndustryKey] = useState('');
   const [industryLabel, setIndustryLabel] = useState('');
   const [workTypeKey, setWorkTypeKey] = useState('');
@@ -389,6 +559,7 @@ export default function CalculatorPage() {
     setTimeout(() => {
       const { score, d1, d2, d3, d4, d5, d6, augVal, networkMoat } = calculateScore(industryKey, workTypeKey, exp, countryKey, workTypeLabel);
       setResult({ score, d1, d2, d3, d4, d5, d6, augVal, networkMoat, industryKey, workTypeKey, workTypeLabel, exp, countryKey, countryLabel });
+      dispatch({ type: 'SET_JOB_RISK', score, title: workTypeLabel, industry: industryLabel });
       setLoading(false);
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });

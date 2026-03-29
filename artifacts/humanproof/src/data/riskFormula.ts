@@ -75,14 +75,18 @@ export function getAugVal(workType: string): number {
 }
 
 // ─── D4: Experience & Seniority Shield ─────────────────────
-// BUG 3 FIX: experience cannot reduce D4 by more than 75% — prevents unrealistic near-zero values
+// v3 FIX: floor only applies to HIGH-risk roles (base > 50)
+// Safe-role seniors should be able to reduce freely — the old floor incorrectly inflated their score
 export function calculateD4(workType: string, exp: string): number {
   const base = EXP_RISK_BASE[exp] ?? 54;
   const idx = EXP_INDEX[exp] ?? 2;
   const sens = EXP_SENSITIVITY[workType] ?? EXP_SENSITIVITY.default;
   const d4Raw = Math.round(base * (1 - sens * idx / 4));
-  // BUG 3 FIX: realism floor — experience can reduce D4 by at most 75% of base risk
-  return Math.max(d4Raw, Math.round(base * 0.25));
+  // Floor only activates for high-risk roles (base > 50); low-risk roles can reduce freely
+  if (base > 50) {
+    return Math.max(d4Raw, Math.round(base * 0.25));
+  }
+  return Math.max(0, Math.min(100, d4Raw));
 }
 
 // ─── D5: Country Context (multiplicative net exposure model) ─
@@ -106,16 +110,17 @@ export function calculateD6(workType: string, exp: string): number {
   return Math.max(10, Math.min(85, baseScore + expBonus));
 }
 
-// ─── Future Projection: S-Curve (logistic) ─────────────────
-// v2 fix: logistic S-curve replaces linear — saturates correctly near limits
+// ─── Future Projection: Saturating Exponential ─────────────
+// v3 FIX: starts from currentScore (not 0), asymptotes toward MAX_RISK=97
+// simpleProjection(t) = MAX_RISK - (MAX_RISK - currentScore) * e^(-k*t)
+// This is simpler and more correct than the old logistic that started from 0
 export function projectScore(baseline: number, decayFactor: number, years: number): number {
-  const L = 97; // carrying capacity
-  const k = decayFactor / 12; // growth rate
-  // Avoid log(0) edge case
+  const MAX_RISK = 97;
+  const k = Math.max(0.001, decayFactor / 20); // annual growth rate, stable
   const safeBaseline = Math.max(3, Math.min(94, baseline));
-  const x0 = Math.log((L - safeBaseline) / safeBaseline) / k;
-  const projected = L / (1 + Math.exp(-k * (years - x0)));
-  return Math.min(97, Math.max(3, Math.round(projected)));
+  const projected = MAX_RISK - (MAX_RISK - safeBaseline) * Math.exp(-k * years);
+  // Never go below the starting score (risk never decreases without action)
+  return Math.min(97, Math.max(safeBaseline, Math.round(projected)));
 }
 
 export function projectSafeScore(baseline: number, years: number): number {
@@ -145,12 +150,13 @@ export function calculateScore(
   // D1:0.26 D2:0.18 D3:0.20 D4:0.16 D5:0.09 D6:0.11
   const rawScore = d1 * 0.26 + d2 * 0.18 + d3 * 0.20 + d4 * 0.16 + d5 * 0.09 + d6 * 0.11;
 
-  // BUG 4 FIX: Additive boost replaces multiplicative to avoid double-counting D1/D2
-  // Computes excess risk above the 50-point neutral line using the D1/D2 weighted average
-  const d1d2Average = (d1 * 0.26 + d2 * 0.18) / 0.44;
-  const excessRisk = Math.max(0, d1d2Average - 50);
-  const boostAddition = excessRisk * 0.15;
-  let score = Math.round(Math.min(rawScore * 1.20, rawScore + boostAddition));
+  // v3 FIX: Interaction boost only when BOTH D1 AND D2 are simultaneously very high (>70)
+  // Old formula (d1d2Average - 50) × 0.15 caused double-counting; new formula is minimal and targeted
+  let score = rawScore;
+  if (d1 > 70 && d2 > 70) {
+    const interactionBoost = (d1 - 70) * (d2 - 70) * 0.001;
+    score = rawScore + interactionBoost;
+  }
 
   // ── Industry multiplier ──
   const industryMult = INDUSTRY_KEY_MULT[industryKey] || 1.0;
