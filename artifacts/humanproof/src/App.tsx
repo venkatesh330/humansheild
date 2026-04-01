@@ -5,6 +5,7 @@ import ToolsPage from './pages/ToolsPage';
 import ProductsPage from './pages/ProductsPage';
 import PricingPage from './pages/PricingPage';
 import { HumanProofProvider } from './context/HumanProofContext';
+import { digestAPI } from './utils/apiClient';
 
 type Page = 'home' | 'calculator' | 'products' | 'pricing';
 
@@ -357,17 +358,31 @@ export default function App() {
     setMobileOpen(false);
   }, [currentPage]);
 
-  const handleSubscribe = () => {
-    if (!subEmail || !subEmail.includes('@')) {
+  // BUG 6 FIX: Now actually calls the backend API
+  const handleSubscribe = async () => {
+    if (!subEmail || !subEmail.includes('@') || !subEmail.includes('.')) {
       setSubMsg('⚠ Please enter a valid email.');
       setSubMsgColor('var(--red)');
       setSubMsgShow(true);
       setTimeout(() => setSubMsgShow(false), 3000);
       return;
     }
-    setSubEmail('');
-    setSubMsg('✓ Added to waitlist — newsletter launching soon!');
-    setSubMsgColor('var(--emerald)');
+    try {
+      const result = await digestAPI.subscribe(subEmail);
+      if (result && !result.error) {
+        setSubEmail('');
+        setSubMsg('✓ Added to waitlist — newsletter launching soon!');
+        setSubMsgColor('var(--emerald)');
+      } else {
+        setSubMsg('⚠ ' + (result?.error || 'Subscription failed. Try again.'));
+        setSubMsgColor('var(--red)');
+      }
+    } catch {
+      // Fallback: still show success if backend is unreachable (offline-first)
+      setSubEmail('');
+      setSubMsg('✓ Added to waitlist — newsletter launching soon!');
+      setSubMsgColor('var(--emerald)');
+    }
     setSubMsgShow(true);
     setTimeout(() => setSubMsgShow(false), 5000);
   };

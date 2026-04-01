@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
 const router: IRouter = Router();
 
@@ -11,13 +12,19 @@ interface DigestSubscriber {
 
 const subscribers: DigestSubscriber[] = [];
 
+// BUG 5 FIX: Use Zod for proper email validation instead of just checking for '@'
+const emailSchema = z.object({
+  email: z.string().email("Please provide a valid email address"),
+});
+
 // POST /api/digest/subscribe - Subscribe to weekly digest
 router.post("/subscribe", (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: "Invalid email" });
+    const parsed = emailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid email", details: parsed.error.flatten() });
     }
+    const { email } = parsed.data;
     const existing = subscribers.find(s => s.email === email);
     if (existing) {
       existing.status = 'active';
@@ -38,7 +45,11 @@ router.post("/subscribe", (req, res) => {
 // POST /api/digest/unsubscribe - Unsubscribe from digest
 router.post("/unsubscribe", (req, res) => {
   try {
-    const { email } = req.body;
+    const parsed = emailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid email" });
+    }
+    const { email } = parsed.data;
     const subscriber = subscribers.find(s => s.email === email);
     if (!subscriber) {
       return res.status(404).json({ error: "Not subscribed" });

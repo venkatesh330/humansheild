@@ -25,7 +25,7 @@ export const generateAssessmentSnapshot = (
   if (maxRisk >= 70) recommendations.push('Plan career transition (1-3 months)');
   if (maxRisk >= 55) recommendations.push('Begin targeted skill development');
   
-  if (skillRiskScore !== null && skillRiskScore > jobRiskScore!) {
+  if (skillRiskScore !== null && skillRiskScore > (jobRiskScore ?? 0)) {
     recommendations.push('Focus on high-risk skills identified');
   }
   

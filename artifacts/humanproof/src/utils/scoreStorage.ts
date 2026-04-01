@@ -162,10 +162,13 @@ export const getScoreHistory_raw = getScoreHistory;
 export const getScoreDriftLegacy = () => {
   const drift = getScoreDrift();
   if (!drift) return null;
+  // BUG 4 FIX: Use the raw history timestamp instead of parsing a locale string
+  const history = getScoreHistory();
+  const previousEntry = history.length >= 2 ? history[history.length - 2] : null;
   return {
     change: drift.direction === 'up' ? drift.change : -drift.change,
     direction: drift.direction === 'up' ? 'increased' : 'decreased',
-    previousDate: new Date(drift.previousDate).getTime(),
+    previousDate: previousEntry?.timestamp ?? Date.now(),
     latest: drift.latest,
     previous: drift.previous,
   };

@@ -25,7 +25,15 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// CON FIX: Configure CORS with allowed origins instead of wildcard
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost:3001'];
+
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' ? allowedOrigins : true,
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
