@@ -1,5 +1,14 @@
 const API_BASE = '/api';
+import { supabase } from './supabase';
 
+const getHeaders = async () => {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  return headers;
+};
 interface Assessment {
   id: string;
   userId: string;
@@ -14,7 +23,7 @@ export const assessmentAPI = {
     try {
       const res = await fetch(`${API_BASE}/assessments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getHeaders(),
         body: JSON.stringify({ userId, type, score, metadata }),
       });
       return await res.json();
@@ -26,7 +35,9 @@ export const assessmentAPI = {
 
   async getAssessments(userId: string): Promise<Assessment[]> {
     try {
-      const res = await fetch(`${API_BASE}/assessments/${userId}`);
+      const res = await fetch(`${API_BASE}/assessments/${userId}`, {
+        headers: await getHeaders()
+      });
       return await res.json();
     } catch (e) {
       console.error('Failed to fetch assessments:', e);
@@ -36,7 +47,10 @@ export const assessmentAPI = {
 
   async exportAssessment(id: string) {
     try {
-      const res = await fetch(`${API_BASE}/assessments/${id}/export`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/assessments/${id}/export`, { 
+        method: 'POST',
+        headers: await getHeaders()
+      });
       return await res.json();
     } catch (e) {
       console.error('Failed to export assessment:', e);
@@ -46,7 +60,10 @@ export const assessmentAPI = {
 
   async shareAssessment(id: string) {
     try {
-      const res = await fetch(`${API_BASE}/assessments/${id}/share`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/assessments/${id}/share`, { 
+        method: 'POST',
+        headers: await getHeaders()
+      });
       return await res.json();
     } catch (e) {
       console.error('Failed to share assessment:', e);
@@ -56,7 +73,10 @@ export const assessmentAPI = {
 
   async deleteAssessment(id: string) {
     try {
-      const res = await fetch(`${API_BASE}/assessments/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/assessments/${id}`, { 
+        method: 'DELETE',
+        headers: await getHeaders()
+      });
       return await res.json();
     } catch (e) {
       console.error('Failed to delete assessment:', e);

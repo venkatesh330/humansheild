@@ -7,6 +7,8 @@ import PricingPage from './pages/PricingPage';
 import { HumanProofProvider } from './context/HumanProofContext';
 import { LayoffProvider } from './context/LayoffContext';
 import { digestAPI } from './utils/apiClient';
+import { useAuth } from './context/AuthContext';
+import { AuthModal } from './components/AuthModal';
 
 type Page = 'home' | 'calculator' | 'products' | 'pricing';
 
@@ -329,6 +331,8 @@ function useRipple() {
 }
 
 export default function App() {
+  const { user, signOut } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [subEmail, setSubEmail] = useState('');
@@ -418,9 +422,20 @@ export default function App() {
             </li>
           ))}
         </ul>
-        <button className="nav-cta" onClick={() => navigate('calculator')}>
-          Check My Risk
-        </button>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {user ? (
+            <button className="nav-cta" style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', padding: '8px 16px', fontSize: '0.8rem' }} onClick={signOut}>
+              Sign Out
+            </button>
+          ) : (
+            <button className="nav-cta" style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', padding: '8px 16px', fontSize: '0.8rem' }} onClick={() => setAuthModalOpen(true)}>
+              Sign In
+            </button>
+          )}
+          <button className="nav-cta" onClick={() => navigate('calculator')}>
+            Check My Risk
+          </button>
+        </div>
         <div className="nav-hamburger" onClick={() => setMobileOpen(o => !o)}>
           <span /><span /><span />
         </div>
@@ -493,6 +508,7 @@ export default function App() {
           <p>Built on data from McKinsey · Goldman Sachs · WEF · OECD · Stanford HAI · MIT · BCG · Anthropic</p>
         </div>
       </footer>
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
       </LayoffProvider>
     </HumanProofProvider>
   );

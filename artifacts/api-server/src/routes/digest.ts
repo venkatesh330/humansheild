@@ -36,9 +36,9 @@ router.post("/subscribe", (req, res) => {
       status: 'active',
     };
     subscribers.push(subscriber);
-    res.json({ message: "Subscribed successfully", subscriber });
+    return res.json({ message: "Subscribed successfully", subscriber });
   } catch (e) {
-    res.status(500).json({ error: "Failed to subscribe" });
+    return res.status(500).json({ error: "Failed to subscribe" });
   }
 });
 
@@ -55,9 +55,9 @@ router.post("/unsubscribe", (req, res) => {
       return res.status(404).json({ error: "Not subscribed" });
     }
     subscriber.status = 'unsubscribed';
-    res.json({ message: "Unsubscribed successfully" });
+    return res.json({ message: "Unsubscribed successfully" });
   } catch (e) {
-    res.status(500).json({ error: "Failed to unsubscribe" });
+    return res.status(500).json({ error: "Failed to unsubscribe" });
   }
 });
 
@@ -66,13 +66,13 @@ router.get("/status/:email", (req, res) => {
   try {
     const { email } = req.params;
     const subscriber = subscribers.find(s => s.email === email);
-    res.json({
+    return res.json({
       email,
       isSubscribed: subscriber?.status === 'active',
       subscriber: subscriber || null,
     });
   } catch (e) {
-    res.status(500).json({ error: "Failed to check status" });
+    return res.status(500).json({ error: "Failed to check status" });
   }
 });
 
