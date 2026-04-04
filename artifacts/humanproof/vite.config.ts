@@ -11,24 +11,7 @@ export default defineConfig({
   base: basePath,
   plugins: [
     react(),
-    tailwindcss(),
-    // Only load Replit plugins when running on Replit (REPL_ID is set)
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-runtime-error-modal").then((m) =>
-            m.default(),
-          ),
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }),
-          ),
-          await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
-      : []),
+    tailwindcss()
   ],
   resolve: {
     alias: {

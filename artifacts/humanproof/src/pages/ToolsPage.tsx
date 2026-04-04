@@ -10,6 +10,7 @@ import DisplacementForecast from '../components/DisplacementForecast';
 import DigestSignup from '../components/DigestSignup';
 import ResilienceBadge from '../components/ResilienceBadge';
 import DailyChallenge from '../components/DailyChallenge';
+import { LayoffCalculator } from '../components/LayoffCalculator/LayoffCalculator';
 import { useHumanProof } from '../context/HumanProofContext';
 import { getScoreHistory, getEverCompletedFlags, hasLegacyVersionEntries } from '../utils/scoreStorage';
 import { getActionTimeline, validateJobSkillMatch } from '../utils/riskCalculations';
@@ -65,6 +66,7 @@ const TABS = [
   { id: 'job-risk',  label: 'Job Risk Score',         icon: '🎯' },
   { id: 'skill-risk',label: 'Skill Risk',             icon: '🧠' },
   { id: 'hii',       label: 'Human Irreplaceability', icon: '✨' },
+  { id: 'layoff-risk',label: 'Layoff Risk',           icon: '📉' },
   { id: 'roadmap',   label: 'Upskilling Roadmap',     icon: '🗺️' },
   { id: 'journal',   label: 'Human Edge Journal',     icon: '📓' },
   { id: 'drift',     label: 'Progress Tracker',       icon: '📈' },
@@ -94,6 +96,7 @@ export default function ToolsPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [jobSkillMismatch, setJobSkillMismatch] = useState(false);
   const [showLegacyVersionBanner, setShowLegacyVersionBanner] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
   const digestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -225,6 +228,11 @@ export default function ToolsPage() {
   }, [state.jobRiskScore, state.skillRiskScore]);
 
   // Export functionality
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  }, []);
+
   const handleExport = useCallback(async (format: 'json' | 'pdf') => {
     const snapshot = generateAssessmentSnapshot(
       state.jobRiskScore,
@@ -240,12 +248,12 @@ export default function ToolsPage() {
       a.href = url;
       a.download = `humanproof-assessment-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
+      URL.revokeObjectURL(url);
     } else {
-      // PDF export placeholder
-      alert('PDF export coming soon!');
+      showToast('📄 PDF export coming soon — subscribe for early access!');
     }
     setShowExportMenu(false);
-  }, [state]);
+  }, [state, showToast]);
 
   const handleShare = useCallback(async () => {
     const snapshot = generateAssessmentSnapshot(
@@ -263,10 +271,14 @@ export default function ToolsPage() {
         url,
       });
     } else {
-      navigator.clipboard.writeText(url);
-      alert('Link copied to clipboard!');
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('🔗 Link copied to clipboard!');
+      } catch {
+        showToast('Could not copy — please copy the URL manually.');
+      }
     }
-  }, [state]);
+  }, [state, showToast]);
 
   const showDriftBanner = showDriftBannerState;
 
@@ -537,6 +549,7 @@ export default function ToolsPage() {
                 {tab.id === 'job-risk' && <CalculatorPage />}
                 {tab.id === 'skill-risk' && <SkillRiskCalculator onNavigate={switchTab} />}
                 {tab.id === 'hii' && <HumanIrreplacibilityIndex />}
+                {tab.id === 'layoff-risk' && <LayoffCalculator onSwitchTab={switchTab} />}
                 {tab.id === 'roadmap' && <UpskillingRoadmap />}
                 {tab.id === 'journal' && <HumanEdgeJournal />}
                 {tab.id === 'drift' && (
@@ -579,6 +592,21 @@ export default function ToolsPage() {
             }}
           >×</button>
           <DigestSignup embedded onClose={() => setShowDigest(false)} />
+        </div>
+      )}
+
+      {/* Inline toast — replaces all alert() calls in this page */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 11000, background: 'rgba(17,24,39,0.97)',
+          border: '1px solid rgba(0,245,255,0.35)', borderRadius: 8,
+          padding: '12px 20px', color: '#fff', fontSize: '0.9rem', fontWeight: 500,
+          boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+          animation: 'fadeIn 0.25s ease-in',
+          whiteSpace: 'nowrap',
+        }}>
+          {toastMsg}
         </div>
       )}
     </div>

@@ -155,6 +155,7 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
+    return undefined;
   }, [dropdownOpen]);
 
   useEffect(() => {

@@ -5,6 +5,7 @@ import ToolsPage from './pages/ToolsPage';
 import ProductsPage from './pages/ProductsPage';
 import PricingPage from './pages/PricingPage';
 import { HumanProofProvider } from './context/HumanProofContext';
+import { LayoffProvider } from './context/LayoffContext';
 import { digestAPI } from './utils/apiClient';
 
 type Page = 'home' | 'calculator' | 'products' | 'pricing';
@@ -396,9 +397,10 @@ export default function App() {
 
   return (
     <HumanProofProvider>
-      <canvas id="bg-canvas" />
-      <canvas id="trail-canvas" />
-      <div id="page-wipe" ref={wipeRef} />
+      <LayoffProvider>
+        <canvas id="bg-canvas" />
+        <canvas id="trail-canvas" />
+        <div id="page-wipe" ref={wipeRef} />
 
       <nav className="navbar" id="navbar">
         <div className="nav-logo" onClick={() => navigate('home')}>
@@ -491,6 +493,7 @@ export default function App() {
           <p>Built on data from McKinsey · Goldman Sachs · WEF · OECD · Stanford HAI · MIT · BCG · Anthropic</p>
         </div>
       </footer>
+      </LayoffProvider>
     </HumanProofProvider>
   );
 }
