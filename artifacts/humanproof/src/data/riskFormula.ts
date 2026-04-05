@@ -158,6 +158,11 @@ export function calculateScore(
     score = rawScore + interactionBoost;
   }
 
+  // D2 Velocity Delta Multiplier for rapid disruption spikes
+  if (d2 > 75) {
+    score = score * 1.05;
+  }
+
   // ── Industry multiplier ──
   const industryMult = INDUSTRY_KEY_MULT[industryKey] || 1.0;
   score = Math.round(score * industryMult);

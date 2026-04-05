@@ -11,6 +11,7 @@ import DigestSignup from '../components/DigestSignup';
 import ResilienceBadge from '../components/ResilienceBadge';
 import DailyChallenge from '../components/DailyChallenge';
 import { LayoffCalculator } from '../components/LayoffCalculator/LayoffCalculator';
+import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import { useHumanProof } from '../context/HumanProofContext';
 import { getScoreHistory, getEverCompletedFlags, hasLegacyVersionEntries } from '../utils/scoreStorage';
 import { getActionTimeline, validateJobSkillMatch } from '../utils/riskCalculations';
@@ -430,8 +431,20 @@ export default function ToolsPage() {
             fontSize: '0.8rem',
             color: 'var(--text2, #9BA5B4)',
           }}>
-            <strong style={{ color: 'var(--emerald, #00FF9F)' }}>Recommended action timeline: </strong>
-            {actionTimeline.label} ({actionTimeline.weeks} weeks)
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span>
+                <strong style={{ color: 'var(--emerald, #00FF9F)' }}>Recommended action timeline: </strong>
+                {actionTimeline.label} ({actionTimeline.weeks} weeks)
+              </span>
+              {/* Live data trust signal — compact badge */}
+              <DataFreshnessBadge roleKey={state.jobId} fallbackScore={state.jobRiskScore} />
+            </div>
+            {/* Show expanded trust panel when score is calibrated */}
+            {state.jobId && (
+              <div style={{ marginTop: 10 }}>
+                <DataFreshnessBadge roleKey={state.jobId} fallbackScore={state.jobRiskScore} expanded />
+              </div>
+            )}
           </div>
         )}
 

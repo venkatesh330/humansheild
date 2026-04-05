@@ -4,13 +4,16 @@ import HomePage from './pages/HomePage';
 import ToolsPage from './pages/ToolsPage';
 import ProductsPage from './pages/ProductsPage';
 import PricingPage from './pages/PricingPage';
+import { SafeCareersPage } from './pages/SafeCareersPage';
+import { LearningHubPage } from './pages/LearningHubPage';
+import { AuditLogPage } from './pages/AuditLogPage';
 import { HumanProofProvider } from './context/HumanProofContext';
 import { LayoffProvider } from './context/LayoffContext';
 import { digestAPI } from './utils/apiClient';
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 
-type Page = 'home' | 'calculator' | 'products' | 'pricing';
+type Page = 'home' | 'calculator' | 'products' | 'pricing' | 'safe-careers' | 'learning-hub' | 'audit-log';
 
 function useParticleBackground(canvasId: string) {
   useEffect(() => {
@@ -363,6 +366,12 @@ export default function App() {
     setMobileOpen(false);
   }, [currentPage]);
 
+  useEffect(() => {
+    const handleNav = (e: CustomEvent) => navigate(e.detail);
+    window.addEventListener('navigate', handleNav as EventListener);
+    return () => window.removeEventListener('navigate', handleNav as EventListener);
+  }, [navigate]);
+
   // BUG 6 FIX: Now actually calls the backend API
   const handleSubscribe = async () => {
     if (!subEmail || !subEmail.includes('@') || !subEmail.includes('.')) {
@@ -393,10 +402,12 @@ export default function App() {
   };
 
   const navLinks: { key: Page; label: string }[] = [
-    { key: 'home', label: 'Home' },
-    { key: 'calculator', label: 'Calculator' },
-    { key: 'products', label: 'Resources' },
-    { key: 'pricing', label: 'Pricing' },
+    { key: 'home',         label: 'Home'          },
+    { key: 'calculator',   label: 'Calculator'    },
+    { key: 'safe-careers', label: 'Safe Careers'  },
+    { key: 'learning-hub', label: 'Learning Hub'  },
+    { key: 'products',     label: 'Resources'     },
+    { key: 'pricing',      label: 'Pricing'       },
   ];
 
   return (
@@ -448,11 +459,20 @@ export default function App() {
         <div className={`page${currentPage === 'calculator' ? ' active' : ''}`}>
           <ToolsPage />
         </div>
+        <div className={`page${currentPage === 'safe-careers' ? ' active' : ''}`}>
+          <SafeCareersPage />
+        </div>
+        <div className={`page${currentPage === 'learning-hub' ? ' active' : ''}`}>
+          <LearningHubPage />
+        </div>
         <div className={`page${currentPage === 'products' ? ' active' : ''}`}>
           <ProductsPage onNavigate={navigate} />
         </div>
         <div className={`page${currentPage === 'pricing' ? ' active' : ''}`}>
           <PricingPage onNavigate={navigate} />
+        </div>
+        <div className={`page${currentPage === 'audit-log' ? ' active' : ''}`}>
+          <AuditLogPage />
         </div>
       </main>
 
@@ -479,9 +499,10 @@ export default function App() {
             <h4>Product</h4>
             <ul>
               <li><a onClick={() => navigate('calculator')}>AI Risk Calculator</a></li>
+              <li><a onClick={() => navigate('safe-careers')}>Safe Career Finder</a></li>
+              <li><a onClick={() => navigate('learning-hub')}>Free Learning Hub</a></li>
               <li><a onClick={() => navigate('products')}>Resources</a></li>
               <li><a onClick={() => navigate('pricing')}>Pricing</a></li>
-              <li><a>API Access</a></li>
             </ul>
           </div>
           <div className="footer-col">
@@ -490,7 +511,7 @@ export default function App() {
               <li><a>Q1 2026 Report</a></li>
               <li><a>Methodology</a></li>
               <li><a>Data Sources</a></li>
-              <li><a>Changelog</a></li>
+              <li><a onClick={() => navigate('audit-log')}>Data Audit Log</a></li>
             </ul>
           </div>
           <div className="footer-col">

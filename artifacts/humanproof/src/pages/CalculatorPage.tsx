@@ -13,6 +13,7 @@ import {
 import { DANGER_SKILLS, SAFE_SKILLS, TRANSITION_RECS } from '../data/skillsData';
 import { useHumanProof } from '../context/HumanProofContext';
 import PeerBenchmark from '../components/PeerBenchmark';
+import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
 // NEW-08: Career Pivot Simulator — map common pivot labels to known work type keys
 // Allows calculateScore to estimate risk for a pivot target
@@ -347,6 +348,11 @@ function ResultPanel({ data }: { data: ResultData }) {
           &nbsp;·&nbsp;Task Automation: <strong style={{ color: d1 > 70 ? 'var(--red)' : d1 > 50 ? 'var(--orange)' : 'var(--cyan)' }}>{getAutomationExp(d1)}</strong>
           &nbsp;·&nbsp;Network Moat: <strong style={{ color: networkMoat < 30 ? 'var(--emerald)' : networkMoat < 60 ? 'var(--cyan)' : 'var(--orange)' }}>{networkMoat < 30 ? 'Strong' : networkMoat < 60 ? 'Moderate' : 'Weak'} ({networkMoat})</strong>
         </div>
+
+        {/* Live data trust panel — DataFreshnessBadge */}
+        <div style={{ marginTop: 16 }}>
+          <DataFreshnessBadge roleKey={workTypeKey} fallbackScore={score} expanded />
+        </div>
       </div>
 
       {/* UX FIX 5: Collapsible "How was this calculated?" transparency panel */}
@@ -427,6 +433,22 @@ function ResultPanel({ data }: { data: ResultData }) {
         jobTitle={workTypeLabel}
         industry={industryKey}
       />
+
+      {/* Pivot Bridge CTA */}
+      {score > 60 && (
+        <div style={{ margin: '24px 0', padding: 24, background: 'rgba(0, 255, 159, 0.06)', border: '1px dashed var(--emerald)', borderRadius: 12, textAlign: 'center' }}>
+          <h4 style={{ margin: '0 0 8px 0', color: 'var(--emerald)', fontSize: '1.2rem' }}>High Risk Detected: Explore Safe Pivots</h4>
+          <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: 'var(--text2)' }}>
+            Your score indicates significant AI exposure. Browse our curated database of high-growth, low-risk career transitions matching your profile.
+          </p>
+          <button 
+            onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'safe-careers' }))}
+            style={{ background: 'var(--emerald)', color: 'var(--bg)', border: 'none', padding: '10px 24px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}
+          >
+            Find Safe Careers →
+          </button>
+        </div>
+      )}
 
       <div className="transition-section">
         <h4>→ Recommended Career Pivots</h4>

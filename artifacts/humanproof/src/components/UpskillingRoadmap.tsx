@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useHumanProof } from '../context/HumanProofContext';
 import { getRiskLabel } from '../utils/riskCalculations';
 import { getCoursesForSkill, getJobRoleRoadmap, getDifficultyDots, Course, RoadmapPhase } from '../data/courseDatabase';
@@ -84,6 +84,87 @@ const INDUSTRY_FALLBACK_SKILLS: Record<string, Array<{ id: number; name: string;
     { id: 1003, name: 'Market research', category: 'Analytical', riskScore: 89, trend: 'rising' },
   ],
 };
+
+// ── Learning Hub resource strip ──────────────────────────────
+interface HubResource {
+  id: string;
+  title: string;
+  provider: string;
+  url: string;
+  language: string;
+  languageLabel: string;
+  isFree: string;
+  level: string;
+  durationHours: number | null;
+}
+
+const LANGUAGE_FLAGS: Record<string, string> = {
+  en: '🇺🇸', es: '🇪🇸', fr: '🇫🇷', de: '🇩🇪', zh: '🇨🇳', hi: '🇮🇳', pt: '🇧🇷', ar: '🇸🇦',
+};
+const LEVEL_COLORS: Record<string, string> = {
+  beginner: '#00FF9F', intermediate: '#fbbf24', advanced: '#ff7043',
+};
+
+function LiveResourcesStrip({ roleKey, riskScore }: { roleKey: string; riskScore: number }) {
+  const [resources, setResources] = useState<HubResource[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!roleKey) return;
+    setLoading(true);
+    const riskLevel = riskScore >= 80 ? 'critical' : riskScore >= 65 ? 'high' : 'moderate';
+    fetch(`/api/resources?roleKey=${encodeURIComponent(roleKey)}&riskLevel=${riskLevel}&limit=3`)
+      .then(r => r.json())
+      .then(d => setResources(d.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [roleKey, riskScore]);
+
+  if (loading) return (
+    <div style={{ padding: '10px 0', fontSize: '0.75rem', color: 'var(--text3)' }}>Loading free resources…</div>
+  );
+  if (resources.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--cyan)', letterSpacing: '0.06em', marginBottom: 8, textTransform: 'uppercase' }}>
+        🌐 Free from Learning Hub
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {resources.map(r => (
+          <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+            <div style={{
+              background: 'rgba(0,245,255,0.04)', border: '1px solid rgba(0,245,255,0.12)',
+              borderRadius: 8, padding: '10px 14px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+              transition: 'border-color 0.2s',
+            }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--cyan)')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(0,245,255,0.12)')}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: 'var(--text1)', fontSize: '0.82rem', fontWeight: 600, marginBottom: 2,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</div>
+                <div style={{ display: 'flex', gap: 10, fontSize: '0.72rem', color: 'var(--text3)' }}>
+                  <span>{r.provider}</span>
+                  <span style={{ color: LEVEL_COLORS[r.level] || 'var(--text3)' }}>{r.level}</span>
+                  {r.durationHours && <span>⏱ {r.durationHours}h</span>}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                <span style={{ fontSize: '1rem' }}>{LANGUAGE_FLAGS[r.language] ?? '🌐'}</span>
+                <span style={{
+                  background: 'rgba(0,255,159,0.12)', color: '#00FF9F',
+                  fontSize: '0.6rem', fontWeight: 700, padding: '2px 6px', borderRadius: 12,
+                }}>FREE</span>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function UpskillingRoadmap({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const { state } = useHumanProof();
@@ -398,6 +479,8 @@ export default function UpskillingRoadmap({ onNavigate }: { onNavigate?: (tab: s
                               </div>
                             );
                           })}
+                          {/* Live free resources from Learning Hub */}
+                          <LiveResourcesStrip roleKey={skill.id?.toString() ?? skill.name} riskScore={skill.riskScore} />
                         </div>
                       )}
                     </div>
@@ -409,7 +492,7 @@ export default function UpskillingRoadmap({ onNavigate }: { onNavigate?: (tab: s
         </div>
       )}
 
-      <div style={{ textAlign: 'center' }}>
+      <div style={{ textAlign: 'center', marginTop: 32 }}>
         <button
           onClick={handleStartWeek1}
           style={{ background: 'var(--yellow)', color: '#000', border: 'none', borderRadius: 8, padding: '12px 32px', fontFamily: 'var(--mono)', fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.08em' }}
@@ -418,6 +501,20 @@ export default function UpskillingRoadmap({ onNavigate }: { onNavigate?: (tab: s
         </button>
         <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'var(--text2)' }}>
           Saves your Week 1 goals locally. Check back in 7 days.
+        </div>
+        {/* Link to multilingual Learning Hub */}
+        <div style={{ marginTop: 16 }}>
+          <button
+            onClick={() => onNavigate?.('skill-risk')}
+            style={{
+              background: 'none', border: '1px solid rgba(0,245,255,0.25)',
+              borderRadius: 8, padding: '8px 20px',
+              color: 'var(--cyan)', cursor: 'pointer', fontSize: '0.8rem',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            🌐 Browse 200+ free multilingual resources in the Learning Hub
+          </button>
         </div>
       </div>
     </div>
