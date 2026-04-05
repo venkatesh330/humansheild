@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { freeResources } from "@workspace/db/schema";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql, inArray, arrayContains } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -48,7 +48,7 @@ router.get("/", async (req: any, res: any) => {
     const parsedLimit  = Math.min(40, Math.max(1, parseInt(limit, 10) || 12));
     const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
 
-    const conditions: ReturnType<typeof eq>[] = [];
+    const conditions: any[] = [];
 
     if (language) conditions.push(eq(freeResources.language, language));
     if (level)    conditions.push(eq(freeResources.level, level as "beginner" | "intermediate" | "advanced"));
@@ -69,12 +69,12 @@ router.get("/", async (req: any, res: any) => {
         moderate: ["critical", "high", "moderate", "all"],
       };
       const allowed = riskOrder[riskLevel] ?? ["all"];
-      conditions.push(sql`${freeResources.riskLevelTarget} = ANY(ARRAY[${allowed.map(() => "?").join(",")}]::text[])`.append(sql`${allowed}`));
+      conditions.push(inArray(freeResources.riskLevelTarget, allowed));
     }
 
     // Filter by role key: check if roleKey is in the target_role_keys array
     if (roleKey) {
-      conditions.push(sql`${roleKey} = ANY(${freeResources.targetRoleKeys})`);
+      conditions.push(arrayContains(freeResources.targetRoleKeys, [roleKey]));
     }
 
     // Free-text search

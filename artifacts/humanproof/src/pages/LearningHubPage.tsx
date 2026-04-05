@@ -155,6 +155,7 @@ export function LearningHubPage() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const LIMIT = 18;
 
   // Determine the user's risk level from context to show personalised resources
@@ -166,6 +167,7 @@ export function LearningHubPage() {
   const fetchResources = useCallback(async (f: Filters) => {
     setLoading(true);
     try {
+      setError(null);
       const params = new URLSearchParams();
       if (f.language)  params.set('language', f.language);
       if (f.level)     params.set('level',    f.level);
@@ -176,12 +178,16 @@ export function LearningHubPage() {
       params.set('limit', String(LIMIT));
 
       const resp = await fetch(`/api/resources?${params.toString()}`);
-      if (!resp.ok) throw new Error('API error');
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to fetch resources');
+      }
       const json = await resp.json();
       setResources(json.data);
       setTotal(json.pagination.total);
-    } catch {
-      // keep existing if error
+    } catch (err: any) {
+      console.error("[LearningHub]", err);
+      setError(err.message || 'An unexpected error occurred while loading resources.');
     } finally {
       setLoading(false);
     }
@@ -286,14 +292,25 @@ export function LearningHubPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
           {[...Array(6)].map((_, i) => <div key={i} className="skeleton-loader skeleton-card"></div>)}
         </div>
+      ) : error ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: 'rgba(255,71,87,0.05)', border: '1px solid rgba(255,71,87,0.2)', borderRadius: 16 }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: 16 }}>⚠️</div>
+          <h3 style={{ margin: '0 0 8px 0', color: 'var(--red)' }}>Connection Error</h3>
+          <p style={{ margin: '0 0 24px 0', color: 'var(--text2)', fontSize: '0.9rem' }}>{error}</p>
+          <button onClick={() => fetchResources(filters)} style={{
+            background: 'var(--red)', color: 'white', border: 'none', borderRadius: 8,
+            padding: '10px 24px', cursor: 'pointer', fontWeight: 600,
+          }}>Retry Connection</button>
+        </div>
       ) : resources.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'var(--text3)' }}>
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--text3)', background: 'var(--surface)', borderRadius: 16, border: '1px dashed var(--border)' }}>
           <BookOpen size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-          <div>No resources match your filters.</div>
+          <div style={{ fontSize: '1.1rem', color: 'var(--text2)', fontWeight: 600, marginBottom: 4 }}>No resources match your filters</div>
+          <div style={{ fontSize: '0.85rem', marginBottom: 20 }}>Try adjusting your language or skill goals.</div>
           <button onClick={() => setFilters(DEFAULT_FILTERS)} style={{
-            marginTop: 16, background: 'var(--surface2)', border: '1px solid var(--border)',
+            background: 'var(--surface2)', border: '1px solid var(--border)',
             borderRadius: 8, padding: '8px 20px', color: 'var(--text2)', cursor: 'pointer',
-          }}>Reset Filters</button>
+          }}>Reset All Filters</button>
         </div>
       ) : (
         <div style={{

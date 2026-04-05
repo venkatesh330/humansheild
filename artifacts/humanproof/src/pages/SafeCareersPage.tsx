@@ -229,6 +229,7 @@ export function SafeCareersPage() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SafeCareer | null>(null);
   const LIMIT = 18;
 
@@ -248,15 +249,20 @@ export function SafeCareersPage() {
 
   const fetchCareers = useCallback(async (f: Filters, off: number) => {
     setLoading(true);
+    setError(null);
     try {
       const resp = await fetch(`/api/safe-careers?${buildQuery(f, off)}`);
-      if (!resp.ok) throw new Error('API error');
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to fetch careers');
+      }
       const json = await resp.json();
       if (off === 0) setCareers(json.data);
       else setCareers(prev => [...prev, ...json.data]);
       setTotal(json.pagination.total);
-    } catch {
-      // Fallback message — no crash
+    } catch (err: any) {
+      console.error("[SafeCareers]", err);
+      setError(err.message || 'An error occurred while loading careers.');
     } finally {
       setLoading(false);
     }
@@ -326,15 +332,29 @@ export function SafeCareersPage() {
             </span>
           </div>
 
-          {/* Empty state */}
-          {!loading && careers.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 60, color: 'var(--text3)' }}>
+          {/* Error and Empty states */}
+          {error ? (
+            <div style={{ textAlign: 'center', padding: '40px 20px', background: 'rgba(255,71,87,0.05)', border: '1px solid rgba(255,71,87,0.2)', borderRadius: 16 }}>
+              <div style={{ fontSize: '2rem', marginBottom: 16 }}>⚠️</div>
+              <h3 style={{ margin: '0 0 8px 0', color: 'var(--red)' }}>Service Unavailable</h3>
+              <p style={{ margin: '0 0 20px 0', color: 'var(--text2)', fontSize: '0.85rem' }}>{error}</p>
+              <button onClick={() => fetchCareers(filters, 0)} style={{
+                background: 'var(--red)', color: 'white', border: 'none', borderRadius: 8,
+                padding: '8px 24px', cursor: 'pointer', fontWeight: 600,
+              }}>Try Again</button>
+            </div>
+          ) : !loading && careers.length === 0 && (
+            <div style={{ textAlign: 'center', padding: 60, color: 'var(--text3)', background: 'var(--surface)', borderRadius: 16, border: '1px dashed var(--border)' }}>
               <Shield size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-              <div>No careers match your filters.</div>
+              <div style={{ fontSize: '1.1rem', color: 'var(--text2)', fontWeight: 600, marginBottom: 4 }}>No future-proof roles found</div>
+              <p style={{ fontSize: '0.85rem', maxWidth: 400, margin: '0 auto 20px auto' }}>
+                Your current filters (Risk &lt; {filters.maxRisk}) might be too restrictive. 
+                Most roles have some AI exposure; try increasing your risk threshold.
+              </p>
               <button onClick={resetFilters} style={{
-                marginTop: 16, background: 'var(--surface2)', border: '1px solid var(--border)',
+                background: 'var(--surface2)', border: '1px solid var(--border)',
                 borderRadius: 8, padding: '8px 20px', color: 'var(--text2)', cursor: 'pointer',
-              }}>Reset Filters</button>
+              }}>Reset All Filters</button>
             </div>
           )}
 
