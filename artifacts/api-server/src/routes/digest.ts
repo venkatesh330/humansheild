@@ -18,7 +18,7 @@ const emailSchema = z.object({
 });
 
 // POST /api/digest/subscribe - Subscribe to weekly digest
-router.post("/subscribe", (req, res) => {
+router.post("/subscribe", (req: any, res: any) => {
   try {
     const parsed = emailSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -43,7 +43,7 @@ router.post("/subscribe", (req, res) => {
 });
 
 // POST /api/digest/unsubscribe - Unsubscribe from digest
-router.post("/unsubscribe", (req, res) => {
+router.post("/unsubscribe", (req: any, res: any) => {
   try {
     const parsed = emailSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -62,7 +62,7 @@ router.post("/unsubscribe", (req, res) => {
 });
 
 // GET /api/digest/status/:email - Check subscription status
-router.get("/status/:email", (req, res) => {
+router.get("/status/:email", (req: any, res: any) => {
   try {
     const { email } = req.params;
     const subscriber = subscribers.find(s => s.email === email);

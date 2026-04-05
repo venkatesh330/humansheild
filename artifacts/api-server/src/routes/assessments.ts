@@ -17,7 +17,7 @@ const createAssessmentSchema = z.object({
 });
 
 // POST /api/assessments - Save assessment
-router.post("/", async (req, res) => {
+router.post("/", async (req: any, res: any) => {
   try {
     const parsed = createAssessmentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -51,7 +51,7 @@ router.post("/", async (req, res) => {
 });
 
 // GET /api/assessments/:userId - Get user's assessments
-router.get("/:userId", async (req, res) => {
+router.get("/:userId", async (req: any, res: any) => {
   try {
     const { userId } = req.params;
     if (!db) return res.status(503).json({ error: "DB not connected" });
@@ -72,7 +72,7 @@ router.get("/:userId", async (req, res) => {
 });
 
 // POST /api/assessments/:id/export - Export assessment as JSON/PDF
-router.post("/:id/export", async (req, res) => {
+router.post("/:id/export", async (req: any, res: any) => {
   try {
     const { id } = req.params;
     if (!db) return res.status(503).json({ error: "DB not connected" });
@@ -93,7 +93,7 @@ router.post("/:id/export", async (req, res) => {
 });
 
 // POST /api/assessments/:id/share - Generate shareable link
-router.post("/:id/share", async (req, res) => {
+router.post("/:id/share", async (req: any, res: any) => {
   try {
     const { id } = req.params;
     if (!db) return res.status(503).json({ error: "DB not connected" });
@@ -122,7 +122,7 @@ router.post("/:id/share", async (req, res) => {
 });
 
 // GET /api/assessments/share/:code - Resolve a share code back to an assessment
-router.get("/share/:code", async (req, res) => {
+router.get("/share/:code", async (req: any, res: any) => {
   try {
     const { code } = req.params;
     if (!db) return res.status(503).json({ error: "DB not connected" });
@@ -149,7 +149,7 @@ router.get("/share/:code", async (req, res) => {
 });
 
 // DELETE /api/assessments/:id - Delete assessment
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", async (req: any, res: any) => {
   try {
     const { id } = req.params;
     if (!db) return res.status(503).json({ error: "DB not connected" });
