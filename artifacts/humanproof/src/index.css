@@ -1014,6 +1014,25 @@ footer {
   }
 }
 
+/* Safe Careers Grid Responsive Stacking */
+@media (max-width: 850px) {
+  .safe-careers-grid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .safe-careers-grid > div:first-child {
+    position: relative !important;
+    top: 0 !important;
+    margin-bottom: 24px;
+    z-index: 10;
+  }
+}
+
+.learn-path-btn:hover {
+  background: rgba(0,245,255,0.15) !important;
+  transform: translateY(-1px);
+}
+
 /* ========================================================================= */
 /* Skeleton Loaders                                                          */
 /* ========================================================================= */

@@ -164,16 +164,32 @@ export function LearningHubPage() {
     ? (jobRisk >= 80 ? 'critical' : jobRisk >= 65 ? 'high' : jobRisk >= 40 ? 'moderate' : 'all')
     : 'all';
 
+  // Handle incoming roleKey from Safe Careers 'Learn Path' navigation
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const rk = urlParams.get('roleKey');
+    if (rk) {
+      setFilters(f => ({ ...f, q: '', dimension: '', language: '', level: '', ...f }));
+      // We don't need to manually fetch here as the effect below handles filters change
+    }
+  }, []);
+
   const fetchResources = useCallback(async (f: Filters) => {
     setLoading(true);
     try {
       setError(null);
+      const urlParams = new URLSearchParams(window.location.search);
+      const rk = urlParams.get('roleKey');
+
       const params = new URLSearchParams();
       if (f.language)  params.set('language', f.language);
       if (f.level)     params.set('level',    f.level);
       if (f.dimension) params.set('dimension', f.dimension);
       if (f.q)         params.set('q',         f.q);
-      if (state.jobId) params.set('roleKey',   state.jobId);
+      
+      const activeRoleKey = rk || state.jobId;
+      if (activeRoleKey) params.set('roleKey', activeRoleKey);
+      
       if (autoRiskLevel !== 'all') params.set('riskLevel', autoRiskLevel);
       params.set('limit', String(LIMIT));
 
@@ -213,7 +229,12 @@ export function LearningHubPage() {
         </div>
         <p style={{ margin: 0, color: 'var(--text2)', fontSize: '0.9rem', maxWidth: 620 }}>
           Curated free resources in 8 languages. All resources are 100% free to access (no hidden paywall).
-          {jobRisk !== null && (
+          {new URLSearchParams(window.location.search).get('roleKey') && (
+            <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+              {' '}Showing curriculum for your target career.
+            </span>
+          )}
+          {jobRisk !== null && !new URLSearchParams(window.location.search).get('roleKey') && (
             <span style={{ color: 'var(--cyan)' }}>
               {' '}Showing personalised picks for your {autoRiskLevel} risk profile.
             </span>

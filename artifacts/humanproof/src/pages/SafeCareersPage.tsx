@@ -118,8 +118,21 @@ function CareerCard({ career, onSelect }: { career: SafeCareer; onSelect: (c: Sa
           </span>
         </div>
         {career.safetyReason && (
-          <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--cyan)', fontStyle: 'italic' }}>
-            {career.safetyReason}
+          <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--cyan)', fontStyle: 'italic', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{career.safetyReason}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent('navigate', { detail: { page: 'learning-hub', params: { roleKey: career.roleKey } } }));
+              }}
+              style={{
+                marginLeft: 12, background: 'rgba(0,245,255,0.08)', border: '1px solid var(--cyan)',
+                borderRadius: 4, padding: '2px 8px', color: 'var(--cyan)', cursor: 'pointer',
+                fontSize: '0.65rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              <Star size={10} /> Learn Path
+            </button>
           </div>
         )}
       </div>
@@ -315,7 +328,7 @@ export function SafeCareersPage() {
         />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, alignItems: 'start' }}>
+      <div className="safe-careers-grid" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, alignItems: 'start' }}>
         {/* Filter panel */}
         <div style={{ position: 'sticky', top: 20 }}>
           <FilterPanel filters={filters} industries={industries} onChange={updateFilter} onReset={resetFilters} />
