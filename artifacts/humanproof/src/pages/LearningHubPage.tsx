@@ -1,355 +1,301 @@
-import { useState, useEffect, useCallback } from 'react';
-import { BookOpen, Globe, Search, Filter, ExternalLink, Clock, RotateCcw, Zap, Star } from 'lucide-react';
-import { useHumanProof } from '../context/HumanProofContext';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Loader2, Sparkles, BookOpen, Clock, Target, CheckCircle2, ChevronRight, PlayCircle } from 'lucide-react';
+import { useToast } from '../components/Toast';
+import { useAuth } from '../context/AuthContext';
 
 interface Resource {
   id: string;
   title: string;
+  description: string;
+  type: 'course' | 'article' | 'video' | 'project';
+  duration: string;
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   provider: string;
   url: string;
-  language: string;
-  languageLabel: string;
-  isFree: 'yes' | 'audit' | 'scholarship';
-  level: 'beginner' | 'intermediate' | 'advanced';
-  durationHours: number | null;
-  targetDimension: string | null;
-  riskLevelTarget: string;
-  tags: string[] | null;
+  skills: string[];
 }
 
-interface LanguageOption { code: string; label: string }
-
-const LEVEL_COLORS: Record<string, string> = {
-  beginner:     'var(--emerald)',
-  intermediate: 'var(--yellow)',
-  advanced:     'var(--orange)',
-};
-
-const DIM_LABELS: Record<string, string> = {
-  D1: 'Reduce Task Risk', D2: 'AI Tool Skills',
-  D3: 'Augmentation', D6: 'Network & Leadership', general: 'General AI Literacy',
-};
-
-const FREE_LABELS: Record<string, { label: string; color: string }> = {
-  yes:         { label: 'FREE',        color: 'var(--emerald)' },
-  audit:       { label: 'FREE AUDIT', color: 'var(--cyan)'    },
-  scholarship: { label: 'SCHOLARSHIP', color: 'var(--yellow)' },
-};
-
-const LANGUAGE_FLAGS: Record<string, string> = {
-  en: '🇺🇸', es: '🇪🇸', fr: '🇫🇷', de: '🇩🇪', zh: '🇨🇳', hi: '🇮🇳', pt: '🇧🇷', ar: '🇸🇦',
-};
-
-function ResourceCard({ resource }: { resource: Resource }) {
-  const freeInfo = FREE_LABELS[resource.isFree];
-  return (
-    <a href={resource.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
-      <div style={{
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
-        padding: '18px 20px', transition: 'all 0.2s', cursor: 'pointer',
-        display: 'flex', flexDirection: 'column', gap: 10, height: '100%',
-      }}
-        onMouseEnter={e => {
-          (e.currentTarget).style.borderColor = 'var(--cyan)';
-          (e.currentTarget).style.transform = 'translateY(-2px)';
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget).style.borderColor = 'var(--border)';
-          (e.currentTarget).style.transform = 'none';
-        }}
-      >
-        {/* Top row: provider + free badge */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text3)', fontWeight: 600, letterSpacing: '0.04em' }}>
-            {resource.provider}
-          </span>
-          <span style={{
-            background: `${freeInfo.color}22`, color: freeInfo.color,
-            fontSize: '0.65rem', fontWeight: 800, padding: '3px 8px',
-            borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0,
-          }}>
-            {freeInfo.label}
-          </span>
-        </div>
-
-        {/* Title */}
-        <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text1)', lineHeight: 1.4 }}>
-          {resource.title}
-        </h3>
-
-        {/* Meta row */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 'auto' }}>
-          {/* Language */}
-          <span style={{ fontSize: '0.78rem', color: 'var(--text3)' }}>
-            {LANGUAGE_FLAGS[resource.language] ?? '🌐'} {resource.languageLabel}
-          </span>
-
-          {/* Level */}
-          <span style={{ fontSize: '0.78rem', color: LEVEL_COLORS[resource.level], fontWeight: 600 }}>
-            {resource.level.charAt(0).toUpperCase() + resource.level.slice(1)}
-          </span>
-
-          {/* Duration */}
-          {resource.durationHours && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.78rem', color: 'var(--text3)' }}>
-              <Clock size={11} /> {resource.durationHours}h
-            </span>
-          )}
-
-          {/* Dimension tag */}
-          {resource.targetDimension && resource.targetDimension !== 'general' && (
-            <span style={{
-              background: 'rgba(0,245,255,0.08)', color: 'var(--cyan)',
-              fontSize: '0.7rem', padding: '2px 8px', borderRadius: 20,
-            }}>
-              {DIM_LABELS[resource.targetDimension] ?? resource.targetDimension}
-            </span>
-          )}
-        </div>
-
-        {/* Tags */}
-        {resource.tags && resource.tags.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {resource.tags.slice(0, 4).map(t => (
-              <span key={t} style={{
-                background: 'var(--surface2)', color: 'var(--text3)',
-                fontSize: '0.65rem', padding: '2px 8px', borderRadius: 20,
-              }}>
-                {t}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--cyan)', fontSize: '0.78rem', marginTop: 4 }}>
-          <ExternalLink size={11} /> Open free resource
-        </div>
-      </div>
-    </a>
-  );
+interface Path {
+  id: string;
+  title: string;
+  role: string;
+  steps: {
+    title: string;
+    description: string;
+    duration: string;
+  }[];
 }
 
-interface Filters {
-  language: string;
-  level: string;
-  dimension: string;
-  q: string;
-}
-
-const DEFAULT_FILTERS: Filters = { language: '', level: '', dimension: '', q: '' };
-
-const ALL_LANGUAGES: LanguageOption[] = [
-  { code: 'en', label: '🇺🇸 English' },
-  { code: 'es', label: '🇪🇸 Español' },
-  { code: 'fr', label: '🇫🇷 Français' },
-  { code: 'de', label: '🇩🇪 Deutsch' },
-  { code: 'zh', label: '🇨🇳 中文' },
-  { code: 'hi', label: '🇮🇳 हिन्दी' },
-  { code: 'pt', label: '🇧🇷 Português' },
-  { code: 'ar', label: '🇸🇦 العربية' },
-];
-
-export function LearningHubPage() {
-  const { state } = useHumanProof();
+export const LearningHubPage: React.FC<{ initialRoleKey?: string }> = ({ initialRoleKey }) => {
+  const { addToast } = useToast();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'discover' | 'my-paths' | 'progress'>('discover');
+  const [searchQuery, setSearchQuery] = useState(initialRoleKey || '');
+  const [debouncedQuery, setDebouncedQuery] = useState(initialRoleKey || '');
   const [resources, setResources] = useState<Resource[]>([]);
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [total, setTotal] = useState(0);
+  const [paths, setPaths] = useState<Path[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const LIMIT = 18;
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  // Determine the user's risk level from context to show personalised resources
-  const jobRisk = state.jobRiskScore;
-  const autoRiskLevel = jobRisk !== null
-    ? (jobRisk >= 80 ? 'critical' : jobRisk >= 65 ? 'high' : jobRisk >= 40 ? 'moderate' : 'all')
-    : 'all';
+  // Use ref to track the search query for the fetch closure
+  const searchRef = useRef(searchQuery);
+  searchRef.current = searchQuery;
 
-  // Handle incoming roleKey from Safe Careers 'Learn Path' navigation
+  // Debounce search
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const rk = urlParams.get('roleKey');
-    if (rk) {
-      setFilters(f => ({ ...f, q: '', dimension: '', language: '', level: '', ...f }));
-      // We don't need to manually fetch here as the effect below handles filters change
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    fetchResources();
+    if (user) {
+      fetchPaths();
     }
+  }, [debouncedQuery, user]);
+
+  useEffect(() => {
+    const handleRoleKey = (e: any) => {
+      if (e.detail) {
+        setSearchQuery(e.detail);
+        setActiveTab('discover');
+      }
+    };
+    window.addEventListener('hub-rolekey', handleRoleKey);
+    return () => window.removeEventListener('hub-rolekey', handleRoleKey);
   }, []);
 
-  const fetchResources = useCallback(async (f: Filters) => {
+  const fetchResources = async () => {
     setLoading(true);
     try {
-      setError(null);
-      const urlParams = new URLSearchParams(window.location.search);
-      const rk = urlParams.get('roleKey');
-
-      const params = new URLSearchParams();
-      if (f.language)  params.set('language', f.language);
-      if (f.level)     params.set('level',    f.level);
-      if (f.dimension) params.set('dimension', f.dimension);
-      if (f.q)         params.set('q',         f.q);
-      
-      const activeRoleKey = rk || state.jobId;
-      if (activeRoleKey) params.set('roleKey', activeRoleKey);
-      
-      if (autoRiskLevel !== 'all') params.set('riskLevel', autoRiskLevel);
-      params.set('limit', String(LIMIT));
-
-      const resp = await fetch(`/api/resources?${params.toString()}`);
-      if (!resp.ok) {
-        const errJson = await resp.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Failed to fetch resources');
-      }
-      const json = await resp.json();
-      setResources(json.data);
-      setTotal(json.pagination.total);
-    } catch (err: any) {
-      console.error("[LearningHub]", err);
-      setError(err.message || 'An unexpected error occurred while loading resources.');
+      const resp = await fetch(`/api/learning/resources?q=${encodeURIComponent(searchRef.current)}`);
+      if (!resp.ok) throw new Error('Failed to fetch resources');
+      const data = await resp.json();
+      setResources(data);
+    } catch (err) {
+      addToast('error', 'Could not load resources');
     } finally {
       setLoading(false);
     }
-  }, [state.jobId, autoRiskLevel]);
+  };
 
-  useEffect(() => { fetchResources(filters); }, [filters, fetchResources]);
+  const fetchPaths = async () => {
+    try {
+      const resp = await fetch('/api/learning/paths');
+      if (resp.ok) {
+        const data = await resp.json();
+        setPaths(data);
+      }
+    } catch (err) {
+      console.error('Error fetching paths:', err);
+    }
+  };
 
-  const input = {
-    background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8,
-    padding: '8px 12px', color: 'var(--text1)', fontSize: '0.85rem', outline: 'none',
+  const generatePath = async () => {
+    if (!user) {
+      addToast('info', 'Please sign in to generate custom paths');
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const resp = await fetch('/api/learning/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: searchQuery })
+      });
+      if (!resp.ok) throw new Error('Generation failed');
+      const newPath = await resp.json();
+      setPaths([newPath, ...paths]);
+      addToast('success', 'Your custom learning path is ready!');
+      setActiveTab('my-paths');
+    } catch (err) {
+      addToast('error', 'AI Generation service is currently busy');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
-    <div style={{ padding: '32px 24px', maxWidth: 1100, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <BookOpen size={28} style={{ color: 'var(--cyan)' }} />
-          <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700 }}>
-            Free Learning Hub
-          </h1>
-          <Globe size={18} style={{ color: 'var(--text3)' }} />
+    <div className="max-w-7xl mx-auto px-6 py-12">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+        <div>
+          <h1 className="text-4xl font-black text-white mb-2 tracking-tight">LEARNING <span className="text-cyan-500">HUB</span></h1>
+          <p className="text-slate-400">Master the "Human Advantage" with curated upskilling paths.</p>
         </div>
-        <p style={{ margin: 0, color: 'var(--text2)', fontSize: '0.9rem', maxWidth: 620 }}>
-          Curated free resources in 8 languages. All resources are 100% free to access (no hidden paywall).
-          {new URLSearchParams(window.location.search).get('roleKey') && (
-            <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>
-              {' '}Showing curriculum for your target career.
-            </span>
-          )}
-          {jobRisk !== null && !new URLSearchParams(window.location.search).get('roleKey') && (
-            <span style={{ color: 'var(--cyan)' }}>
-              {' '}Showing personalised picks for your {autoRiskLevel} risk profile.
-            </span>
-          )}
-        </p>
+        
+        <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-800">
+          {(['discover', 'my-paths', 'progress'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+                activeTab === tab ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {tab === 'discover' ? 'Discover' : tab === 'my-paths' ? 'My Paths' : 'Progress'}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Language chips */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-        <button onClick={() => setFilters(f => ({ ...f, language: '' }))} style={{
-          background: !filters.language ? 'var(--cyan)' : 'var(--surface)',
-          border: `1px solid ${!filters.language ? 'var(--cyan)' : 'var(--border)'}`,
-          color: !filters.language ? 'var(--bg)' : 'var(--text2)',
-          borderRadius: 20, padding: '6px 16px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
-        }}>
-          🌍 All Languages
-        </button>
-        {ALL_LANGUAGES.map(lang => (
-          <button key={lang.code}
-            onClick={() => setFilters(f => ({ ...f, language: filters.language === lang.code ? '' : lang.code }))}
-            style={{
-              background: filters.language === lang.code ? 'rgba(0,245,255,0.12)' : 'var(--surface)',
-              border: `1px solid ${filters.language === lang.code ? 'var(--cyan)' : 'var(--border)'}`,
-              color: filters.language === lang.code ? 'var(--cyan)' : 'var(--text2)',
-              borderRadius: 20, padding: '6px 14px', cursor: 'pointer', fontSize: '0.82rem',
-            }}>
-            {lang.label}
-          </button>
-        ))}
-      </div>
+      {activeTab === 'discover' && (
+        <div className="space-y-8 animate-in fade-in duration-500">
+          <div className="relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
+            <input
+              type="text"
+              placeholder="Search skills (e.g. 'Strategic Leadership', 'Prompt Engineering'...)"
+              className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-cyan-500 transition-all text-white placeholder:text-slate-600"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
 
-      {/* Filters row */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
-          <input type="text" placeholder="Search resources…" value={filters.q}
-            onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
-            style={{ ...input, paddingLeft: 32, width: '100%', boxSizing: 'border-box' }} />
-        </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="md:col-span-1 space-y-6">
+              <div className="p-6 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl">
+                <Sparkles className="w-6 h-6 text-cyan-400 mb-4" />
+                <h3 className="text-white font-bold mb-2">AI-Powered Paths</h3>
+                <p className="text-xs text-slate-400 leading-relaxed mb-6">
+                  Generate a personalised roadmap based on your current role and target job market.
+                </p>
+                <button
+                  onClick={generatePath}
+                  disabled={isGenerating || !searchQuery}
+                  className="w-full py-3 bg-cyan-500 text-black text-xs font-black rounded-xl hover:bg-cyan-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'GENERATE PATH'}
+                </button>
+              </div>
 
-        <select value={filters.level} onChange={e => setFilters(f => ({ ...f, level: e.target.value }))} style={input}>
-          <option value="">All Levels</option>
-          <option value="beginner">Beginner</option>
-          <option value="intermediate">Intermediate</option>
-          <option value="advanced">Advanced</option>
-        </select>
+              <div className="p-6 bg-slate-900/50 border border-slate-800 rounded-2xl">
+                <h4 className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4">Trending Skills</h4>
+                <div className="space-y-2">
+                  {['Systems Thinking', 'Bio-Leadership', 'AI Governance', 'Creative Strategy'].map(s => (
+                    <button key={s} onClick={() => setSearchQuery(s)} className="block text-sm text-slate-300 hover:text-cyan-400 transition-colors">
+                      # {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-        <select value={filters.dimension} onChange={e => setFilters(f => ({ ...f, dimension: e.target.value }))} style={input}>
-          <option value="">All Goals</option>
-          {Object.entries(DIM_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-
-        {(filters.language || filters.level || filters.dimension || filters.q) && (
-          <button onClick={() => setFilters(DEFAULT_FILTERS)} style={{
-            background: 'none', border: '1px solid var(--border)', borderRadius: 8,
-            padding: '8px 14px', color: 'var(--text3)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem',
-          }}>
-            <RotateCcw size={12} /> Reset
-          </button>
-        )}
-      </div>
-
-      {/* Results count */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <span style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>
-          {loading ? 'Loading…' : `${total} resource${total !== 1 ? 's' : ''} found`}
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--emerald)' }}>
-          <Zap size={12} /> All free to access
-        </span>
-      </div>
-
-      {/* Grid */}
-      {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-          {[...Array(6)].map((_, i) => <div key={i} className="skeleton-loader skeleton-card"></div>)}
-        </div>
-      ) : error ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', background: 'rgba(255,71,87,0.05)', border: '1px solid rgba(255,71,87,0.2)', borderRadius: 16 }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: 16 }}>⚠️</div>
-          <h3 style={{ margin: '0 0 8px 0', color: 'var(--red)' }}>Connection Error</h3>
-          <p style={{ margin: '0 0 24px 0', color: 'var(--text2)', fontSize: '0.9rem' }}>{error}</p>
-          <button onClick={() => fetchResources(filters)} style={{
-            background: 'var(--red)', color: 'white', border: 'none', borderRadius: 8,
-            padding: '10px 24px', cursor: 'pointer', fontWeight: 600,
-          }}>Retry Connection</button>
-        </div>
-      ) : resources.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'var(--text3)', background: 'var(--surface)', borderRadius: 16, border: '1px dashed var(--border)' }}>
-          <BookOpen size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-          <div style={{ fontSize: '1.1rem', color: 'var(--text2)', fontWeight: 600, marginBottom: 4 }}>No resources match your filters</div>
-          <div style={{ fontSize: '0.85rem', marginBottom: 20 }}>Try adjusting your language or skill goals.</div>
-          <button onClick={() => setFilters(DEFAULT_FILTERS)} style={{
-            background: 'var(--surface2)', border: '1px solid var(--border)',
-            borderRadius: 8, padding: '8px 20px', color: 'var(--text2)', cursor: 'pointer',
-          }}>Reset All Filters</button>
-        </div>
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: 16,
-        }}>
-          {resources.map(r => <ResourceCard key={r.id} resource={r} />)}
+            <div className="md:col-span-3">
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-20 grayscale opacity-50">
+                  <Loader2 className="w-10 h-10 animate-spin text-cyan-500 mb-4" />
+                  <span className="text-slate-500 font-mono text-sm">INDEXING RESOURCES...</span>
+                </div>
+              ) : resources.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {resources.map(res => (
+                    <div key={res.id} className="group p-6 bg-slate-900/30 border border-slate-800 rounded-2xl hover:border-slate-700 transition-all hover:bg-slate-900/50">
+                      <div className="flex justify-between items-start mb-4">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          res.type === 'course' ? 'bg-purple-500/20 text-purple-400' :
+                          res.type === 'project' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
+                        }`}>
+                          {res.type}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">{res.duration}</span>
+                      </div>
+                      <h3 className="text-white font-bold group-hover:text-cyan-400 transition-colors mb-2 line-clamp-1">{res.title}</h3>
+                      <p className="text-slate-400 text-xs mb-4 line-clamp-2 leading-relaxed">{res.description}</p>
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-800/50">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase">{res.provider}</span>
+                        <a href={res.url} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-slate-800 rounded-lg group-hover:bg-cyan-500 group-hover:text-black transition-all">
+                          <ChevronRight className="w-4 h-4" />
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-20 bg-slate-900/20 rounded-3xl border border-dashed border-slate-800">
+                  <BookOpen className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+                  <p className="text-slate-500 font-medium">No results for "{searchQuery}"</p>
+                  <p className="text-slate-600 text-sm">Try searching for broader skill categories</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Attribution */}
-      <div style={{ marginTop: 40, padding: 20, background: 'var(--surface)', borderRadius: 12,
-        borderLeft: '3px solid var(--cyan)', fontSize: '0.8rem', color: 'var(--text3)' }}>
-        <strong style={{ color: 'var(--text2)' }}>Resource Policy:</strong> All resources are hand-curated for free accessibility.
-        "Free Audit" means you can access all content for free without earning a certificate.
-        "Scholarship" means the provider offers full scholarships — apply directly on their site.
-      </div>
+      {activeTab === 'my-paths' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in duration-500">
+          {paths.length > 0 ? (
+            paths.map(path => (
+              <div key={path.id} className="p-8 bg-slate-900/50 border border-slate-800 rounded-3xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+                  <Target className="w-32 h-32 text-cyan-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">{path.title}</h3>
+                <p className="text-cyan-400 text-sm font-bold uppercase tracking-widest mb-6">Target: {path.role}</p>
+                
+                <div className="space-y-6 relative">
+                  {path.steps.map((step, idx) => (
+                    <div key={idx} className="flex gap-4">
+                      <div className="flex flex-col items-center">
+                        <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400">
+                          {idx + 1}
+                        </div>
+                        {idx !== path.steps.length - 1 && <div className="w-px h-full bg-slate-800 my-2" />}
+                      </div>
+                      <div className="pb-2">
+                        <h4 className="text-white font-bold text-sm mb-1">{step.title}</h4>
+                        <p className="text-slate-500 text-xs leading-relaxed mb-2">{step.description}</p>
+                        <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">{step.duration}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button className="w-full mt-8 py-3 bg-white/5 border border-white/10 text-white text-xs font-bold rounded-xl hover:bg-white/10 transition-all">
+                  ACTIVATE PATHWAY
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-full text-center py-32">
+              <Clock className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+              <p className="text-slate-500 font-medium">You haven't generated any paths yet.</p>
+              <button 
+                onClick={() => setActiveTab('discover')}
+                className="mt-4 text-cyan-400 text-sm hover:underline"
+              >
+                Go to Discover to start
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'progress' && (
+        <div className="bg-slate-900/30 border border-slate-800 rounded-3xl p-12 text-center animate-in fade-in duration-500">
+          <CheckCircle2 className="w-16 h-16 text-slate-800 mx-auto mb-6" />
+          <h3 className="text-xl font-bold text-white mb-2">Learning Analytics</h3>
+          <p className="text-slate-500 max-w-sm mx-auto mb-8">
+            Complete your first module to unlock skills proficiency tracking and career safety dividends.
+          </p>
+          <div className="grid grid-cols-3 gap-8 max-w-lg mx-auto">
+             <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
+               <div className="text-2xl font-bold text-white">0</div>
+               <div className="text-[10px] text-slate-500 uppercase font-black">Hrs Learned</div>
+             </div>
+             <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
+               <div className="text-2xl font-bold text-white">0</div>
+               <div className="text-[10px] text-slate-500 uppercase font-black">Skills Maxed</div>
+             </div>
+             <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
+               <div className="text-2xl font-bold text-white">0%</div>
+               <div className="text-[10px] text-slate-500 uppercase font-black">Risk Offset</div>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
