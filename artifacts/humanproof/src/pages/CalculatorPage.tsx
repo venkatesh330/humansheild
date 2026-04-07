@@ -128,10 +128,6 @@ export default function CalculatorPage() {
         {result && !loading && (
           <div ref={resultRef} className="animate-in fade-in slide-in-from-bottom-8 duration-700">
             <ResultPanel data={result} />
-<<<<<<< HEAD
-            {/* NEW FEATURES: Compare roles & portfolio blend */}
-=======
->>>>>>> audit-fixes-2026-04-07
             <ScoreComparison />
             <PortfolioShield />
           </div>
