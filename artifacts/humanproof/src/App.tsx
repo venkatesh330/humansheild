@@ -12,11 +12,8 @@ import { LayoffProvider } from './context/LayoffContext';
 import { digestAPI } from './utils/apiClient';
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
-<<<<<<< HEAD
-import { ToastProvider, useToast } from './components/Toast';
-=======
 import { ToastProvider } from './components/Toast';
->>>>>>> audit-fixes-2026-04-07
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 type Page = 'home' | 'calculator' | 'products' | 'pricing' | 'safe-careers' | 'learning-hub' | 'audit-log';
 
@@ -74,58 +71,6 @@ function App() {
   useParticleBackground('bg-canvas');
 
   useEffect(() => {
-<<<<<<< HEAD
-    // BUG-010 FIX: CustomEvent detail can be either a plain string (old) OR
-    // an object { page, params } (from SafeCareers 'Learn' button)
-    // This handler now handles both formats safely.
-    const handleNav = (e: CustomEvent) => {
-      const detail = e.detail;
-      if (typeof detail === 'string') {
-        navigate(detail);
-      } else if (detail && typeof detail === 'object' && detail.page) {
-        navigate(detail.page);
-        // Future: store detail.params in context for Learning Hub roleKey pre-fill
-        if (detail.params?.roleKey) {
-          window.dispatchEvent(new CustomEvent('hub-rolekey', { detail: detail.params.roleKey }));
-        }
-      }
-    };
-    window.addEventListener('navigate', handleNav as EventListener);
-    
-    // Initial route sync
-    const path = window.location.pathname;
-    if (path === '/learning-hub') setCurrentPage('learning-hub');
-    else if (path === '/safe-careers') setCurrentPage('safe-careers');
-    else if (path === '/calculator') setCurrentPage('calculator');
-    else if (path === '/resources') setCurrentPage('products');
-    else if (path === '/pricing') setCurrentPage('pricing');
-    
-    return () => window.removeEventListener('navigate', handleNav as EventListener);
-  }, [navigate]);
-
-  // BUG-016 FIX + BUG-007 FIX: Properly resets email on both success AND error; uses toast-friendly messages
-  const handleSubscribe = async () => {
-    if (!subEmail || !subEmail.includes('@') || !subEmail.includes('.')) {
-      setSubMsg('⚠ Please enter a valid email.');
-      setSubMsgColor('var(--red)');
-      setSubMsgShow(true);
-      setTimeout(() => setSubMsgShow(false), 3000);
-      return;
-    }
-    try {
-      const result = await digestAPI.subscribe(subEmail);
-      if (result && !result.error) {
-        setSubEmail(''); // Always reset email on success
-        setSubMsg('✓ Added to waitlist — newsletter launching soon!');
-        setSubMsgColor('var(--emerald)');
-      } else {
-        setSubEmail(''); // BUG-016 FIX: also reset on error so user can retry cleanly
-        setSubMsg('⚠ ' + (result?.error || 'Subscription failed. Try again.'));
-        setSubMsgColor('var(--red)');
-      }
-    } catch {
-      // Fallback: show success if backend is unreachable (offline-first)
-=======
     const handleNav = (e: any) => {
       // Fix BUG-010: Support both string and object payloads
       if (typeof e.detail === 'string') {
@@ -152,7 +97,6 @@ function App() {
     } catch (err) {
       setSubStatus('error');
       // Fix BUG-016: Clear on error too for better UX
->>>>>>> audit-fixes-2026-04-07
       setSubEmail('');
       setTimeout(() => setSubStatus('idle'), 3000);
     }
@@ -160,13 +104,6 @@ function App() {
 
   return (
     <ToastProvider>
-<<<<<<< HEAD
-    <HumanProofProvider>
-      <LayoffProvider>
-        <canvas id="bg-canvas" />
-        <canvas id="trail-canvas" />
-        <div id="page-wipe" ref={wipeRef} />
-=======
       <HumanProofProvider>
         <LayoffProvider>
           <div className="min-h-screen bg-[#020617] text-slate-100 font-sans selection:bg-cyan-500/30">
@@ -208,7 +145,6 @@ function App() {
                     ))}
                   </div>
                 </div>
->>>>>>> audit-fixes-2026-04-07
 
                 <div className="flex items-center gap-4">
                   {user ? (
@@ -237,17 +173,6 @@ function App() {
               </div>
             </nav>
 
-<<<<<<< HEAD
-      <main>
-        {currentPage === 'home' && <HomePage onNavigate={navigate} />}
-        {currentPage === 'calculator' && <ToolsPage />}
-        {currentPage === 'safe-careers' && <SafeCareersPage />}
-        {currentPage === 'learning-hub' && <LearningHubPage />}
-        {currentPage === 'products' && <ProductsPage onNavigate={navigate} />}
-        {currentPage === 'pricing' && <PricingPage onNavigate={navigate} />}
-        {currentPage === 'audit-log' && <AuditLogPage />}
-      </main>
-=======
             <main className="pt-20">
               {currentPage === 'home' && <HomePage onStart={() => setCurrentPage('calculator')} />}
               {currentPage === 'calculator' && <ToolsPage />}
@@ -257,7 +182,6 @@ function App() {
               {currentPage === 'products' && <ProductsPage />}
               {currentPage === 'pricing' && <PricingPage />}
             </main>
->>>>>>> audit-fixes-2026-04-07
 
             <footer className="mt-20 border-t border-slate-800/50 bg-slate-950/50 py-16">
               <div className="max-w-7xl mx-auto px-6">
@@ -327,52 +251,13 @@ function App() {
               </div>
             </footer>
           </div>
-<<<<<<< HEAD
-          <div className="footer-col">
-            <h4>Product</h4>
-            <ul>
-              <li><a onClick={() => navigate('calculator')}>AI Risk Calculator</a></li>
-              <li><a onClick={() => navigate('safe-careers')}>Safe Career Finder</a></li>
-              <li><a onClick={() => navigate('learning-hub')}>Free Learning Hub</a></li>
-              <li><a onClick={() => navigate('products')}>Resources</a></li>
-              <li><a onClick={() => navigate('pricing')}>Pricing</a></li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Research</h4>
-            <ul>
-              <li><a>Q1 2026 Report</a></li>
-              <li><a>Methodology</a></li>
-              <li><a>Data Sources</a></li>
-              <li><a onClick={() => navigate('audit-log')}>Data Audit Log</a></li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Company</h4>
-            <ul>
-              <li><a>About</a></li>
-              <li><a>Blog</a></li>
-              <li><a>Contact</a></li>
-              <li><a>Privacy Policy</a></li>
-            </ul>
-          </div>
-        </div>
-        <div className="footer-bottom">
-          <p>© 2026 HumanProof. All rights reserved. Not financial or career advice.</p>
-          <p>Built on data from McKinsey · Goldman Sachs · WEF · OECD · Stanford HAI · MIT · BCG · Anthropic</p>
-        </div>
-      </footer>
-      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
-      </LayoffProvider>
-    </HumanProofProvider>
-=======
         </LayoffProvider>
       </HumanProofProvider>
       <AuthModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 
       />
->>>>>>> audit-fixes-2026-04-07
+      <SpeedInsights />
     </ToastProvider>
   );
 }
