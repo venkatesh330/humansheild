@@ -55,6 +55,8 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
   const [showRoleSuggestions, setShowRoleSuggestions] = useState(false);
   const [department, setDepartment] = useState(state.department || 'Engineering');
   const [manualIndustry, setManualIndustry] = useState('Technology');
+  const [manualSize, setManualSize] = useState('50');
+  const [manualIsPublic, setManualIsPublic] = useState(false);
   const roleInputRef = useRef<HTMLInputElement>(null);
 
   // Step 2 state
@@ -136,10 +138,10 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
     if (manualMode && companySearch) {
       finalCompany = {
         name: companySearch,
-        isPublic: false,
+        isPublic: manualIsPublic,
         industry: manualIndustry,
         region: 'US',
-        employeeCount: 500,
+        employeeCount: parseInt(manualSize, 10),
         revenueGrowthYoY: null,
         stock90DayChange: null,
         layoffsLast24Months: [],
@@ -152,16 +154,20 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
       };
     }
 
-    if (!finalCompany && !manualMode) return;
+    if (!finalCompany && !manualMode && companySearch.trim().length === 0) return;
     if (!roleTitle.trim()) return;
 
-    // Store company data in context (NOT window global)
+    // Store company data in context
     if (finalCompany) {
       dispatch({ type: 'SET_COMPANY_DATA', payload: finalCompany });
+    } else {
+       // Clear old data so the calculator knows it must fetch dynamically
+       dispatch({ type: 'SET_COMPANY_DATA', payload: null });
     }
+    
     dispatch({
       type: 'SET_INPUTS',
-      payload: { roleTitle: roleTitle.trim(), department },
+      payload: { companyName: finalCompany?.name || companySearch.trim(), roleTitle: roleTitle.trim(), department },
     });
 
     setStep(2);
@@ -265,13 +271,29 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
         </div>
 
         {manualMode && (
-          <div style={{ marginBottom: '16px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <label htmlFor="industry-select" style={labelStyle}>Select Industry</label>
-            <select id="industry-select" value={manualIndustry} onChange={e => setManualIndustry(e.target.value)} style={inputStyle}>
-              {Object.keys(industryRiskData).map(ind => (
-                <option key={ind} value={ind}>{ind}</option>
-              ))}
-            </select>
+          <div style={{ marginBottom: '16px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div>
+              <label htmlFor="industry-select" style={labelStyle}>Select Industry</label>
+              <select id="industry-select" value={manualIndustry} onChange={e => setManualIndustry(e.target.value)} style={{...inputStyle, marginBottom: 0}}>
+                {Object.keys(industryRiskData).map(ind => (
+                  <option key={ind} value={ind}>{ind}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="size-select" style={labelStyle}>Company Size (Employees)</label>
+              <select id="size-select" value={manualSize} onChange={e => setManualSize(e.target.value)} style={{...inputStyle, marginBottom: 0}}>
+                <option value="25">Small (1 - 50)</option>
+                <option value="100">Medium (51 - 200)</option>
+                <option value="500">Large (201 - 1000)</option>
+                <option value="2500">Enterprise (1001 - 5000)</option>
+                <option value="10000">Giant (5000+)</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" id="public-check" checked={manualIsPublic} onChange={e => setManualIsPublic(e.target.checked)} style={{ accentColor: 'var(--cyan)' }} />
+              <label htmlFor="public-check" style={{ color: '#d1d5db', fontSize: '0.9rem', cursor: 'pointer' }}>Is this a Publicly Traded Company?</label>
+            </div>
           </div>
         )}
 

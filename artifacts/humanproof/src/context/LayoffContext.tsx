@@ -22,7 +22,7 @@ export interface LayoffState {
 
 type LayoffAction =
   | { type: 'SET_INPUTS'; payload: Partial<LayoffState> }
-  | { type: 'SET_COMPANY_DATA'; payload: CompanyData }
+  | { type: 'SET_COMPANY_DATA'; payload: CompanyData | null }
   | { type: 'SET_CALCULATING'; payload: boolean }
   | { type: 'SET_SCORE_RESULT'; payload: ScoreResult }
   | { type: 'SET_HISTORY'; payload: ScoreHistoryEntry[] }
@@ -57,7 +57,7 @@ const layoffReducer = (state: LayoffState, action: LayoffAction): LayoffState =>
     case 'SET_INPUTS':
       return { ...state, ...action.payload };
     case 'SET_COMPANY_DATA':
-      return { ...state, companyData: action.payload, companyName: action.payload.name };
+      return { ...state, companyData: action.payload, companyName: action.payload?.name || '' };
     case 'SET_CALCULATING':
       return { ...state, isCalculating: action.payload };
     case 'SET_SCORE_RESULT':

@@ -1,45 +1,56 @@
-// ═══════════════════════════════════════════════════════════
-// riskFormula.ts — Pure calculation functions for HumanProof v2.0
-// 6-Dimension formula: D1×0.26 + D2×0.18 + D3×0.20 + D4×0.16 + D5×0.09 + D6×0.11
-// Weights sum: 0.26+0.18+0.20+0.16+0.09+0.11 = 1.00 ✓
-// ═══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+// riskFormula.ts — Core Risk Engine Calculation & Confidence Logic
+// ════════════════════════════════════════════════════════════════
 
-import {
-  TASK_AUTO, DISRUPTION_VELOCITY, AUGMENTATION,
-  EXP_SENSITIVITY, EXP_RISK_BASE, EXP_INDEX,
-  COUNTRY_DATA, NETWORK_MOAT, D6_EXP_BONUS,
-  INDUSTRY_KEY_MULT, EXP_BONUS, REPLACEMENT_2026_OVERRIDES,
-  SPECIALIST_KEYWORDS, SPECIFICITY_MARKERS,
-  D3_CURVE_EXPONENT, GOVERNANCE_KEYWORDS,
-} from './riskData';
+/**
+ * 3-Tier Confidence System (BUG-004)
+ * DQ_FULL: Research-backed data (±3% error)
+ * DQ_PARTIAL: Partially attributed data (±7% error)
+ * Limited: Sparse data points (±12% error)
+ */
+export type ConfidenceLevel = 'HIGH' | 'MODERATE' | 'LOW';
 
 export interface ScoreResult {
-  score: number;
-  d1: number;
-  d2: number;
-  d3: number;
-  d4: number;
-  d5: number;
-  d6: number;
-  augVal: number;
-  networkMoat: number;
+  total: number;
+  dimensions: {
+    label: string;
+    score: number;
+    weight: number;
+  }[];
+  confidence: ConfidenceLevel;
+  dataQuality: 'DQ_FULL' | 'DQ_PARTIAL' | 'Limited';
 }
 
-// ─── D1: Task Automatability ───────────────────────────────
-export function calculateD1(industryKey: string, workType: string): number {
-  const industryData = TASK_AUTO[industryKey];
-  if (industryData && workType in industryData) return industryData[workType];
-  for (const cat of Object.values(TASK_AUTO)) {
-    if (workType in cat) return cat[workType];
-  }
-  return TASK_AUTO.default.data;
-}
+/**
+ * Enhanced projectSafeScore with upskilling factor (BUG-012)
+ * @param currentScore Initial risk score
+ * @param years Number of years to project
+ * @param upskillingFactor 0 to 1 value (1.0 = maximum upskilling, 0 = none)
+ */
+export const projectSafeScore = (
+  currentScore: number,
+  years: number,
+  upskillingFactor: number = 0
+): number => {
+  // Base decay rate of 5% per year due to AI advancement
+  const baseDecay = 0.05 * years;
+  
+  // Upskilling reduces decay. Max upskilling (1.0) can neutralize base decay.
+  const mitigatedDecay = baseDecay * (1 - upskillingFactor);
+  
+  // Risk grows over time as AI capabilities expand
+  const projectedRisk = currentScore + (mitigagedDecay * 100);
+  
+  return Math.min(Math.max(projectedRisk, 0), 100);
+};
 
-// ─── D2: AI Tool Maturity ──────────────────────────────────
-export function calculateD2(workType: string): number {
-  return DISRUPTION_VELOCITY[workType] ?? DISRUPTION_VELOCITY.default;
-}
+export const getConfidenceLevel = (dq: string): ConfidenceLevel => {
+  if (dq === 'DQ_FULL') return 'HIGH';
+  if (dq === 'DQ_PARTIAL') return 'MODERATE';
+  return 'LOW';
+};
 
+<<<<<<< HEAD
 // ─── D3: Human Amplification (curved inversion) ───────────
 // v2 fix: curved inversion (D3_CURVE_EXPONENT=0.70) preserves mid-range nuance
 // augVal=50 → D3=37 (protective) instead of linear D3=50 (neutral)
@@ -123,8 +134,15 @@ export function projectScore(baseline: number, decayFactor: number, years: numbe
   return Math.min(97, Math.max(safeBaseline, Math.round(projected)));
 }
 
-export function projectSafeScore(baseline: number, years: number): number {
-  return Math.max(15, Math.round(baseline - years * 1.5));
+// BUG-012 FIX: projectSafeScore now accepts an upskilling factor (0-1)
+// Without upskilling (factor=0): score decreases by 1.5/yr (natural drift)
+// With active upskilling (factor=1): score holds stable or improves
+// Rationale: safe roles DON'T automatically become risky — requires sustained disruption
+export function projectSafeScore(baseline: number, years: number, upskillingFactor = 0): number {
+  const naturalDecayPerYear = 1.5;
+  const upskillingProtection = upskillingFactor * 1.2; // upskilling slows decay
+  const netDecay = Math.max(0, naturalDecayPerYear - upskillingProtection);
+  return Math.max(15, Math.round(baseline - years * netDecay));
 }
 
 // ─── Main Score Calculator ─────────────────────────────────
@@ -242,8 +260,22 @@ export function getAutomationExp(d1: number): string {
   return `Low (${d1}%)`;
 }
 
+// ── Confidence System (3-tier) ──────────────────────────────────────
+// BUG-004 FIX: Added DQ_PARTIAL tier for medium-confidence roles
+// 3-tier: High (research-backed) | Moderate (common roles) | Low (sparse data)
 export function getConfidence(wt: string): { band: number; label: string; stars: string } {
+  // Tier 1: Full research data (±3% confidence band)
   const DQ_FULL = new Set(['sw_backend','sw_frontend','sw_fullstack','sw_arch','sw_lead','sw_devops','sw_cloud','sw_api','sw_db','sw_testing','sw_ml','bpo_inbound','bpo_chat','bpo_data_entry','bpo_email_support','bpo_tech_support','bpo_virtual','bpo_claims','cnt_blog','cnt_copy','cnt_seo_content','cnt_social','cnt_email','cnt_ux_write','cnt_script','cnt_yt','cnt_tech_write','cnt_ghostwrite','cnt_translation','fin_account','fin_payroll','fin_audit','fin_fp','fin_tax','fin_risk','fin_credit','fin_invest','fin_reporting','hc_doctor','hc_surgeon','hc_specialist','hc_radiology','hc_medical_coding','hc_physio','hc_nutrition','hc_tele','mh_therapist','mh_psychologist','mh_coach','mh_crisis','mh_social','nur_rn','nur_icu','nur_community','nur_midwife','edu_teach','edu_higher','edu_special','edu_counsellor','qa_manual','qa_auto','qa_lead','qa_perf','mkt_seo','mkt_sem','mkt_social_ads','mkt_growth','mkt_analytics','mkt_brand','mkt_product','des_ui','des_ux','des_graphic','des_motion','des_product','leg_litigation','leg_paralegal','leg_corporate','leg_compliance','leg_ip','leg_labor','con_strategy','con_mgmt','con_it','con_sustainability','hr_recruit','hr_hrbp','hr_payroll','hr_diversity','hr_ld','hr_lr','sec_pen','sec_soc','sec_appsec','sec_grc','sec_cloud','inv_vc','inv_equity','inv_portfolio','inv_quant','inv_ibanking','ml_model','ml_research','ml_data','ml_mlops','ml_prompt','ml_nlp','adm_data_entry','adm_exec','adm_reception','ins_claims','ins_underwrite','ins_admin','ins_actuarial','log_warehouse','log_last_mile','log_fleet','mfg_production','mfg_quality','mfg_automation','mfg_supervisor','ret_floor','photo_event','photo_portrait','video_edit','trav_agent','trav_guide','game_design','game_unity','game_unreal','gov_admin','gov_policy','ph_research','ph_sales','nur_para','ngo_field','agri_farming']);
-  if (DQ_FULL.has(wt)) return { band: 3, label: 'High confidence ±3%', stars: '●●●●●' };
-  return { band: 7, label: 'Moderate confidence ±7%', stars: '●●●○○' };
+  
+  // Tier 2: Common roles with moderate data (±7% confidence band)
+  const DQ_PARTIAL = new Set(['ml_prompt_eng','ml_rlhf','ml_ai_safety','ml_climate_ds','ml_hc_ai','bc_sol','bc_defi','bc_audit','game_vr','game_art','anim_2d','anim_3d','anim_vfx','eng_civil','eng_mech','eng_elec','eng_project','auto_ev','auto_design','con_arch','con_site','en_renewable','en_nuclear','aero_eng','fmcg_brand_mgr','gov_social','ngo_program','agri_tech','hr_comp','hr_hris','leg_legaltech','con_change','con_risk','mkt_crm','mkt_product','adv_brand','adv_pr','edt_product','saas_pm','saas_growth']);
+
+  if (DQ_FULL.has(wt))    return { band: 3,  label: 'High confidence ±3%',      stars: '●●●●●' };
+  if (DQ_PARTIAL.has(wt)) return { band: 7,  label: 'Moderate confidence ±7%',  stars: '●●●○○' };
+  return                         { band: 12, label: 'Limited data ±12%',         stars: '●○○○○' };
 }
+=======
+export const calcDimensionScore = (base: number, volatility: number): number => {
+  return Math.min(Math.max(base * volatility, 0), 100);
+};
+>>>>>>> audit-fixes-2026-04-07

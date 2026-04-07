@@ -3,7 +3,7 @@
 
 import { CompanyData, getPPPMultiplier } from '../data/companyDatabase';
 import { IndustryRisk } from '../data/industryRiskData';
-import { calculateRoleExposureScore } from '../data/roleExposureData';
+import { calculateRoleExposureScore, RoleExposure } from '../data/roleExposureData';
 import { layoffNewsCache } from '../data/layoffNewsCache';
 
 // ─── Interfaces ───
@@ -22,6 +22,7 @@ export interface ScoreInputs {
   roleTitle: string;
   department: string;
   userFactors: UserFactors;
+  roleExposureOverride?: RoleExposure;
 }
 
 export interface ScoreBreakdown {
@@ -38,6 +39,14 @@ export interface ScoreTier {
   advice: string;
 }
 
+export interface ActionPlanItem {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'High' | 'Medium' | 'Low';
+  layerFocus: string;
+}
+
 export interface ScoreResult {
   score: number;
   tier: ScoreTier;
@@ -46,6 +55,7 @@ export interface ScoreResult {
   calculatedAt: string;
   nextUpdateDue: string;
   disclaimer: string;
+  recommendations: ActionPlanItem[];
 }
 
 // ─── Utility ───
@@ -286,6 +296,64 @@ const calculateConfidence = (companyData: CompanyData): 'High' | 'Medium' | 'Low
   return 'Low';
 };
 
+// ─── Recommendations (Action Plan) ───
+
+const generateRecommendations = (breakdown: ScoreBreakdown, companyData: CompanyData): ActionPlanItem[] => {
+  const plans: ActionPlanItem[] = [];
+
+  if (breakdown.L1 > 0.6) {
+    plans.push({
+      id: 'l1-high',
+      title: 'Company Health is Deteriorating',
+      description: `Financial indicators for ${companyData.name} are weak. Secure your emergency fund and prepare your resume immediately.`,
+      priority: 'High',
+      layerFocus: 'Company Health'
+    });
+  }
+
+  if (breakdown.L2 > 0.7) {
+    plans.push({
+      id: 'l2-high',
+      title: 'Sector Layoffs Detected',
+      description: 'Your sector is experiencing high contagion. Network externally with recruiters outside your current industry.',
+      priority: 'High',
+      layerFocus: 'Layoff History'
+    });
+  }
+
+  if (breakdown.L3 > 0.5) {
+    plans.push({
+      id: 'l3-high',
+      title: 'Role Vulnerable to Automation/Cuts',
+      description: 'Your position has high exposure. Focus on upskilling, learning AI tools applicable to your job, or shifting toward revenue-generating tasks.',
+      priority: 'Medium',
+      layerFocus: 'Role Exposure'
+    });
+  }
+
+  if (breakdown.L5 > 0.6) {
+    plans.push({
+      id: 'l5-high',
+      title: 'Internal Standing Needs Work',
+      description: 'Your employee factors (tenure, performance) leave you exposed. Build relationships with key stakeholders and document your recent wins.',
+      priority: 'Medium',
+      layerFocus: 'Employee Factors'
+    });
+  }
+
+  if (plans.length === 0) {
+    plans.push({
+      id: 'all-good',
+      title: 'Maintain Your Edge',
+      description: 'Your risk is low. Focus on exceeding performance goals and continuous learning to stay competitive.',
+      priority: 'Low',
+      layerFocus: 'General'
+    });
+  }
+
+  return plans;
+};
+
 // ─── Scenario Simulation (What-If) ───
 
 export interface ScenarioOverrides {
@@ -325,7 +393,7 @@ export const calculateLayoffScore = (inputs: ScoreInputs): ScoreResult => {
 
   const L1 = calculateCompanyHealthScore(companyData);
   const L2 = calculateLayoffHistoryScore(companyData, industryData, department);
-  const L3 = calculateRoleExposureScore(roleTitle, department);
+  const L3 = calculateRoleExposureScore(roleTitle, department, inputs.roleExposureOverride);
   const L4 = calculateMarketConditionsScore(companyData.industry, industryData);
   const L5 = calculateEmployeeFactorsScore(userFactors);
 
@@ -335,13 +403,17 @@ export const calculateLayoffScore = (inputs: ScoreInputs): ScoreResult => {
   const nextUpdate = new Date();
   nextUpdate.setDate(nextUpdate.getDate() + 7);
 
+  const breakdown = { L1, L2, L3, L4, L5 };
+
   return {
     score: finalScore,
     tier: getScoreTier(finalScore),
-    breakdown: { L1, L2, L3, L4, L5 },
+    breakdown,
     confidence: calculateConfidence(companyData),
     calculatedAt: new Date().toISOString(),
     nextUpdateDue: nextUpdate.toISOString(),
     disclaimer: 'This is a risk estimation based on publicly available signals. It is not a prediction or guarantee of future employment outcomes.',
+    recommendations: generateRecommendations(breakdown, companyData),
   };
 };
+

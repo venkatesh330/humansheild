@@ -112,8 +112,8 @@ export const inferRoleRisk = (roleTitle: string): RoleExposure => {
 // Get all role names for autocomplete
 export const getAllRoleTitles = (): string[] => Object.keys(roleExposureData);
 
-export const calculateRoleExposureScore = (roleTitle: string, department: string): number => {
-  const roleData = roleExposureData[roleTitle] || inferRoleRisk(roleTitle);
+export const calculateRoleExposureScore = (roleTitle: string, department: string, override?: RoleExposure): number => {
+  const roleData = override || roleExposureData[roleTitle] || inferRoleRisk(roleTitle);
   const deptMultiplier = getDepartmentMultiplier(department);
 
   // Blend aiRisk into the score (20% weight) — now uses the previously dead data

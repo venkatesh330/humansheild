@@ -10,10 +10,13 @@
   --bg3: #13132E;
   --surface: rgba(255,255,255,0.03);
   --surface2: rgba(255,255,255,0.06);
+  --surface3: rgba(255,255,255,0.10);
   --border: rgba(0,245,255,0.12);
   --border2: rgba(0,245,255,0.20);
   --text: #E8E8F0;
+  --text1: #E8E8F0;
   --text2: #9090AA;
+  --text3: #6060A0;
   --red: #FF4757;
   --orange: #FF7043;
   --yellow: #FBBF24;
@@ -609,7 +612,7 @@ body {
 
 .skill-sections { padding: 24px 32px; border-bottom: 1px solid var(--border); }
 .skill-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-.skill-col { }
+.skill-col { display: flex; flex-direction: column; }
 .skill-col-header {
   font-family: var(--mono);
   font-size: 0.72rem;
@@ -1053,3 +1056,125 @@ footer {
   width: 100%;
   margin-bottom: 16px;
 }
+
+/* ========================================================================= */
+/* GLOBAL SELECT / DROPDOWN VISIBILITY FIX                                   */
+/* Fixes invisible options on dark backgrounds across all browsers           */
+/* ========================================================================= */
+
+/* Force all native select elements to have dark bg + light text */
+select {
+  background-color: #12122e !important;
+  color: #E8E8F0 !important;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+/* Option elements inside selects */
+select option,
+select optgroup {
+  background-color: #12122e !important;
+  color: #E8E8F0 !important;
+}
+
+/* Selected option highlight */
+select option:checked,
+select option:hover {
+  background-color: #1e1e50 !important;
+  color: #00F5FF !important;
+}
+
+/* Calc field selects & other form selects */
+.calc-field select,
+.calc-field select option {
+  background: #13132E !important;
+  color: #E8E8F0 !important;
+}
+
+/* ========================================================================= */
+/* SAFE CAREERS PAGE — LAYOUT & OVERFLOW FIX                                 */
+/* Makes sure sticky filter sidebar doesn't clip dropdown popups             */
+/* ========================================================================= */
+
+/* The main page grid must not clip overflow so custom dropdowns can show */
+.safe-careers-layout {
+  overflow: visible !important;
+}
+
+/* The sticky sidebar wrapper — keep overflow visible for dropdowns */
+.safe-careers-sidebar {
+  position: sticky;
+  top: 90px;
+  z-index: 50;
+  overflow: visible !important;
+}
+
+/* Filter panel must not clip children */
+.filter-panel-inner {
+  overflow: visible !important;
+}
+
+/* Custom searchable dropdown portal */
+.searchable-select-portal {
+  position: fixed;
+  z-index: 9999;
+  background: #12122e;
+  border: 1px solid rgba(0,245,255,0.2);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.7);
+  max-height: 320px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========================================================================= */
+/* CAREER CARD ANIMATIONS                                                    */
+/* ========================================================================= */
+
+.career-card {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Keyword highlight in search results */
+.career-card mark {
+  background: rgba(0, 245, 255, 0.2);
+  color: #00F5FF;
+  border-radius: 3px;
+  padding: 1px 2px;
+}
+
+/* ========================================================================= */
+/* SAFE CAREERS — MOBILE RESPONSIVE GRID                                     */
+/* ========================================================================= */
+
+@media (max-width: 900px) {
+  .safe-careers-main-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .safe-careers-sidebar {
+    position: static !important;
+    top: auto !important;
+    z-index: 10;
+    margin-bottom: 20px;
+  }
+}
+
+/* ========================================================================= */
+/* PULSE ANIMATION FOR LIVE INDICATOR                                        */
+/* ========================================================================= */
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+.pulse-live { animation: pulse-live 2s ease-in-out infinite; }
+
+/* ========================================================================= */
+/* SCROLLBAR STYLING — Custom dropdowns                                      */
+/* ========================================================================= */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,245,255,0.2); border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,245,255,0.4); }
+

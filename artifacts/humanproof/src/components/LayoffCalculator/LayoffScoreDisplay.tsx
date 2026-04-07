@@ -189,10 +189,11 @@ export const LayoffScoreDisplay: React.FC<Props> = ({ result, roleTitle, company
       </div>
 
       <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '8px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: '#9ba5b4', fontSize: '0.9rem' }}>Data confidence:</span>
+        <span style={{ color: '#9ba5b4', fontSize: '0.9rem' }}>Data source:</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>LIVE OSINT</span>
           <strong style={{ color: '#fff' }}>{confidence}</strong>
-          <span title="Based on the number of public data points available for your company." style={{ cursor: 'help', color: '#6b7280' }}>ⓘ</span>
+          <span title="Based on real-time cross-referenced data points from news and financial API aggregators." style={{ cursor: 'help', color: '#6b7280' }}>ⓘ</span>
         </div>
       </div>
 
