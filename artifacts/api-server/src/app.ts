@@ -1,107 +1,103 @@
-<<<<<<< HEAD
-import express, { type Express } from "express";
-import cors from "cors";
-import { pinoHttp } from "pino-http";
-import rateLimit from "express-rate-limit";
-import router from "./routes";
-import { logger } from "./lib/logger";
-
-const app: Express = express();
-
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req: any) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res: any) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
-    },
-  }),
-);
-
-// Configure CORS with allowed origins
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:5173', 'http://localhost:3001'];
-=======
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+
+// Routes
 import assessmentRoutes from './routes/assessments';
 import safeCareersRoutes from './routes/safeCareers';
 import learningRoutes from './routes/learning';
+import learningPathsRoutes from './routes/learningPaths';
+import liveDataRoutes from './routes/liveData';
+import resourceRoutes from './routes/resources';
+import digestRoutes from './routes/digest';
+import waitlistRoutes from './routes/waitlist';
+
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
->>>>>>> audit-fixes-2026-04-07
 
-// Security: CORS configuration
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
+// ── Security: CORS ──────────────────────────────────────────────
+// BUG FIX: Production domain was missing from default allowedOrigins
+// causing ALL requests from the deployed frontend to fail CORS.
+const defaultOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  'https://humanproof.ai',
+  'https://www.humanproof.ai',
+  'https://humanproof.vercel.app',
+];
+const envOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) ?? [];
+const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+
 app.use(cors({
   origin: (origin, callback) => {
+    // Allow server-to-server requests (no origin) and Postman testing
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'x-client-info', 'x-supabase-auth', 'apikey'],
 }));
 
-<<<<<<< HEAD
-// Global rate limit: 100 requests per 15 minutes per IP
+// Pre-flight support now handled globally by app.use(cors(...)) above
+
+// ── Security: Rate Limiting ─────────────────────────────────────
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 200,                    // increased to 200 for UX
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many requests. Please try again in 15 minutes." },
-  skip: (req) => process.env.NODE_ENV === 'development', // skip in dev
+  message: { error: 'Too many requests. Please slow down and try again in 15 minutes.' },
 });
 
-// Strict limiter for write-heavy endpoints (digest subscribe)
-const writeLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10,
-  message: { error: "Too many subscription attempts. Please wait 1 hour." },
-  skip: (req) => process.env.NODE_ENV === 'development',
+// Stricter limit for AI generation (OpenAI cost protection)
+const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,   // 1 hour
+  max: 10,                     // 10 AI generates per IP per hour
+  message: { error: 'AI generation rate limit reached. Try again in 1 hour.' },
 });
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use("/api", globalLimiter);
-app.use("/api/digest/subscribe", writeLimiter);
-app.use("/api", router);
-=======
-// Security: Global Rate Limiting
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again after 15 minutes'
-});
 app.use(globalLimiter);
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-app.use(express.json());
+// ── Health Check ────────────────────────────────────────────────
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString(), version: '2.0.0' });
+});
 
-// Routes
+// ── API Routes ──────────────────────────────────────────────────
+// v1 prefix routes (primary)
+app.use('/api/v1/assessments', assessmentRoutes);
+app.use('/api/v1/safe-careers', safeCareersRoutes);
+app.use('/api/v1/learning', learningRoutes);
+app.use('/api/v1/learning-paths', learningPathsRoutes);
+app.use('/api/v1/resources', resourceRoutes);
+app.use('/api/v1/live-data', liveDataRoutes);
+app.use('/api/v1/digest', digestRoutes);
+app.use('/api/v1/waitlist', waitlistRoutes);
+
+// Legacy unversioned routes (backward compat — keep until frontend migrated)
 app.use('/api/assessments', assessmentRoutes);
 app.use('/api/safe-careers', safeCareersRoutes);
 app.use('/api/learning', learningRoutes);
+app.use('/api/learning-paths', learningPathsRoutes);
+app.use('/api/resources', resourceRoutes);
+app.use('/api/live-data', liveDataRoutes);
+app.use('/api/digest', digestRoutes);
+app.use('/api/waitlist', waitlistRoutes);
 
-// Error Handling
+// Apply strict AI rate limiter AFTER route mounting
+app.use('/api/learning-paths/generate', aiLimiter);
+app.use('/api/v1/learning-paths/generate', aiLimiter);
+
+// ── Error Handling ──────────────────────────────────────────────
 app.use(errorHandler);
->>>>>>> audit-fixes-2026-04-07
 
 export default app;
-

@@ -1,3 +1,5 @@
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { saveScore, getScoreHistory } from './scoreStorage';
 
 export interface AssessmentSnapshot {
@@ -52,29 +54,150 @@ export const exportAsJSON = (snapshot: AssessmentSnapshot): string => {
   return JSON.stringify(snapshot, null, 2);
 };
 
-export const generatePDFData = (snapshot: AssessmentSnapshot): string => {
-  const lines = [
-    '═══════════════════════════════════',
-    '   HumanProof Assessment Report',
-    '═══════════════════════════════════',
-    `Date: ${new Date(snapshot.date).toLocaleDateString()}`,
-    '',
-    'SCORES:',
-    snapshot.jobRiskScore ? `  Job Risk:           ${snapshot.jobRiskScore}%` : '',
-    snapshot.jobTitle ? `  Position:           ${snapshot.jobTitle}` : '',
-    snapshot.skillRiskScore ? `  Skill Risk:         ${snapshot.skillRiskScore}%` : '',
-    snapshot.humanScore ? `  Human Irreplaceability: ${snapshot.humanScore}%` : '',
-    '',
-    'TIMELINE TO ACTION:',
-    `  ${snapshot.timeline}`,
-    '',
-    'RECOMMENDED ACTIONS:',
-    ...snapshot.recommendedActions.map(r => `  • ${r}`),
-    '',
-    '═══════════════════════════════════',
-    `Report expires in ${snapshot.expiresIn}`,
-  ];
-  return lines.filter(l => l !== '').join('\n');
+/**
+ * Generates and downloads a professional PDF report
+ * @param snapshot Assessment data
+ * @param elementRef Optional ref to the results card for html2canvas snapshot
+ */
+export const downloadAssessmentPDF = async (snapshot: AssessmentSnapshot, elementId?: string) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  // --- Header ---
+  doc.setFillColor(15, 23, 42); // Slate 900
+  doc.rect(0, 0, 210, 40, 'F');
+  
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(24);
+  doc.setFont('helvetica', 'bold');
+  doc.text('HUMANPROOF', 20, 25);
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text('AI RESILIENCE & DISPLACEMENT REPORT', 20, 32);
+  doc.text(new Date(snapshot.date).toLocaleDateString(), 160, 25);
+
+  let y = 55;
+
+  // --- Executive Summary ---
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Executive Summary', 20, y);
+  y += 10;
+  
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  const summary = `This report analyzes the AI displacement risk for the position of "${snapshot.jobTitle || 'Unspecified'}". Based on the HumanProof 6-dimension model, we have calculated the following resilience metrics.`;
+  const splitSummary = doc.splitTextToSize(summary, 170);
+  doc.text(splitSummary, 20, y);
+  y += splitSummary.length * 7;
+
+  // --- Core Scores ---
+  doc.setDrawColor(226, 232, 240);
+  doc.line(20, y, 190, y);
+  y += 15;
+
+  const drawScore = (label: string, score: number | null, color: [number, number, number]) => {
+    if (score === null) return;
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(9);
+    doc.text(label.toUpperCase(), 25, y);
+    
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(25, y + 2, 160, 8, 2, 2, 'F');
+    
+    doc.setFillColor(...color);
+    doc.roundedRect(25, y + 2, (score / 100) * 160, 8, 2, 2, 'F');
+    
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${score}%`, 172, y + 1);
+    
+    y += 20;
+  };
+
+  drawScore('Automation Risk Profile', snapshot.jobRiskScore, [239, 68, 68]); // Red
+  drawScore('Skill Displacement Risk', snapshot.skillRiskScore, [245, 158, 11]); // Amber
+  drawScore('Human Irreplaceability Index', snapshot.humanScore, [16, 185, 129]); // Emerald
+
+  // --- Timeline ---
+  y += 5;
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(20, y, 170, 25, 3, 3, 'F');
+  
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Recommended Action Timeline:', 30, y + 10);
+  
+  doc.setTextColor(34, 197, 94);
+  doc.setFontSize(14);
+  doc.text(snapshot.timeline, 30, y + 18);
+  y += 35;
+
+  // --- Actions ---
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Strategic Recommendations', 20, y);
+  y += 10;
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  snapshot.recommendedActions.forEach(action => {
+    doc.text(`• ${action}`, 25, y);
+    y += 7;
+  });
+
+  // --- Visual Snapshot (High-Fidelity) ---
+  if (elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+      y += 10;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Visual Assessment Breakdown', 20, y);
+      y += 5;
+      
+      try {
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#0f172a'
+        });
+        const imgData = canvas.toDataURL('image/png');
+        const imgProps = doc.getImageProperties(imgData);
+        const pdfWidth = 170;
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        
+        // Handle page break if needed
+        if (y + pdfHeight > 280) {
+          doc.addPage();
+          y = 20;
+        }
+        
+        doc.addImage(imgData, 'PNG', 20, y, pdfWidth, pdfHeight);
+      } catch (err) {
+        console.error('Failed to capture snapshot:', err);
+      }
+    }
+  }
+
+  // --- Footer ---
+  const pageCount = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setTextColor(148, 163, 184);
+    doc.setFontSize(8);
+    doc.text(`HumanProof © 2026 | Proprietary Displacement Analysis | Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+  }
+
+  doc.save(`HumanProof_Report_${snapshot.jobTitle || 'Professional'}.pdf`);
 };
 
 export const generateShareableLink = (): string => {

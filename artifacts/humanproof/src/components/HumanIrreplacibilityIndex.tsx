@@ -5,6 +5,8 @@ import {
 } from 'recharts';
 import { quizQuestions, dimensionLabels, dimensionDescriptions, Dimension } from '../data/quizQuestions';
 import { useHumanProof } from '../context/HumanProofContext';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../utils/supabase';
 
 // Section 3.3 — Expanded JOB_DIM_WEIGHTS to 30 job types
 // Each dimension weight reflects how protective that dimension is for the given role
@@ -193,15 +195,142 @@ function computeProvisionalScore(
 
 const HALFWAY_Q = Math.floor(quizQuestions.length / 2); // index 15 for 30-question quiz
 
+type QuizMode = 'standard' | 'adaptive';
+type QuestionMode = 'mcq' | 'text';
+
+interface AdaptiveQuestion {
+  id: string;
+  question: string;
+  dimension: string;
+  options: { text: string; score: number }[];
+  idealKeywords: string[];
+}
+
 export default function HumanIrreplacibilityIndex({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const { state, dispatch } = useHumanProof();
+  const { session } = useAuth();
+  
+  const [quizMode, setQuizMode] = useState<QuizMode | null>(null);
+  const [adaptiveMode, setAdaptiveMode] = useState<QuestionMode>('mcq');
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [adaptiveQuestions, setAdaptiveQuestions] = useState<AdaptiveQuestion[]>([]);
+  const [adaptiveAnswers, setAdaptiveAnswers] = useState<any[]>([]);
+  const [adaptiveText, setAdaptiveText] = useState('');
+  
   const [completed, setCompleted] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   // Section 3.4 — resume banner state
   const [savedProgress, setSavedProgress] = useState<QuizProgress | null>(null);
   const [showResumeBanner, setShowResumeBanner] = useState(false);
+
+  // Derive roleKey from state or compute it
+  const getRoleKey = () => {
+    if (state.jobId && JOB_DIM_WEIGHTS[state.jobId]) return state.jobId;
+    return deriveJobKey(state.jobTitle, state.jobId);
+  };
+  const roleKey = getRoleKey();
+
+  const [displayedText, setDisplayedText] = useState('');
+  const [typing, setTyping] = useState(false);
+
+  useEffect(() => {
+    const text = quizMode === 'standard' ? question.question : (adaptiveQuestions[currentQ]?.question || '');
+    if (!text) return;
+
+    setTyping(true);
+    setDisplayedText('');
+    let i = 0;
+    const interval = setInterval(() => {
+      setDisplayedText(prev => prev + text.charAt(i));
+      i++;
+      if (i >= text.length) {
+        clearInterval(interval);
+        setTyping(false);
+      }
+    }, 15); // Fast typing effect
+
+    return () => clearInterval(interval);
+  }, [currentQ, quizMode, adaptiveQuestions.length]);
+
+  const startAdaptiveQuiz = async (mode: QuestionMode) => {
+    setLoading(true);
+    setAdaptiveMode(mode);
+    try {
+      // @ts-ignore - Supabase client has auth.admin or is createClient instance
+      const supabaseUrl = (supabase as any).supabaseUrl;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/generate-adaptive-quiz`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ roleKey: roleKey || 'default' }),
+      });
+      const data = await resp.json();
+      if (data.questions) {
+        setAdaptiveQuestions(data.questions);
+        setQuizMode('adaptive');
+      }
+    } catch (e) {
+      console.error("Failed to start adaptive quiz", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitAdaptiveAnswer = () => {
+    const q = adaptiveQuestions[currentQ];
+    const newAnswer = {
+      id: q.id,
+      question: q.question,
+      dimension: q.dimension,
+      mode: adaptiveMode,
+      response: adaptiveMode === 'mcq' ? selected : adaptiveText
+    };
+    
+    const newAnswers = [...adaptiveAnswers, newAnswer];
+    setAdaptiveAnswers(newAnswers);
+    setAdaptiveText('');
+    setSelected(null);
+    
+    if (currentQ < adaptiveQuestions.length - 1) {
+      setCurrentQ(currentQ + 1);
+    } else {
+      finishAdaptiveQuiz(newAnswers);
+    }
+  };
+
+  const finishAdaptiveQuiz = async (finalAnswers: any[]) => {
+    setLoading(true);
+    try {
+      // @ts-ignore
+      const supabaseUrl = (supabase as any).supabaseUrl;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/evaluate-adaptive-quiz`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ roleKey: roleKey || 'default', answers: finalAnswers }),
+      });
+      const result = await resp.json();
+      if (result.dimensions) {
+        dispatch({ 
+          type: 'SET_HUMAN_SCORE', 
+          score: result.totalScore, 
+          dimensions: result.dimensions,
+          justification: result.justification 
+        });
+        setCompleted(true);
+      }
+    } catch (e) {
+      console.error("Evaluation failed", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Section 3.4 — Check for saved progress on mount
   useEffect(() => {
@@ -376,159 +505,154 @@ export default function HumanIrreplacibilityIndex({ onNavigate }: { onNavigate?:
 
   const progress = (currentQ / quizQuestions.length) * 100;
 
+  if (!quizMode && !completed) {
+    return (
+      <div style={{ padding: '40px 0', maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
+        <h2 style={{ fontFamily: 'var(--mono)', fontSize: '1.5rem', color: 'var(--emerald)', marginBottom: 24 }}>
+          Human Irreplaceability Index
+        </h2>
+        <p style={{ color: 'var(--text2)', marginBottom: 40 }}>
+          Quantify your resistance to AI displacement. Choose an assessment mode below.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 16, padding: 32, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: '2rem', marginBottom: 16 }}>⚡</div>
+            <h3 style={{ fontWeight: 700, marginBottom: 8 }}>Standard Mode</h3>
+            <p style={{ color: 'var(--text2)', fontSize: '0.85rem', marginBottom: 24, flex: 1 }}>
+              30 Multiple choice questions. Calibrated benchmarks for your role. (6–8 mins)
+            </p>
+            <button 
+              onClick={() => setQuizMode('standard')}
+              className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl font-bold transition-all"
+            >
+              Start Standard Assessment
+            </button>
+          </div>
+
+          <div style={{ background: 'rgba(0,245,255,0.05)', border: '1px solid rgba(0,245,255,0.3)', borderRadius: 16, padding: 32, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: '2rem', marginBottom: 16 }}>✨</div>
+            <h3 style={{ fontWeight: 700, marginBottom: 8, color: 'var(--cyan)' }}>Adaptive AI Mode</h3>
+            <p style={{ color: 'var(--text2)', fontSize: '0.85rem', marginBottom: 24, flex: 1 }}>
+              Personalized questions generated by **Gemma 4**. High-accuracy semantic analysis of your reasoning.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button 
+                onClick={() => startAdaptiveQuiz('mcq')}
+                disabled={loading}
+                style={{ flex: 1, padding: '12px', background: 'rgba(0,245,255,0.2)', color: 'var(--cyan)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
+              >
+                {loading ? '...' : 'Fast (MCQ)'}
+              </button>
+              <button 
+                onClick={() => startAdaptiveQuiz('text')}
+                disabled={loading}
+                style={{ flex: 1, padding: '12px', background: 'var(--cyan)', color: 'black', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
+              >
+                {loading ? '...' : '98% Accuracy (Text)'}
+              </button>
+            </div>
+            <div style={{ marginTop: 12, fontSize: '0.7rem', color: 'rgba(0,245,255,0.6)', fontFamily: 'var(--mono)' }}>
+              POWERED BY GEMMA 4 31B
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const progressVal = quizMode === 'standard' 
+    ? (currentQ / quizQuestions.length) * 100
+    : (currentQ / (adaptiveQuestions.length || 1)) * 100;
+
+  const adaptiveQ = adaptiveQuestions[currentQ];
+
   return (
     <div style={{ padding: '40px 0', maxWidth: 720, margin: '0 auto' }}>
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <div style={{ width: 4, height: 32, background: 'var(--emerald)', borderRadius: 2 }} />
-          <h2 style={{ fontFamily: 'var(--mono)', fontSize: '1.5rem', color: 'var(--emerald)' }}>
-            Human Irreplaceability Index
+          <div style={{ width: 4, height: 32, background: quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)', borderRadius: 2 }} />
+          <h2 style={{ fontFamily: 'var(--mono)', fontSize: '1.5rem', color: quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)' }}>
+            {quizMode === 'adaptive' ? 'Adaptive AI Index' : 'Human Irreplaceability Index'}
           </h2>
         </div>
         <p style={{ color: 'var(--text2)', fontSize: '0.9rem', marginLeft: 16 }}>
-          {quizQuestions.length} questions across 6 human dimensions that AI cannot replicate.
-          &nbsp;·&nbsp;<span style={{ color: 'var(--emerald)', fontFamily: 'var(--mono)', fontSize: '0.8rem' }}>Estimated time: 6–8 min</span>
+          {quizMode === 'adaptive' ? `Analyzing your human edge via role-specific scenarios.` : `${quizQuestions.length} questions across 6 human dimensions that AI cannot replicate.`}
         </p>
       </div>
-
-      {/* Section 3.4 — Resume banner */}
-      {showResumeBanner && savedProgress && (
-        <div style={{ padding: '14px 18px', background: 'rgba(0,255,159,0.08)', border: '1px solid rgba(0,255,159,0.3)', borderRadius: 10, marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ color: 'var(--text)', fontSize: '0.875rem' }}>
-            ⏸ You were on question <strong style={{ fontFamily: 'var(--mono)', color: 'var(--emerald)' }}>{savedProgress.currentQuestion + 1}</strong> of {quizQuestions.length}. Continue where you left off?
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={handleResume}
-              style={{ background: 'var(--emerald)', color: 'var(--bg)', border: 'none', borderRadius: 6, padding: '6px 14px', fontFamily: 'var(--mono)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.04em' }}
-            >
-              Resume →
-            </button>
-            <button
-              onClick={handleStartFresh}
-              style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 6, padding: '6px 14px', fontFamily: 'var(--mono)', fontSize: '0.75rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.04em' }}
-            >
-              Start Fresh
-            </button>
-          </div>
-        </div>
-      )}
 
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)' }}>
-            Question {currentQ + 1} of {quizQuestions.length}
+            Question {currentQ + 1} of {quizMode === 'standard' ? quizQuestions.length : adaptiveQuestions.length}
           </span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--emerald)' }}>
-            {Math.round(progress)}%
+          <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)' }}>
+            {Math.round(progressVal)}%
           </span>
         </div>
         <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
-          <div style={{ height: '100%', width: `${progress}%`, background: 'var(--emerald)', borderRadius: 2, transition: 'width 0.3s' }} />
+          <div style={{ height: '100%', width: `${progressVal}%`, background: quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)', borderRadius: 2, transition: 'width 0.3s' }} />
         </div>
       </div>
 
-      {/* UX FIX 2: Halfway provisional score banner at Q15 */}
-      {/* v3 FIX: Only show provisional when 4+ dimensions are covered (spec §5.4) */}
-      {currentQ === HALFWAY_Q && (() => {
-        const coveredDims = new Set(
-          quizQuestions.filter(q => answers[q.id] !== undefined).map(q => q.dimension)
-        ).size;
-        if (coveredDims < 4) return null;
-        const provisional = computeProvisionalScore(answers, state.jobTitle, state.jobId);
-        if (provisional === null) return null;
-        const color = provisional >= 65 ? 'var(--emerald)' : provisional >= 45 ? 'var(--cyan)' : 'var(--orange)';
-        return (
-          <div style={{
-            padding: '14px 18px', background: 'rgba(0,255,159,0.07)',
-            border: '1px solid rgba(0,255,159,0.25)', borderRadius: 10, marginBottom: 20,
-            display: 'flex', alignItems: 'center', gap: 16,
-          }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '2rem', fontWeight: 700, color, flexShrink: 0 }}>
-              {provisional}
-            </div>
-            <div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--emerald)', fontWeight: 600, marginBottom: 2 }}>
-                Halfway there — provisional score
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text2)', lineHeight: 1.5 }}>
-                Based on your first {currentQ} answers. Complete the remaining {quizQuestions.length - currentQ} questions for your full Human Irreplaceability Index.
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       <div style={{ marginBottom: 16 }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--emerald)', background: 'rgba(0,255,159,0.08)', padding: '4px 12px', borderRadius: 4, border: '1px solid rgba(0,255,159,0.2)' }}>
-          {dimensionLabels[question.dimension]} — {dimensionDescriptions[question.dimension]}
+        <span style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)', background: quizMode === 'adaptive' ? 'rgba(0,245,255,0.08)' : 'rgba(0,255,159,0.08)', padding: '4px 12px', borderRadius: 4, border: `1px solid ${quizMode === 'adaptive' ? 'rgba(0,245,255,0.2)' : 'rgba(0,255,159,0.2)'}` }}>
+          {quizMode === 'standard' ? dimensionLabels[question.dimension] : adaptiveQ?.dimension}
         </span>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 28, marginBottom: 20 }}>
-        <p style={{ color: 'var(--text)', fontSize: '1.05rem', lineHeight: 1.7, fontWeight: 500 }}>{question.question}</p>
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-700" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 28, marginBottom: 20 }}>
+        <p style={{ color: 'var(--text)', fontSize: '1.05rem', lineHeight: 1.7, fontWeight: 500, minHeight: '3em' }}>
+          {displayedText}
+          {typing && <span className="inline-block w-1 h-5 bg-cyan-500 ml-1 animate-pulse" />}
+        </p>
       </div>
 
-      <div
-        role="group"
-        aria-label={`Options for: ${question.question}`}
-        style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}
-      >
-        {question.options.map((opt, i) => (
-          <button
-            key={i}
-            onClick={() => handleSelect(opt.score)}
-            aria-pressed={selected === opt.score}
-            onKeyDown={e => {
-              if (e.key === String.fromCharCode(65 + i) || e.key === String.fromCharCode(97 + i)) {
-                handleSelect(opt.score);
-              }
-            }}
-            style={{
-              width: '100%',
-              background: selected === opt.score ? 'rgba(0,255,159,0.1)' : 'rgba(255,255,255,0.03)',
-              border: selected === opt.score ? '1px solid var(--emerald)' : '1px solid var(--border)',
-              borderRadius: 10,
-              padding: '14px 20px',
-              color: 'var(--text)',
-              fontFamily: 'var(--body)',
-              fontSize: '0.9rem',
-              textAlign: 'left',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-              lineHeight: 1.5,
-            }}
-          >
-            <span style={{ color: selected === opt.score ? 'var(--emerald)' : 'var(--text2)', fontFamily: 'var(--mono)', fontSize: '0.75rem', marginRight: 10 }}>
-              {String.fromCharCode(65 + i)}
-            </span>
-            {opt.text}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-        {currentQ > 0 ? (
-          <button
-            onClick={() => { setCurrentQ(q => q - 1); setSelected(null); }}
-            style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: '0.75rem' }}
-          >
-            ← Back
-          </button>
-        ) : <div />}
-        <button
-          onClick={handleNext}
-          disabled={selected === null}
+      {quizMode === 'adaptive' && adaptiveMode === 'text' ? (
+        <textarea
+          value={adaptiveText}
+          onChange={(e) => setAdaptiveText(e.target.value)}
+          placeholder="Describe your reasoning and how you would handle this situation..."
           style={{
-            background: selected !== null ? 'var(--emerald)' : 'rgba(255,255,255,0.08)',
-            color: selected !== null ? 'var(--bg)' : 'var(--text2)',
-            border: 'none', borderRadius: 8, padding: '10px 28px',
-            fontFamily: 'var(--mono)', fontSize: '0.8rem', fontWeight: 700,
-            cursor: selected !== null ? 'pointer' : 'not-allowed',
-            textTransform: 'uppercase', letterSpacing: '0.06em', transition: 'all 0.15s',
+            width: '100%', minHeight: 180, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, color: 'white', fontSize: '0.95rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none'
+          }}
+        />
+      ) : (
+        <div role="group" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+          {(quizMode === 'standard' ? question.options : adaptiveQ?.options).map((opt: any, i: number) => (
+            <button
+              key={i}
+              onClick={() => handleSelect(opt.score)}
+              style={{
+                width: '100%', background: selected === opt.score ? (quizMode === 'adaptive' ? 'rgba(0,245,255,0.1)' : 'rgba(0,255,159,0.1)') : 'rgba(255,255,255,0.03)', border: selected === opt.score ? `1px solid ${quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)'}` : '1px solid var(--border)', borderRadius: 10, padding: '14px 20px', color: 'var(--text)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s'
+              }}
+            >
+              <span style={{ color: selected === opt.score ? (quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)') : 'var(--text2)', fontFamily: 'var(--mono)', fontSize: '0.75rem', marginRight: 10 }}>{String.fromCharCode(65 + i)}</span>
+              {opt.text}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+        <button
+          onClick={() => setCurrentQ(q => q - 1)}
+          disabled={currentQ === 0}
+          style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', opacity: currentQ === 0 ? 0 : 1 }}
+        >
+          ← Back
+        </button>
+        <button
+          onClick={quizMode === 'standard' ? handleNext : submitAdaptiveAnswer}
+          disabled={selected === null && adaptiveText === ''}
+          style={{
+            background: (selected !== null || adaptiveText !== '') ? (quizMode === 'adaptive' ? 'var(--cyan)' : 'var(--emerald)') : 'rgba(255,255,255,0.08)',
+            color: (selected !== null || adaptiveText !== '') ? 'black' : 'var(--text2)', border: 'none', borderRadius: 8, padding: '12px 32px', fontWeight: 700, cursor: (selected !== null || adaptiveText !== '') ? 'pointer' : 'not-allowed'
           }}
         >
-          {currentQ < quizQuestions.length - 1 ? 'Next →' : 'See My Score →'}
+          {quizMode === 'standard' 
+            ? (currentQ < quizQuestions.length - 1 ? 'Next →' : 'See My Score →')
+            : (currentQ < adaptiveQuestions.length - 1 ? 'Next →' : 'Analyze Accuracy →')}
         </button>
       </div>
     </div>

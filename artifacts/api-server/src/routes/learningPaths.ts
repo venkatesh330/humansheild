@@ -2,14 +2,9 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { learningPaths, pathResources, userPathEnrollments, freeResources } from "@workspace/db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { requireAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
-
-// Middleware to extract user from Supabase auth token
-// Assuming req.user is set upstream by some auth middleware, if not we will just accept userId from headers for now.
-const getUserId = (req: any) => {
-  return req.headers['x-user-id'] || null;
-};
 
 /**
  * GET /api/learning-paths
@@ -67,10 +62,10 @@ router.get("/:id", async (req: any, res: any) => {
  * POST /api/learning-paths/:id/enroll
  * Body: { status: 'in_progress' | 'completed' }
  */
-router.post("/:id/enroll", async (req: any, res: any) => {
+router.post("/:id/enroll", requireAuth, async (req: any, res: any) => {
   try {
     if (!db) return res.status(503).json({ error: "Database not connected" });
-    const userId = getUserId(req);
+    const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { id } = req.params;
@@ -103,15 +98,15 @@ router.post("/:id/enroll", async (req: any, res: any) => {
  * POST /api/learning-paths/generate
  * Body: { roleKey: string }
  */
-router.post("/generate", async (req: any, res: any) => {
+router.post("/generate", requireAuth, async (req: any, res: any) => {
   try {
     if (!db) return res.status(503).json({ error: "Database not connected" });
     const { roleKey } = req.body;
     if (!roleKey) return res.status(400).json({ error: "roleKey is required" });
 
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (!openaiKey) {
-      return res.status(500).json({ error: "Server missing OPENAI_API_KEY" });
+    const gemmaKey = process.env.GEMMA_API_KEY;
+    if (!gemmaKey) {
+      return res.status(500).json({ error: "Server missing GEMMA_API_KEY" });
     }
 
     // Fetch existing free resources
@@ -145,29 +140,33 @@ Do not include markdown blocks or any other commentary, just the JSON.`;
 
     let generatedPath;
     try {
-      const llmResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      // Using Gemma 4 31B IT via Google AI Studio
+      const llmResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${openaiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o", // Updated to gpt-4o
-          messages: [{ role: "system", content: prompt }],
-          response_format: { type: "json_object" }
+          contents: [{
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: {
+            responseMimeType: "application/json",
+          }
         }),
       });
 
       if (!llmResponse.ok) {
-        const errJson = await llmResponse.json() as any;
-        console.error("OpenAI API Error:", errJson);
-        throw new Error("OPENAI_FAILED"); // Trigger fallback
+        const errText = await llmResponse.text();
+        console.error("Gemma API Error:", errText);
+        throw new Error("GEMMA_FAILED"); // Trigger fallback
       }
       
       const llmData = await llmResponse.json() as any;
-      generatedPath = JSON.parse(llmData.choices[0].message.content);
+      generatedPath = JSON.parse(llmData.candidates[0].content.parts[0].text);
     } catch (e: any) {
-      console.warn("AI Generation failed or Quota exceeded. Using high-quality human-centric mock fallback.");
+      console.warn("Gemma AI Generation failed. Using high-quality human-centric mock fallback.");
+
       // High quality mock based on the newly seeded human-centric resources
       const availableResources = await db.select().from(freeResources).limit(10);
       const availableIds = availableResources.map(r => r.id);
@@ -202,9 +201,21 @@ Do not include markdown blocks or any other commentary, just the JSON.`;
       isRequired: true,
     }));
 
-    await db.insert(pathResources).values(pathResourcesData);
+    const fullyPopulatedResources = pathResourcesData.map(pr => {
+      const r = resources.find(x => x.id === pr.resourceId) || { title: 'External Resource', provider: 'Web', level: 'various' };
+      return {
+        resource: r,
+        orderIndex: pr.orderIndex,
+        isRequired: pr.isRequired
+      };
+    });
 
-    return res.json({ success: true, path: newPath });
+    return res.json({ 
+      data: { 
+        ...newPath, 
+        resources: fullyPopulatedResources 
+      } 
+    });
   } catch (e: any) {
     console.error("Generate Path Error:", e);
     return res.status(500).json({ error: "Failed to generate path", details: e.message });

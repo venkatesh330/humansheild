@@ -1,379 +1,475 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import './index.css';
+
+// Pages — critical loads
 import HomePage from './pages/HomePage';
-import ToolsPage from './pages/ToolsPage';
-import ProductsPage from './pages/ProductsPage';
 import PricingPage from './pages/PricingPage';
-import { SafeCareersPage } from './pages/SafeCareersPage';
-import { LearningHubPage } from './pages/LearningHubPage';
-import { AuditLogPage } from './pages/AuditLogPage';
+import { AboutPage } from './pages/AboutPage';
+import { PrivacyPage } from './pages/PrivacyPage';
+import { TermsPage } from './pages/TermsPage';
+import { BlogPage } from './pages/BlogPage';
+import { ContactPage } from './pages/ContactPage';
+
+// Pages — lazy-loaded
+const ToolsPage = lazy(() => import('./pages/ToolsPage'));
+const ProductsPage = lazy(() => import('./pages/ProductsPage'));
+const SafeCareersPage = lazy(() => import('./pages/SafeCareersPage').then(m => ({ default: m.SafeCareersPage })));
+const LearningHubPage = lazy(() => import('./pages/LearningHubPage').then(m => ({ default: m.LearningHubPage })));
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage').then(m => ({ default: m.AuditLogPage })));
+
+// Context & Components
 import { HumanProofProvider } from './context/HumanProofContext';
 import { LayoffProvider } from './context/LayoffContext';
+import { AuthProvider } from './context/AuthContext';
 import { digestAPI } from './utils/apiClient';
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
-<<<<<<< HEAD
-import { ToastProvider, useToast } from './components/Toast';
-=======
 import { ToastProvider } from './components/Toast';
->>>>>>> audit-fixes-2026-04-07
+import { GlobalErrorBoundary } from './components/GlobalErrorBoundary';
 
-type Page = 'home' | 'calculator' | 'products' | 'pricing' | 'safe-careers' | 'learning-hub' | 'audit-log';
+// ─── Page Loader ──────────────────────────────────────────────────────────────
+function PageLoader() {
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="spinner" />
+        <span className="label-xs text-[var(--text-3)]">Loading module...</span>
+      </div>
+    </div>
+  );
+}
 
-function useParticleBackground(canvasId: string) {
+// ─── Navigation Bridge ────────────────────────────────────────────────────────
+function NavigationBridge() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   useEffect(() => {
-    const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
+    const handleNav = (e: any) => {
+      if (typeof e.detail === 'string') {
+        navigate(`/${e.detail === 'home' ? '' : e.detail}`);
+      } else if (e.detail?.page) {
+        const path = `/${e.detail.page === 'home' ? '' : e.detail.page}`;
+        navigate(path, { state: e.detail.params });
+      }
+    };
+    window.addEventListener('navigate', handleNav);
+    return () => window.removeEventListener('navigate', handleNav);
+  }, [navigate]);
+
+  // Scroll reveal observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => entries.forEach(e => e.isIntersecting && e.target.classList.add('vis')),
+      { threshold: 0.08 }
+    );
+
+    const observe = () => document.querySelectorAll('.reveal:not(.vis)').forEach(el => observer.observe(el));
+    observe();
+    setTimeout(observe, 400);
+
+    const main = document.querySelector('main') || document.body;
+    const mo = new MutationObserver(observe);
+    mo.observe(main, { childList: true, subtree: true });
+
+    return () => { observer.disconnect(); mo.disconnect(); };
+  }, [location.pathname]);
+
+  return null;
+}
+
+// ─── Particle Canvas ──────────────────────────────────────────────────────────
+function useParticleBackground() {
+  useEffect(() => {
+    const canvas = document.getElementById('bg-canvas') as HTMLCanvasElement;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    let particles: { x: number; y: number; vx: number; vy: number; r: number }[] = [];
-    const count = 50;
+
+    let particles: { x: number; y: number; vx: number; vy: number; r: number; o: number }[] = [];
+    let rafId: number;
+
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
     };
+
     const init = () => {
-      particles = Array.from({ length: count }, () => ({
+      particles = Array.from({ length: 40 }, () => ({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        r: Math.random() * 2 + 1,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        r: Math.random() * 1.5 + 0.5,
+        o: Math.random() * 0.5 + 0.1,
       }));
     };
+
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = 'rgba(100, 150, 255, 0.2)';
-      particles.forEach((p) => {
+      particles.forEach(p => {
         p.x += p.vx;
         p.y += p.vy;
         if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(148, 163, 184, ${p.o})`;
         ctx.fill();
       });
-      requestAnimationFrame(draw);
+      rafId = requestAnimationFrame(draw);
     };
+
     window.addEventListener('resize', resize);
     resize();
     init();
-    draw();
-    return () => window.removeEventListener('resize', resize);
-  }, [canvasId]);
+    rafId = requestAnimationFrame(draw);
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
 }
 
-function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('home');
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [subEmail, setSubEmail] = useState('');
-  const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [initialParams, setInitialParams] = useState<any>(null);
-  const { user, signOut } = useAuth();
+// ─── App Navigation ───────────────────────────────────────────────────────────
+const NAV_ITEMS = [
+  { to: '/',             label: 'Research'  },
+  { to: '/calculator',   label: 'AI Risk'   },
+  { to: '/safe-careers', label: 'Safe List' },
+  { to: '/learning-hub', label: 'Upskill'   },
+];
 
-  useParticleBackground('bg-canvas');
+function AppNav({ isDark, toggleTheme, onAuthOpen }: {
+  isDark: boolean;
+  toggleTheme: () => void;
+  onAuthOpen: () => void;
+}) {
+  const { user, signOut } = useAuth();
+  const location = useLocation();
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-<<<<<<< HEAD
-    // BUG-010 FIX: CustomEvent detail can be either a plain string (old) OR
-    // an object { page, params } (from SafeCareers 'Learn' button)
-    // This handler now handles both formats safely.
-    const handleNav = (e: CustomEvent) => {
-      const detail = e.detail;
-      if (typeof detail === 'string') {
-        navigate(detail);
-      } else if (detail && typeof detail === 'object' && detail.page) {
-        navigate(detail.page);
-        // Future: store detail.params in context for Learning Hub roleKey pre-fill
-        if (detail.params?.roleKey) {
-          window.dispatchEvent(new CustomEvent('hub-rolekey', { detail: detail.params.roleKey }));
-        }
-      }
-    };
-    window.addEventListener('navigate', handleNav as EventListener);
-    
-    // Initial route sync
-    const path = window.location.pathname;
-    if (path === '/learning-hub') setCurrentPage('learning-hub');
-    else if (path === '/safe-careers') setCurrentPage('safe-careers');
-    else if (path === '/calculator') setCurrentPage('calculator');
-    else if (path === '/resources') setCurrentPage('products');
-    else if (path === '/pricing') setCurrentPage('pricing');
-    
-    return () => window.removeEventListener('navigate', handleNav as EventListener);
-  }, [navigate]);
-
-  // BUG-016 FIX + BUG-007 FIX: Properly resets email on both success AND error; uses toast-friendly messages
-  const handleSubscribe = async () => {
-    if (!subEmail || !subEmail.includes('@') || !subEmail.includes('.')) {
-      setSubMsg('⚠ Please enter a valid email.');
-      setSubMsgColor('var(--red)');
-      setSubMsgShow(true);
-      setTimeout(() => setSubMsgShow(false), 3000);
-      return;
-    }
-    try {
-      const result = await digestAPI.subscribe(subEmail);
-      if (result && !result.error) {
-        setSubEmail(''); // Always reset email on success
-        setSubMsg('✓ Added to waitlist — newsletter launching soon!');
-        setSubMsgColor('var(--emerald)');
-      } else {
-        setSubEmail(''); // BUG-016 FIX: also reset on error so user can retry cleanly
-        setSubMsg('⚠ ' + (result?.error || 'Subscription failed. Try again.'));
-        setSubMsgColor('var(--red)');
-      }
-    } catch {
-      // Fallback: show success if backend is unreachable (offline-first)
-=======
-    const handleNav = (e: any) => {
-      // Fix BUG-010: Support both string and object payloads
-      if (typeof e.detail === 'string') {
-        setCurrentPage(e.detail as Page);
-        setInitialParams(null);
-      } else if (e.detail?.page) {
-        setCurrentPage(e.detail.page as Page);
-        setInitialParams(e.detail.params || null);
-      }
-    };
-    window.addEventListener('navigate', handleNav);
-    return () => window.removeEventListener('navigate', handleNav);
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  useEffect(() => setMobileOpen(false), [location.pathname]);
+
+  const isActive = (to: string) => {
+    if (to === '/' && location.pathname === '/') return true;
+    if (to !== '/' && location.pathname.startsWith(to)) return true;
+    return false;
+  };
+
+  return (
+    <header className="nav-root" style={{ zIndex: 1000 }}>
+      <nav className="nav-inner" style={{
+        backgroundColor: scrolled ? 'rgba(3,7,18,0.92)' : 'rgba(3,7,18,0.65)',
+        boxShadow: scrolled ? '0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)' : 'none',
+      }}>
+        <Link to="/" className="nav-logo" style={{ textDecoration: 'none' }}>
+          <span className="nav-logo-dot" />
+          H.PROOF
+        </Link>
+
+        {/* Desktop nav */}
+        <ul className="nav-links" style={{ listStyle: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {NAV_ITEMS.map(item => (
+            <li key={item.to}>
+              <Link
+                to={item.to}
+                className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
+                style={{ textDecoration: 'none' }}
+              >
+                {item.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+
+        <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className="theme-toggle"
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle theme"
+          >
+            {isDark ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+          </button>
+
+          {user ? (
+            <>
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.65rem',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                color: 'var(--text-3)',
+                textTransform: 'uppercase',
+              }}>
+                {user.email?.split('@')[0]}
+              </span>
+              <button
+                onClick={() => signOut()}
+                className="btn btn-secondary btn-sm"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onAuthOpen}
+              className="btn btn-primary btn-sm"
+            >
+              Get Access
+            </button>
+          )}
+
+          {/* Mobile hamburger */}
+          <button
+            className="theme-toggle"
+            onClick={() => setMobileOpen(p => !p)}
+            aria-label="Menu"
+            style={{ display: 'none' }}
+            id="mobile-menu-btn"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              {mobileOpen ? (
+                <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
+              ) : (
+                <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>
+              )}
+            </svg>
+          </button>
+        </div>
+      </nav>
+
+      {/* Mobile dropdown */}
+      {mobileOpen && (
+        <div style={{
+          marginTop: '8px',
+          background: 'rgba(3,7,18,0.97)',
+          border: '1px solid var(--border)',
+          borderRadius: '16px',
+          padding: '16px',
+          backdropFilter: 'blur(24px)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+        }}>
+          {NAV_ITEMS.map(item => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
+              style={{ textDecoration: 'none', display: 'block' }}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </header>
+  );
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+function AppFooter() {
+  const [email, setEmail] = useState('');
+  const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subEmail) return;
+    if (!email) return;
     setSubStatus('loading');
     try {
-      await digestAPI.subscribe(subEmail);
+      await digestAPI.subscribe(email);
       setSubStatus('success');
-      setSubEmail(''); // Clear on success
-      setTimeout(() => setSubStatus('idle'), 3000);
-    } catch (err) {
+      setEmail('');
+      setTimeout(() => setSubStatus('idle'), 3500);
+    } catch {
       setSubStatus('error');
-      // Fix BUG-016: Clear on error too for better UX
->>>>>>> audit-fixes-2026-04-07
-      setSubEmail('');
       setTimeout(() => setSubStatus('idle'), 3000);
     }
   };
 
   return (
-    <ToastProvider>
-<<<<<<< HEAD
-    <HumanProofProvider>
-      <LayoffProvider>
-        <canvas id="bg-canvas" />
-        <canvas id="trail-canvas" />
-        <div id="page-wipe" ref={wipeRef} />
-=======
-      <HumanProofProvider>
-        <LayoffProvider>
-          <div className="min-h-screen bg-[#020617] text-slate-100 font-sans selection:bg-cyan-500/30">
-            <canvas id="bg-canvas" className="fixed inset-0 pointer-events-none opacity-40" />
-            
-            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-slate-800/50 bg-[#020617]/80 backdrop-blur-md">
-              <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-                <div className="flex items-center gap-8">
-                  <div 
-                    className="flex items-center gap-3 cursor-pointer group"
-                    onClick={() => setCurrentPage('home')}
-                  >
-                    <div className="w-10 h-10 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-                      <span className="text-white font-bold text-xl">H</span>
-                    </div>
-                    <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-                      HUMANPROOF
-                    </span>
-                  </div>
-                  
-                  <div className="hidden md:flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg border border-slate-800/50">
-                    {[
-                      { id: 'home', label: 'Home' },
-                      { id: 'calculator', label: 'AI Risk' },
-                      { id: 'safe-careers', label: 'Safe Jobs' },
-                      { id: 'learning-hub', label: 'Upskill' }
-                    ].map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => setCurrentPage(item.id as Page)}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                          currentPage === item.id 
-                            ? 'bg-slate-800 text-white shadow-sm' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
->>>>>>> audit-fixes-2026-04-07
+    <footer className="footer-root">
+      <div className="container">
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '48px', marginBottom: '48px' }}>
+          {/* Brand */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <span style={{ width: 6, height: 6, background: 'var(--cyan)', borderRadius: '50%', display: 'block' }} />
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '1rem', color: 'var(--text)', letterSpacing: '-0.04em' }}>H.PROOF</span>
+            </div>
+            <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', lineHeight: 1.7, maxWidth: '320px', marginBottom: '24px' }}>
+              The high-fidelity standard for career irreplaceability. Powered by Gemma 4 intelligence and verified global research.
+            </p>
+            <form onSubmit={handleSubscribe} style={{ display: 'flex', maxWidth: '320px', gap: '8px' }}>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                className="input"
+                style={{ flex: 1, fontSize: '0.8rem', padding: '10px 14px' }}
+              />
+              <button
+                type="submit"
+                className="btn btn-black"
+                disabled={subStatus === 'loading'}
+                style={{
+                  background: subStatus === 'success' ? 'var(--emerald)' : 'var(--text)',
+                  color: 'var(--bg)',
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  border: 'none',
+                  flexShrink: 0,
+                  transition: 'all 250ms',
+                }}
+              >
+                {subStatus === 'loading' ? '...' : subStatus === 'success' ? '✓' : 'Subscribe'}
+              </button>
+            </form>
+            {subStatus === 'error' && <p style={{ color: 'var(--red)', fontSize: '0.75rem', marginTop: '8px' }}>Failed. Try again.</p>}
+          </div>
 
-                <div className="flex items-center gap-4">
-                  {user ? (
-                    <div className="flex items-center gap-4">
-                      <div className="h-8 w-px bg-slate-800 mx-2" />
-                      <div className="flex flex-col items-end">
-                        <span className="text-xs text-slate-500">ACCOUNT</span>
-                        <span className="text-sm font-medium text-slate-300">{user.email?.split('@')[0]}</span>
-                      </div>
-                      <button 
-                        onClick={() => signOut()}
-                        className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition-colors"
-                      >
-                        Sign Out
-                      </button>
-                    </div>
-                  ) : (
-                    <button 
-                      onClick={() => setIsAuthModalOpen(true)}
-                      className="px-6 py-2.5 bg-white text-black font-bold rounded-full hover:bg-cyan-50 transition-all active:scale-95 shadow-lg shadow-white/10"
-                    >
-                      Login / Join
-                    </button>
-                  )}
-                </div>
-              </div>
-            </nav>
+          {/* Protocol links */}
+          <div>
+            <h4 className="label-xs" style={{ marginBottom: '20px' }}>Platform</h4>
+            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {[
+                { to: '/calculator', label: 'Risk Oracle' },
+                { to: '/learning-hub', label: 'Learning Hub' },
+                { to: '/safe-careers', label: 'Safe Careers' },
+                { to: '/pricing', label: 'Pricing' },
+                { to: '/about', label: 'About' },
+              ].map(l => (
+                <li key={l.to}>
+                  <Link to={l.to} style={{ color: 'var(--text-2)', textDecoration: 'none', fontSize: '0.875rem', fontWeight: 500, transition: 'color 150ms' }}
+                    onMouseEnter={e => (e.target as any).style.color = 'var(--text)'}
+                    onMouseLeave={e => (e.target as any).style.color = 'var(--text-2)'}
+                  >{l.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
 
-<<<<<<< HEAD
-      <main>
-        {currentPage === 'home' && <HomePage onNavigate={navigate} />}
-        {currentPage === 'calculator' && <ToolsPage />}
-        {currentPage === 'safe-careers' && <SafeCareersPage />}
-        {currentPage === 'learning-hub' && <LearningHubPage />}
-        {currentPage === 'products' && <ProductsPage onNavigate={navigate} />}
-        {currentPage === 'pricing' && <PricingPage onNavigate={navigate} />}
-        {currentPage === 'audit-log' && <AuditLogPage />}
+          {/* Legal */}
+          <div>
+            <h4 className="label-xs" style={{ marginBottom: '20px' }}>Legal</h4>
+            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {[
+                { to: '/privacy', label: 'Privacy Policy' },
+                { to: '/terms', label: 'Terms of Use' },
+                { to: '/audit-log', label: 'Audit Log' },
+                { to: '/blog', label: 'Blog' },
+                { to: '/contact', label: 'Contact' },
+              ].map(l => (
+                <li key={l.to}>
+                  <Link to={l.to} style={{ color: 'var(--text-2)', textDecoration: 'none', fontSize: '0.875rem', fontWeight: 500, transition: 'color 150ms' }}
+                    onMouseEnter={e => (e.target as any).style.color = 'var(--text)'}
+                    onMouseLeave={e => (e.target as any).style.color = 'var(--text-2)'}
+                  >{l.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: 'var(--text-3)', fontSize: '0.8rem' }}>© 2026 HumanProof. All rights reserved.</span>
+          <div className="badge badge-cyan">
+            <span style={{ width: 4, height: 4, background: 'var(--cyan)', borderRadius: '50%', display: 'inline-block' }} />
+            Live · Q1 2026 Dataset
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// ─── Main App Content ─────────────────────────────────────────────────────────
+function AppContent() {
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isDark, setIsDark] = useState(true);
+
+  useParticleBackground();
+
+  const toggleTheme = () => {
+    setIsDark(d => {
+      const next = !d;
+      document.documentElement.classList.toggle('light', !next);
+      return next;
+    });
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)', position: 'relative' }}>
+      <canvas id="bg-canvas" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }} />
+      <div className="page-glow page-glow-1" />
+      <div className="page-glow page-glow-2" />
+      <NavigationBridge />
+
+      <AppNav isDark={isDark} toggleTheme={toggleTheme} onAuthOpen={() => setIsAuthOpen(true)} />
+
+      <main style={{ position: 'relative', zIndex: 1 }}>
+        <GlobalErrorBoundary>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/"             element={<HomePage />} />
+              <Route path="/calculator"   element={<ToolsPage />} />
+              <Route path="/safe-careers" element={<SafeCareersPage />} />
+              <Route path="/learning-hub" element={<LearningHubPage />} />
+              <Route path="/audit-log"    element={<AuditLogPage />} />
+              <Route path="/products"     element={<ProductsPage />} />
+              <Route path="/pricing"      element={<PricingPage />} />
+              <Route path="/about"        element={<AboutPage />} />
+              <Route path="/contact"      element={<ContactPage />} />
+              <Route path="/privacy"      element={<PrivacyPage />} />
+              <Route path="/terms"        element={<TermsPage />} />
+              <Route path="/blog"         element={<BlogPage />} />
+            </Routes>
+          </Suspense>
+        </GlobalErrorBoundary>
       </main>
-=======
-            <main className="pt-20">
-              {currentPage === 'home' && <HomePage onStart={() => setCurrentPage('calculator')} />}
-              {currentPage === 'calculator' && <ToolsPage />}
-              {currentPage === 'safe-careers' && <SafeCareersPage />}
-              {currentPage === 'learning-hub' && <LearningHubPage initialRoleKey={initialParams?.roleKey} />}
-              {currentPage === 'audit-log' && <AuditLogPage />}
-              {currentPage === 'products' && <ProductsPage />}
-              {currentPage === 'pricing' && <PricingPage />}
-            </main>
->>>>>>> audit-fixes-2026-04-07
 
-            <footer className="mt-20 border-t border-slate-800/50 bg-slate-950/50 py-16">
-              <div className="max-w-7xl mx-auto px-6">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
-                  <div className="col-span-1 md:col-span-2">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center">
-                        <span className="text-white font-bold text-sm">H</span>
-                      </div>
-                      <span className="font-bold text-lg tracking-tight">HUMANPROOF</span>
-                    </div>
-                    <p className="text-slate-400 max-w-sm mb-8 leading-relaxed">
-                      Equipping the workforce for the AI era. We provide data-driven insights 
-                      and personalized learning paths to keep your career future-proof.
-                    </p>
-                    <div className="flex gap-4">
-                      {['Twitter', 'LinkedIn', 'Github'].map(social => (
-                        <a key={social} href="#" className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition-all">
-                          <span className="sr-only">{social}</span>
-                          <div className="w-5 h-5 bg-current opacity-20 rounded-sm" />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h4 className="font-bold mb-6 text-sm uppercase tracking-widest text-slate-500">Platform</h4>
-                    <ul className="space-y-4">
-                      <li><button onClick={() => setCurrentPage('calculator')} className="text-slate-400 hover:text-white transition-colors">Risk Assessment</button></li>
-                      <li><button onClick={() => setCurrentPage('learning-hub')} className="text-slate-400 hover:text-white transition-colors">Upskill Path</button></li>
-                      <li><button onClick={() => setCurrentPage('safe-careers')} className="text-slate-400 hover:text-white transition-colors">Safe Careers</button></li>
-                      <li><button onClick={() => setCurrentPage('pricing')} className="text-slate-400 hover:text-white transition-colors">Pro Access</button></li>
-                    </ul>
-                  </div>
+      <AppFooter />
 
-                  <div>
-                    <h4 className="font-bold mb-6 text-sm uppercase tracking-widest text-slate-500">Stay Human</h4>
-                    <p className="text-slate-400 text-sm mb-4">Get the weekly 'Human Advantage' digest.</p>
-                    <form onSubmit={handleSubscribe} className="flex gap-2">
-                      <input 
-                        type="email" 
-                        placeholder="Email" 
-                        value={subEmail}
-                        onChange={(e) => setSubEmail(e.target.value)}
-                        className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-cyan-500 w-full"
-                        required
-                      />
-                      <button 
-                        type="submit"
-                        disabled={subStatus === 'loading'}
-                        className="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-cyan-400 transition-colors disabled:opacity-50"
-                      >
-                        {subStatus === 'loading' ? '...' : subStatus === 'success' ? '✓' : 'Join'}
-                      </button>
-                    </form>
-                    {subStatus === 'error' && <p className="text-red-400 text-xs mt-2">Failed to join. Try again.</p>}
-                  </div>
-                </div>
-                
-                <div className="mt-16 pt-8 border-t border-slate-900 flex flex-col md:flex-row justify-between items-center gap-4">
-                  <p className="text-slate-500 text-sm">© 2026 HumanProof AI. All rights reserved.</p>
-                  <div className="flex gap-8 text-sm">
-                    <a href="#" className="text-slate-500 hover:text-slate-300">Privacy Policy</a>
-                    <a href="#" className="text-slate-500 hover:text-slate-300">Terms of Service</a>
-                  </div>
-                </div>
-              </div>
-            </footer>
-          </div>
-<<<<<<< HEAD
-          <div className="footer-col">
-            <h4>Product</h4>
-            <ul>
-              <li><a onClick={() => navigate('calculator')}>AI Risk Calculator</a></li>
-              <li><a onClick={() => navigate('safe-careers')}>Safe Career Finder</a></li>
-              <li><a onClick={() => navigate('learning-hub')}>Free Learning Hub</a></li>
-              <li><a onClick={() => navigate('products')}>Resources</a></li>
-              <li><a onClick={() => navigate('pricing')}>Pricing</a></li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Research</h4>
-            <ul>
-              <li><a>Q1 2026 Report</a></li>
-              <li><a>Methodology</a></li>
-              <li><a>Data Sources</a></li>
-              <li><a onClick={() => navigate('audit-log')}>Data Audit Log</a></li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Company</h4>
-            <ul>
-              <li><a>About</a></li>
-              <li><a>Blog</a></li>
-              <li><a>Contact</a></li>
-              <li><a>Privacy Policy</a></li>
-            </ul>
-          </div>
-        </div>
-        <div className="footer-bottom">
-          <p>© 2026 HumanProof. All rights reserved. Not financial or career advice.</p>
-          <p>Built on data from McKinsey · Goldman Sachs · WEF · OECD · Stanford HAI · MIT · BCG · Anthropic</p>
-        </div>
-      </footer>
-      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
-      </LayoffProvider>
-    </HumanProofProvider>
-=======
-        </LayoffProvider>
-      </HumanProofProvider>
-      <AuthModal 
-        isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)} 
-      />
->>>>>>> audit-fixes-2026-04-07
-    </ToastProvider>
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+    </div>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <HumanProofProvider>
+          <LayoffProvider>
+            <AppContent />
+          </LayoffProvider>
+        </HumanProofProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 

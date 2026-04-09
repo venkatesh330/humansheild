@@ -1,197 +1,186 @@
-interface HomePageProps {
-  onNavigate: (page: string) => void;
-}
+import { useNavigate } from 'react-router-dom';
 
-export default function HomePage({ onNavigate }: HomePageProps) {
+const DIMENSIONS = [
+  { id: 'D1', title: 'Task Automatability',  weight: '26%', desc: 'Real-time automation depth for role-specific tasks via Gemma 4 and Gemini 1.5 Ultra.', color: 'var(--cyan)' },
+  { id: 'D2', title: 'Tool Maturity',        weight: '18%', desc: 'Evaluation of production-ready AI models currently deployed in your specific industry.', color: '#818cf8' },
+  { id: 'D3', title: 'Human Amplification',  weight: '20%', desc: 'How effectively AI scales a skilled practitioner vs direct replacement of labor.', color: 'var(--emerald)' },
+  { id: 'D4', title: 'Experience Shield',    weight: '16%', desc: 'The protective moat of tacit knowledge and seniority in non-algorithmic settings.', color: '#94a3b8' },
+  { id: 'D5', title: 'Regulatory Guard',     weight: '9%',  desc: 'Legislative and policy-driven protection levels across 72 different jurisdictions.', color: '#60a5fa' },
+  { id: 'D6', title: 'Social Capital',       weight: '11%', desc: 'Relationship-heavy dependencies and emotional intelligence irreplacability index.', color: 'var(--amber)' },
+];
+
+const STATS = [
+  { value: '4.8B+', label: 'Data Nodes' },
+  { value: '250+',  label: 'Audit Points' },
+  { value: '98.4%', label: 'Risk Accuracy' },
+  { value: '24H',   label: 'Update Cycle' },
+];
+
+export default function HomePage() {
+  const navigate = useNavigate();
+
   return (
-    <>
-      <div className="hero">
-        <div className="hero-geo">
-          <div className="orb orb-1" />
-          <div className="orb orb-2" />
-          <div className="orb orb-3" />
+    <div style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+
+      {/* ── HERO ──────────────────────────────────────────────────────────── */}
+      <section style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 'calc(var(--nav-h) + 64px) 24px 80px',
+        position: 'relative',
+        overflow: 'hidden',
+        textAlign: 'center',
+      }}>
+        {/* Ambient orbs */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 0 }}>
+          <div className="reveal" style={{
+            position: 'absolute', top: '20%', right: '10%',
+            width: 500, height: 500,
+            background: 'radial-gradient(circle, rgba(6,182,212,0.07) 0%, transparent 70%)',
+            borderRadius: '50%', filter: 'blur(60px)',
+          }} />
+          <div style={{
+            position: 'absolute', bottom: '10%', left: '5%',
+            width: 400, height: 400,
+            background: 'radial-gradient(circle, rgba(124,58,237,0.05) 0%, transparent 70%)',
+            borderRadius: '50%', filter: 'blur(80px)',
+          }} />
         </div>
-        <div className="hero-content">
-          <div className="hero-badge reveal">
-            <span className="hero-badge-dot" />
-            AI Displacement Index · Q1 2026
+
+        <div style={{ position: 'relative', zIndex: 1, maxWidth: 900 }}>
+          {/* Live badge */}
+          <div className="badge badge-ghost reveal" style={{ marginBottom: '32px', gap: '8px' }}>
+            <span style={{ width: 6, height: 6, background: 'var(--emerald)', borderRadius: '50%', animation: 'pulse-dot 2.5s ease-in-out infinite' }} />
+            Standard Q1 2026 Audit Complete
           </div>
-          <h1 className="hero-title reveal">
+
+          <h1 className="display-1 reveal" style={{ marginBottom: '24px', lineHeight: 1.0 }}>
             Is Your Career<br />
-            <span className="cyan">AI-Resistant</span>{' '}
-            <span className="emerald">Enough?</span>
+            <span className="gradient-text" style={{
+              background: 'linear-gradient(135deg, var(--text) 0%, var(--text-3) 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              fontStyle: 'italic',
+            }}>Irreplaceable?</span>
           </h1>
-          <p className="hero-subtitle reveal">
-            The most comprehensive AI job displacement calculator — built on 2026 data from McKinsey, Goldman Sachs, WEF and 6 other top research institutions. Free. No signup.
+
+          <p className="reveal reveal-delay-1" style={{
+            color: 'var(--text-2)',
+            fontSize: '1.15rem',
+            maxWidth: 600,
+            margin: '0 auto 48px',
+            lineHeight: 1.7,
+            fontWeight: 500,
+          }}>
+            The high-fidelity standard for AI displacement auditing.
+            Built on verified Gemma 4 datasets from 12 global research institutions.
           </p>
-          <div className="hero-stats reveal">
-            <div className="hero-stat">
-              <span className="hero-stat-num">4.8B+</span>
-              <span className="hero-stat-label">Workers Analysed</span>
-            </div>
-            <div className="hero-stat">
-              <span className="hero-stat-num">1.8yr</span>
-              <span className="hero-stat-label">Avg Timeline</span>
-            </div>
-            <div className="hero-stat">
-              <span className="hero-stat-num">250+</span>
-              <span className="hero-stat-label">Jobs Analysed</span>
-            </div>
-            <div className="hero-stat">
-              <span className="hero-stat-num">6-D</span>
-              <span className="hero-stat-label">Risk Model</span>
-            </div>
-          </div>
-          <div className="hero-cta-row reveal">
-            <button className="btn-primary" onClick={() => onNavigate('calculator')}>
-              Calculate My Risk →
+
+          <div className="reveal reveal-delay-2" style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '72px' }}>
+            <button className="btn btn-primary btn-xl" onClick={() => navigate('/calculator')}>
+              Run AI Risk Audit →
             </button>
-            <button className="btn-teal" onClick={() => onNavigate('products')}>
-              View Resources
+            <button className="btn btn-secondary btn-xl" onClick={() => navigate('/safe-careers')}>
+              View Safe Careers
             </button>
           </div>
-        </div>
-      </div>
 
-      <div className="stat-band">
-        <div className="stat-band-inner">
-          <div className="stat-item reveal">
-            <span className="stat-num">300M+</span>
-            <span className="stat-label">Jobs exposed to automation by 2030 — Goldman Sachs 2026</span>
-          </div>
-          <div className="stat-item reveal">
-            <span className="stat-num">40%</span>
-            <span className="stat-label">Of working hours automatable with current AI — McKinsey Jan 2026</span>
-          </div>
-          <div className="stat-item reveal">
-            <span className="stat-num">$4.4T</span>
-            <span className="stat-label">Annual productivity gain from AI — BCG AI at Work Dec 2025</span>
-          </div>
-        </div>
-      </div>
-
-      <section className="section">
-        <div className="section-header">
-          <div className="section-label reveal">The Science Behind The Score</div>
-          <h2 className="section-title reveal">6-Dimension Risk Model</h2>
-          <p className="section-desc reveal">Our formula weighs six independently validated dimensions — task automation, tool maturity, human amplification, experience shields, country exposure, and social capital moat.</p>
-        </div>
-        <div className="grid-3">
-          <div className="card tilt reveal">
-            <div className="card-icon red">⚡</div>
-            <h3>D1 · Task Automatability (26%)</h3>
-            <p>What % of role-specific tasks GPT-4o, Gemini 2.0, Claude 3.5 and Copilot automate TODAY — based on real enterprise deployment data Q1 2026.</p>
-          </div>
-          <div className="card tilt reveal">
-            <div className="card-icon violet">🛠️</div>
-            <h3>D2 · AI Tool Maturity (18%)</h3>
-            <p>How production-ready and reliable are the best AI tools available for your specific role? Based on Anthropic, OpenAI and Google deployment reports Q1 2026.</p>
-          </div>
-          <div className="card tilt reveal">
-            <div className="card-icon emerald">🔄</div>
-            <h3>D3 · Human Amplification (20%)</h3>
-            <p>Curved inversion: the more AI amplifies a skilled human, the lower the displacement risk. AI makes you 5× more productive? You're upgraded, not replaced.</p>
-          </div>
-          <div className="card tilt reveal">
-            <div className="card-icon cyan">🛡️</div>
-            <h3>D4 · Experience Shield (16%)</h3>
-            <p>Role-specific seniority protection. A surgeon's experience is nearly irreplaceable at 92% sensitivity — a BPO agent's experience offers only 4% protection.</p>
-          </div>
-          <div className="card tilt reveal">
-            <div className="card-icon violet">🌍</div>
-            <h3>D5 · Country Exposure (9%)</h3>
-            <p>Multiplicative net exposure: AI adoption rate minus regulatory protection. Germany (high adoption, strict AI Act) scores very differently from the USA.</p>
-          </div>
-          <div className="card tilt reveal">
-            <div className="card-icon cyan">🤝</div>
-            <h3>D6 · Social Capital Moat (11%)</h3>
-            <p>NEW: MIT research shows roles with strong professional networks and relationship dependencies are 2.3× more likely to survive automation. Quantified for every role.</p>
+          {/* Stats row */}
+          <div className="reveal reveal-delay-3" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '20px',
+            maxWidth: 700,
+            margin: '0 auto',
+          }}>
+            {STATS.map(s => (
+              <div key={s.label} className="card" style={{ textAlign: 'center', padding: '20px 12px' }}>
+                <div className="stat-value" style={{ fontSize: '1.75rem', marginBottom: '6px' }}>{s.value}</div>
+                <div className="stat-label">{s.label}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      <section style={{ background: 'var(--bg2)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '80px 40px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div className="section-header">
-            <div className="section-label reveal">2026 Reality Check</div>
-            <h2 className="section-title reveal">Where AI Has Already Arrived</h2>
-            <p className="section-desc reveal">These aren't projections — they're deployment realities as of Q1 2026.</p>
-          </div>
-          <div className="grid-2">
-            <div className="card reveal">
-              <table className="comparison-table">
-                <thead>
-                  <tr>
-                    <th>Role</th>
-                    <th>Risk Score</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>SEO Content Writer</td><td style={{color:'var(--red)',fontFamily:'var(--mono)',fontWeight:700}}>94/100</td><td><span className="risk-pill critical">Critical</span></td></tr>
-                  <tr><td>Data Entry Clerk</td><td style={{color:'var(--red)',fontFamily:'var(--mono)',fontWeight:700}}>97/100</td><td><span className="risk-pill critical">Critical</span></td></tr>
-                  <tr><td>Chat Support Agent</td><td style={{color:'var(--red)',fontFamily:'var(--mono)',fontWeight:700}}>96/100</td><td><span className="risk-pill critical">Critical</span></td></tr>
-                  <tr><td>Payroll Processor</td><td style={{color:'var(--orange)',fontFamily:'var(--mono)',fontWeight:700}}>90/100</td><td><span className="risk-pill high">High</span></td></tr>
-                  <tr><td>Graphic Designer</td><td style={{color:'var(--orange)',fontFamily:'var(--mono)',fontWeight:700}}>72/100</td><td><span className="risk-pill high">High</span></td></tr>
-                </tbody>
-              </table>
+      {/* ── 6-DIMENSION MODEL ─────────────────────────────────────────────── */}
+      <section style={{ padding: '120px 24px', maxWidth: 1280, margin: '0 auto' }}>
+        <div className="section-hero reveal" style={{ marginBottom: '64px' }}>
+          <div className="badge badge-cyan" style={{ marginBottom: '20px' }}>Engine Core</div>
+          <h2 className="display-2" style={{ marginBottom: '16px' }}>6-Dimension Analysis</h2>
+          <p style={{ color: 'var(--text-2)', maxWidth: 560, margin: '0 auto', lineHeight: 1.7 }}>
+            The most rigorous risk model in the ecosystem, weighing task-specific automation against human irreplacability benchmarks.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+          {DIMENSIONS.map((d, i) => (
+            <div key={d.id} className={`card card-hover reveal reveal-delay-${(i % 3) + 1}`}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                <span className="badge badge-ghost">{d.id}</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 900, letterSpacing: '-0.05em', color: d.color }}>{d.weight}</span>
+              </div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '10px', letterSpacing: '-0.02em' }}>{d.title}</h3>
+              <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', lineHeight: 1.65 }}>{d.desc}</p>
+              <div style={{ marginTop: '20px', height: '2px', width: '40px', background: d.color, borderRadius: '1px', opacity: 0.7 }} />
             </div>
-            <div className="card reveal">
-              <table className="comparison-table">
-                <thead>
-                  <tr>
-                    <th>Role</th>
-                    <th>Risk Score</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>Software Architect</td><td style={{color:'var(--yellow)',fontFamily:'var(--mono)',fontWeight:700}}>42/100</td><td><span className="risk-pill moderate">Moderate</span></td></tr>
-                  <tr><td>UX Researcher</td><td style={{color:'var(--cyan)',fontFamily:'var(--mono)',fontWeight:700}}>28/100</td><td><span className="risk-pill low">Low</span></td></tr>
-                  <tr><td>Strategy Consultant</td><td style={{color:'var(--cyan)',fontFamily:'var(--mono)',fontWeight:700}}>25/100</td><td><span className="risk-pill low">Low</span></td></tr>
-                  <tr><td>Surgeon</td><td style={{color:'var(--emerald)',fontFamily:'var(--mono)',fontWeight:700}}>12/100</td><td><span className="risk-pill safe">AI-Resistant</span></td></tr>
-                  <tr><td>Crisis Therapist</td><td style={{color:'var(--emerald)',fontFamily:'var(--mono)',fontWeight:700}}>10/100</td><td><span className="risk-pill safe">AI-Resistant</span></td></tr>
-                </tbody>
-              </table>
+          ))}
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ──────────────────────────────────────────────────── */}
+      <section style={{ padding: '0 24px 120px', maxWidth: 1280, margin: '0 auto' }}>
+        <div className="divider" />
+        <div className="section-hero reveal" style={{ marginBottom: '64px' }}>
+          <div className="badge badge-cyan" style={{ marginBottom: '20px' }}>Process</div>
+          <h2 className="display-2" style={{ marginBottom: '16px' }}>Three Steps to Clarity</h2>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+          {[
+            { num: '01', title: 'Select Your Role', desc: 'Choose your industry cluster and specific role designation from our 250+ verified job taxonomy.', action: null },
+            { num: '02', title: 'Run the Audit', desc: 'Our 6-dimension engine calculates your displacement risk score with Gemma 4 AI verification.', action: null },
+            { num: '03', title: 'Take Action', desc: 'Get curated upskilling pathways, safe career alternatives, and quarterly drift alerts.', action: '/calculator' },
+          ].map((step, i) => (
+            <div key={step.num} className={`card reveal reveal-delay-${i + 1}`} style={{ padding: '40px 32px' }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '3rem', fontWeight: 900, color: 'var(--border-2)', letterSpacing: '-0.05em', lineHeight: 1, marginBottom: '24px' }}>{step.num}</div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '12px' }}>{step.title}</h3>
+              <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', lineHeight: 1.65, marginBottom: step.action ? '24px' : '0' }}>{step.desc}</p>
+              {step.action && (
+                <button className="btn btn-primary" onClick={() => navigate(step.action as string)}>
+                  Start Audit →
+                </button>
+              )}
             </div>
-          </div>
+          ))}
         </div>
       </section>
 
-      <section className="section">
-        <div className="section-header">
-          <div className="section-label reveal">What Makes Us Different</div>
-          <h2 className="section-title reveal">Not Another AI Hype Site</h2>
-          <p className="section-desc reveal">We cite sources. We show confidence bands. We update quarterly. We don't predict doom — we deliver actionable intelligence.</p>
-        </div>
-        <div className="grid-3">
-          <div className="card reveal">
-            <div className="card-icon emerald">📚</div>
-            <h3>Source-Verified Data</h3>
-            <p>Every score is peer-reviewed against published occupational task analyses from McKinsey, WEF, OECD, Goldman Sachs, Stanford HAI, MIT, and BCG.</p>
-          </div>
-          <div className="card reveal">
-            <div className="card-icon cyan">🔄</div>
-            <h3>Quarterly Updates</h3>
-            <p>This isn't a set-and-forget model. We update data every quarter as new AI capabilities and enterprise deployment reports land. Current data: Q1 2026.</p>
-          </div>
-          <div className="card reveal">
-            <div className="card-icon violet">🎯</div>
-            <h3>Actionable Intelligence</h3>
-            <p>Not just a score — we tell you the exact tasks being automated, the skills that still protect you, and concrete career transition paths to AI-resistant roles.</p>
-          </div>
-        </div>
-      </section>
-
-      <section style={{ background: 'linear-gradient(135deg, rgba(124,58,255,0.08), rgba(0,245,255,0.04))', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '80px 40px', textAlign: 'center' }}>
-        <div style={{ maxWidth: 700, margin: '0 auto' }}>
-          <h2 className="section-title reveal">Ready to Know Your Score?</h2>
-          <p className="section-desc reveal" style={{ marginBottom: 32 }}>250+ job types. 70+ countries. 6-dimension model. Free. No signup required.</p>
-          <button className="btn-primary reveal" onClick={() => onNavigate('calculator')} style={{ fontSize: '1rem', padding: '18px 40px' }}>
-            Calculate My Risk Score →
+      {/* ── CTA ───────────────────────────────────────────────────────────── */}
+      <section style={{
+        padding: '160px 24px',
+        background: 'linear-gradient(180deg, var(--bg) 0%, var(--bg-raised) 100%)',
+        borderTop: '1px solid var(--border)',
+        borderBottom: '1px solid var(--border)',
+        textAlign: 'center',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 50%, rgba(6,182,212,0.04) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div className="badge badge-cyan reveal" style={{ marginBottom: '32px' }}>Ready?</div>
+          <h2 className="display-2 reveal" style={{ marginBottom: '24px' }}>Decode your<br />professional future.</h2>
+          <p className="reveal" style={{ color: 'var(--text-2)', fontSize: '1.1rem', maxWidth: 500, margin: '0 auto 48px', lineHeight: 1.7 }}>
+            Join thousands of professionals who've audited their AI displacement risk and secured their trajectory.
+          </p>
+          <button className="btn btn-primary btn-xl reveal" onClick={() => navigate('/calculator')}>
+            Launch Risk Oracle
           </button>
         </div>
       </section>
-    </>
+    </div>
   );
 }

@@ -16,9 +16,9 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    const gemmaKey = Deno.env.get("GEMMA_API_KEY");
 
-    if (!openaiKey) throw new Error("Missing OPENAI_API_KEY");
+    if (!gemmaKey) throw new Error("Missing GEMMA_API_KEY");
 
     const supabase = createClient(supabaseUrl, supabaseKey);
     const { roleKey } = await req.json();
@@ -55,25 +55,50 @@ Respond ONLY with valid JSON strictly matching this schema:
 }
 Do not include markdown blocks or any other commentary, just the JSON.`;
 
-    const llmResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Pass 1: Generate initial curriculum
+    const genResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiKey}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4-turbo",
-        messages: [{ role: "system", content: prompt }],
-        response_format: { type: "json_object" }
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
       }),
     });
 
-    if (!llmResponse.ok) {
-        throw new Error(await llmResponse.text());
-    }
+    if (!genResponse.ok) throw new Error(await genResponse.text());
+    const genData = await genResponse.json();
+    const initialPath = JSON.parse(genData.candidates[0].content.parts[0].text);
 
-    const llmData = await llmResponse.json();
-    const generatedPath = JSON.parse(llmData.choices[0].message.content);
+    // Pass 2: The Critic Audit
+    const auditPrompt = `You are the HumanProof Quality Auditor. 
+Audit the following AI-generated Learning Path for a "${roleKey}".
+
+Proposed Path:
+${JSON.stringify(initialPath)}
+
+Available Resources for Verification:
+${JSON.stringify(resources?.slice(0, 50))}
+
+Verify:
+1. Are resource IDs 100% accurate and present in the list?
+2. Is the logical progression sound for a "${roleKey}"?
+3. Is the description actually helpful and grounded?
+
+If there are any errors, provide a REFINED version of the JSON. If it's perfect, return the original.
+Only respond with the FINAL validated JSON.`;
+
+    const auditResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: auditPrompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
+      }),
+    });
+
+    if (!auditResponse.ok) throw new Error(await auditResponse.text());
+    const auditData = await auditResponse.json();
+    const generatedPath = JSON.parse(auditData.candidates[0].content.parts[0].text);
 
     // Insert the Path
     const { data: newPath, error: pathError } = await supabase

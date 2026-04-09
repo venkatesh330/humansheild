@@ -1,12 +1,12 @@
 // ════════════════════════════════════════════════════════════════
 // riskFormula.ts — Core Risk Engine Calculation & Confidence Logic
+// v4.0 — Data-First Career Intelligence Engine.
+// D1-D6 calculation + career intelligence powered by careerIntelligenceDB
+// Fallback uses modular roadmap blocks + skillsData for semi-specific output.
 // ════════════════════════════════════════════════════════════════
 
 /**
- * 3-Tier Confidence System (BUG-004)
- * DQ_FULL: Research-backed data (±3% error)
- * DQ_PARTIAL: Partially attributed data (±7% error)
- * Limited: Sparse data points (±12% error)
+ * 3-Tier Confidence System
  */
 export type ConfidenceLevel = 'HIGH' | 'MODERATE' | 'LOW';
 
@@ -14,34 +14,70 @@ export interface ScoreResult {
   total: number;
   dimensions: {
     label: string;
+    key: string;
     score: number;
     weight: number;
   }[];
   confidence: ConfidenceLevel;
   dataQuality: 'DQ_FULL' | 'DQ_PARTIAL' | 'Limited';
+  ai_risk_skills?: any;
+  safer_career_paths?: any;
+  roadmap?: any;
+  inaction_scenario?: string;
+  riskTrend?: any[];
+  content_confidence?: number;
+  isSeeded?: boolean;
 }
 
+import {
+  TASK_AUTO, DISRUPTION_VELOCITY, AUGMENTATION,
+  NETWORK_MOAT, INDUSTRY_KEY_MULT, D3_CURVE_EXPONENT,
+  EXP_SENSITIVITY, EXP_RISK_BASE, COUNTRY_DATA,
+} from './riskData';
+
+import {
+  getCareerIntelligence,
+  getRoleRoadmap,
+  getRoleCareerPaths,
+  getRoleSkills,
+  getInactionScenario,
+  getRiskTrend,
+  hasSeededData,
+} from './careerIntelligenceDB';
+
+import {
+  selectRoadmapBlocks,
+  mergeBlocksIntoRoadmap,
+} from './roadmapBlocks';
+
+import { DANGER_SKILLS, SAFE_SKILLS, TRANSITION_RECS } from './skillsData';
+
+// ─── Score Regression Reference (do not delete) ──────────────────
+// Role: Crisis Therapist / mental_health / mh_crisis / usa / 0-2yr  → target ~18
+// Role: SEO Content Writer / content / cnt_seo_content / usa / 5-10yr → target ~93
+// Role: Software Architect / it_software / sw_arch / germany / 10-20yr → target ~28
+// Role: Data Entry Clerk / bpo / bpo_data_entry / india / 0-2yr → target ~95
+// Role: Surgeon / healthcare / hc_surgeon / usa / 20+yr → target ~10
+// ──────────────────────────────────────────────────────────────────
+
 /**
- * Enhanced projectSafeScore with upskilling factor (BUG-012)
- * @param currentScore Initial risk score
- * @param years Number of years to project
- * @param upskillingFactor 0 to 1 value (1.0 = maximum upskilling, 0 = none)
+ * Enhanced projectSafeScore with upskilling factor
  */
 export const projectSafeScore = (
   currentScore: number,
   years: number,
   upskillingFactor: number = 0
 ): number => {
-  // Base decay rate of 5% per year due to AI advancement
   const baseDecay = 0.05 * years;
-  
-  // Upskilling reduces decay. Max upskilling (1.0) can neutralize base decay.
   const mitigatedDecay = baseDecay * (1 - upskillingFactor);
-  
-  // Risk grows over time as AI capabilities expand
-  const projectedRisk = currentScore + (mitigagedDecay * 100);
-  
+  const projectedRisk = currentScore + (mitigatedDecay * 100);
   return Math.min(Math.max(projectedRisk, 0), 100);
+};
+
+// Required by DisplacementForecast.tsx
+export const projectScore = (baseRisk: number, decayRate: number, years: number): number => {
+  const projected = baseRisk + (decayRate * years);
+  return Math.min(Math.max(Math.round(projected), 0), 100);
 };
 
 export const getConfidenceLevel = (dq: string): ConfidenceLevel => {
@@ -50,232 +86,350 @@ export const getConfidenceLevel = (dq: string): ConfidenceLevel => {
   return 'LOW';
 };
 
-<<<<<<< HEAD
-// ─── D3: Human Amplification (curved inversion) ───────────
-// v2 fix: curved inversion (D3_CURVE_EXPONENT=0.70) preserves mid-range nuance
-// augVal=50 → D3=37 (protective) instead of linear D3=50 (neutral)
-// FORMULA FIX 3: governance keyword co-occurrence gives +8 boost when augVal > 60
-export function calculateD3(workType: string, skillSlug?: string, industryKey?: string, jobTitle?: string): number {
-  const augVal = AUGMENTATION[workType] ?? AUGMENTATION.default;
-
-  // Check 2026 override table first
-  if (skillSlug && industryKey) {
-    const overrideKey = `${industryKey}-${skillSlug}`;
-    const override = REPLACEMENT_2026_OVERRIDES[overrideKey];
-    if (override !== undefined) return override;
-  }
-
-  // FORMULA FIX 1: use named constant D3_CURVE_EXPONENT (0.70)
-  let d3 = Math.round(100 * (1 - Math.pow(augVal / 100, D3_CURVE_EXPONENT)));
-
-  // FORMULA FIX 3: governance keyword co-occurrence check
-  // Roles with governance terms AND high augVal get a protective boost
-  if (jobTitle) {
-    const lowerTitle = jobTitle.toLowerCase();
-    const hasGovernance = GOVERNANCE_KEYWORDS.some(kw => lowerTitle.includes(kw));
-    if (hasGovernance && augVal > 60) {
-      d3 = Math.min(85, d3 + 8);
-    }
-  }
-
-  return d3;
-}
-
-export function getAugVal(workType: string): number {
-  return AUGMENTATION[workType] ?? AUGMENTATION.default;
-}
-
-// ─── D4: Experience & Seniority Shield ─────────────────────
-// v3 FIX: floor only applies to HIGH-risk roles (base > 50)
-// Safe-role seniors should be able to reduce freely — the old floor incorrectly inflated their score
-export function calculateD4(workType: string, exp: string): number {
-  const base = EXP_RISK_BASE[exp] ?? 54;
-  const idx = EXP_INDEX[exp] ?? 2;
-  const sens = EXP_SENSITIVITY[workType] ?? EXP_SENSITIVITY.default;
-  const d4Raw = Math.round(base * (1 - sens * idx / 4));
-  // Floor only activates for high-risk roles (base > 50); low-risk roles can reduce freely
-  if (base > 50) {
-    return Math.max(d4Raw, Math.round(base * 0.25));
-  }
-  return Math.max(0, Math.min(100, d4Raw));
-}
-
-// ─── D5: Country Context (multiplicative net exposure model) ─
-// v2 fix: multiplicative formula correctly handles EU-type countries
-// EU (high adoption + high regulation): adoption × (1 - regulation/100) × 0.80 + 22
-// USA (high adoption + low regulation): 90 × 0.90 × 0.80 + 22 = 86.8 → clamped 85
-export function calculateD5(countryKey: string): number {
-  const d = COUNTRY_DATA[countryKey] ?? COUNTRY_DATA.other;
-  const adoption = d[0];
-  const regulation = d[1];
-  const raw = adoption * (1 - regulation / 100) * 0.80 + 22;
-  return Math.round(Math.min(85, Math.max(20, raw)));
-}
-
-// ─── D6: Social Capital & Network Moat (NEW) ───────────────
-// Source: MIT Sloan "Network Effects in Labor Markets" 2024
-// Lower score = stronger network moat = more protected
-export function calculateD6(workType: string, exp: string): number {
-  const baseScore = NETWORK_MOAT[workType] ?? NETWORK_MOAT.default;
-  const expBonus = D6_EXP_BONUS[exp] ?? 0;
-  return Math.max(10, Math.min(85, baseScore + expBonus));
-}
-
-// ─── Future Projection: Saturating Exponential ─────────────
-// v3 FIX: starts from currentScore (not 0), asymptotes toward MAX_RISK=97
-// simpleProjection(t) = MAX_RISK - (MAX_RISK - currentScore) * e^(-k*t)
-// This is simpler and more correct than the old logistic that started from 0
-export function projectScore(baseline: number, decayFactor: number, years: number): number {
-  const MAX_RISK = 97;
-  const k = Math.max(0.001, decayFactor / 20); // annual growth rate, stable
-  const safeBaseline = Math.max(3, Math.min(94, baseline));
-  const projected = MAX_RISK - (MAX_RISK - safeBaseline) * Math.exp(-k * years);
-  // Never go below the starting score (risk never decreases without action)
-  return Math.min(97, Math.max(safeBaseline, Math.round(projected)));
-}
-
-// BUG-012 FIX: projectSafeScore now accepts an upskilling factor (0-1)
-// Without upskilling (factor=0): score decreases by 1.5/yr (natural drift)
-// With active upskilling (factor=1): score holds stable or improves
-// Rationale: safe roles DON'T automatically become risky — requires sustained disruption
-export function projectSafeScore(baseline: number, years: number, upskillingFactor = 0): number {
-  const naturalDecayPerYear = 1.5;
-  const upskillingProtection = upskillingFactor * 1.2; // upskilling slows decay
-  const netDecay = Math.max(0, naturalDecayPerYear - upskillingProtection);
-  return Math.max(15, Math.round(baseline - years * netDecay));
-}
-
-// ─── Main Score Calculator ─────────────────────────────────
-export function calculateScore(
-  industryKey: string,
-  workType: string,
-  exp: string,
-  countryKey: string,
-  jobTitle?: string,
-  skillSlug?: string,
-): ScoreResult {
-  const d1 = calculateD1(industryKey, workType);
-  const d2 = calculateD2(workType);
-  // FORMULA FIX 3: pass jobTitle for governance co-occurrence check
-  const d3 = calculateD3(workType, skillSlug, industryKey, jobTitle);
-  const d4 = calculateD4(workType, exp);
-  const d5 = calculateD5(countryKey);
-  const d6 = calculateD6(workType, exp);
-  const augVal = getAugVal(workType);
-  const networkMoat = NETWORK_MOAT[workType] ?? NETWORK_MOAT.default;
-
-  // ── 6-Dimension Formula (weights sum to 1.00 exactly) ──
-  // D1:0.26 D2:0.18 D3:0.20 D4:0.16 D5:0.09 D6:0.11
-  const rawScore = d1 * 0.26 + d2 * 0.18 + d3 * 0.20 + d4 * 0.16 + d5 * 0.09 + d6 * 0.11;
-
-  // v3 FIX: Interaction boost only when BOTH D1 AND D2 are simultaneously very high (>70)
-  // Old formula (d1d2Average - 50) × 0.15 caused double-counting; new formula is minimal and targeted
-  let score = rawScore;
-  if (d1 > 70 && d2 > 70) {
-    const interactionBoost = (d1 - 70) * (d2 - 70) * 0.001;
-    score = rawScore + interactionBoost;
-  }
-
-  // D2 Velocity Delta Multiplier for rapid disruption spikes
-  if (d2 > 75) {
-    score = score * 1.05;
-  }
-
-  // ── Industry multiplier ──
-  const industryMult = INDUSTRY_KEY_MULT[industryKey] || 1.0;
-  score = Math.round(score * industryMult);
-
-  // ── Experience deduction (specialist titles get 1.4× bonus, capped at 18) ──
-  const baseDeduction = EXP_BONUS[exp] || 0;
-  const isSpecialist = jobTitle
-    ? SPECIALIST_KEYWORDS.some(k => jobTitle.toLowerCase().includes(k))
-    : false;
-  // FORMULA FIX 4: hard cap specialist deduction at 18 to prevent unrealistic low scores
-  const finalDeduction = Math.min(Math.round(baseDeduction * (isSpecialist ? 1.4 : 1.0)), 18);
-  score = score - finalDeduction;
-
-  // ── Specificity adjustment for titled non-specialist roles ──
-  if (jobTitle && !isSpecialist) {
-    const lower = jobTitle.toLowerCase();
-    if (SPECIFICITY_MARKERS.some(m => lower.includes(m))) {
-      score -= 8;
-    }
-  }
-
-  // ── Final clamp: 3–97 ──
-  return {
-    score: Math.min(97, Math.max(3, Math.round(score))),
-    d1, d2, d3, d4, d5, d6,
-    augVal,
-    networkMoat,
-  };
-}
-
-// ─── Score Utilities ───────────────────────────────────────
-export function getScoreColor(score: number): string {
-  if (score >= 80) return '#ff4757';
-  if (score >= 65) return '#ff7043';
-  if (score >= 50) return '#fbbf24';
-  if (score >= 35) return '#00F5FF';
-  return '#00FF9F';
-}
-
-export function getRiskLabelFull(score: number): { label: string; color: string; description: string } {
-  if (score < 20) return { label: 'Very Low Risk', color: 'var(--emerald)', description: 'Highly resilient to AI displacement' };
-  if (score < 35) return { label: 'Low Risk', color: 'var(--emerald)', description: 'Well-positioned against automation' };
-  if (score < 50) return { label: 'Low-Moderate', color: 'var(--cyan)', description: 'Some exposure, manageable with action' };
-  if (score < 65) return { label: 'Moderate Risk', color: 'var(--yellow)', description: 'Notable AI pressure in this area' };
-  if (score < 80) return { label: 'High Risk', color: 'var(--orange)', description: 'Significant displacement risk within 3 years' };
-  return { label: 'Critical Risk', color: 'var(--red)', description: 'Urgent action required' };
-}
-
-export function getVerdict(score: number): string {
-  if (score >= 80) return '🔴 Critical Risk — Act Immediately';
-  if (score >= 65) return '🟠 High Risk — Plan Urgently';
-  if (score >= 50) return '🟡 Moderate Risk — Adapt Now';
-  if (score >= 35) return '🔵 Low-Moderate Risk — Monitor Closely';
-  return '🟢 Lower Risk — Evolve Continuously';
-}
-
-export function getTimeline(score: number): string {
-  if (score >= 85) return '6–18 months';
-  if (score >= 70) return '18–30 months';
-  if (score >= 55) return '2–4 years';
-  if (score >= 40) return '4–6 years';
-  return '6+ years';
-}
-
-export function getUrgency(score: number): string {
-  if (score >= 85) return 'Act This Week';
-  if (score >= 70) return 'Plan This Month';
-  if (score >= 55) return 'Start Planning';
-  if (score >= 40) return 'Monitor Closely';
-  return 'Evolve Continuously';
-}
-
-export function getAutomationExp(d1: number): string {
-  if (d1 >= 85) return 'Extreme (85%+)';
-  if (d1 >= 70) return `High (${d1}%)`;
-  if (d1 >= 50) return `Moderate (${d1}%)`;
-  return `Low (${d1}%)`;
-}
-
-// ── Confidence System (3-tier) ──────────────────────────────────────
-// BUG-004 FIX: Added DQ_PARTIAL tier for medium-confidence roles
-// 3-tier: High (research-backed) | Moderate (common roles) | Low (sparse data)
-export function getConfidence(wt: string): { band: number; label: string; stars: string } {
-  // Tier 1: Full research data (±3% confidence band)
-  const DQ_FULL = new Set(['sw_backend','sw_frontend','sw_fullstack','sw_arch','sw_lead','sw_devops','sw_cloud','sw_api','sw_db','sw_testing','sw_ml','bpo_inbound','bpo_chat','bpo_data_entry','bpo_email_support','bpo_tech_support','bpo_virtual','bpo_claims','cnt_blog','cnt_copy','cnt_seo_content','cnt_social','cnt_email','cnt_ux_write','cnt_script','cnt_yt','cnt_tech_write','cnt_ghostwrite','cnt_translation','fin_account','fin_payroll','fin_audit','fin_fp','fin_tax','fin_risk','fin_credit','fin_invest','fin_reporting','hc_doctor','hc_surgeon','hc_specialist','hc_radiology','hc_medical_coding','hc_physio','hc_nutrition','hc_tele','mh_therapist','mh_psychologist','mh_coach','mh_crisis','mh_social','nur_rn','nur_icu','nur_community','nur_midwife','edu_teach','edu_higher','edu_special','edu_counsellor','qa_manual','qa_auto','qa_lead','qa_perf','mkt_seo','mkt_sem','mkt_social_ads','mkt_growth','mkt_analytics','mkt_brand','mkt_product','des_ui','des_ux','des_graphic','des_motion','des_product','leg_litigation','leg_paralegal','leg_corporate','leg_compliance','leg_ip','leg_labor','con_strategy','con_mgmt','con_it','con_sustainability','hr_recruit','hr_hrbp','hr_payroll','hr_diversity','hr_ld','hr_lr','sec_pen','sec_soc','sec_appsec','sec_grc','sec_cloud','inv_vc','inv_equity','inv_portfolio','inv_quant','inv_ibanking','ml_model','ml_research','ml_data','ml_mlops','ml_prompt','ml_nlp','adm_data_entry','adm_exec','adm_reception','ins_claims','ins_underwrite','ins_admin','ins_actuarial','log_warehouse','log_last_mile','log_fleet','mfg_production','mfg_quality','mfg_automation','mfg_supervisor','ret_floor','photo_event','photo_portrait','video_edit','trav_agent','trav_guide','game_design','game_unity','game_unreal','gov_admin','gov_policy','ph_research','ph_sales','nur_para','ngo_field','agri_farming']);
-  
-  // Tier 2: Common roles with moderate data (±7% confidence band)
-  const DQ_PARTIAL = new Set(['ml_prompt_eng','ml_rlhf','ml_ai_safety','ml_climate_ds','ml_hc_ai','bc_sol','bc_defi','bc_audit','game_vr','game_art','anim_2d','anim_3d','anim_vfx','eng_civil','eng_mech','eng_elec','eng_project','auto_ev','auto_design','con_arch','con_site','en_renewable','en_nuclear','aero_eng','fmcg_brand_mgr','gov_social','ngo_program','agri_tech','hr_comp','hr_hris','leg_legaltech','con_change','con_risk','mkt_crm','mkt_product','adv_brand','adv_pr','edt_product','saas_pm','saas_growth']);
-
-  if (DQ_FULL.has(wt))    return { band: 3,  label: 'High confidence ±3%',      stars: '●●●●●' };
-  if (DQ_PARTIAL.has(wt)) return { band: 7,  label: 'Moderate confidence ±7%',  stars: '●●●○○' };
-  return                         { band: 12, label: 'Limited data ±12%',         stars: '●○○○○' };
-}
-=======
 export const calcDimensionScore = (base: number, volatility: number): number => {
   return Math.min(Math.max(base * volatility, 0), 100);
 };
->>>>>>> audit-fixes-2026-04-07
+
+// ─── D1: Task Automatability ──────────────────────────────────────
+// Higher = more automatable tasks in this role
+export const calculateD1 = (wt: string, ind: string) => TASK_AUTO[ind]?.[wt] || TASK_AUTO['default']?.[wt] || 50;
+
+// ─── D2: AI Tool Maturity ─────────────────────────────────────────
+// Higher = more mature/reliable AI tools exist for this work type
+export const calculateD2 = (wt: string) => DISRUPTION_VELOCITY[wt] ?? 50;
+
+// ─── D3: Human Amplification (curved inversion) ───────────────────
+// Higher augVal = AI amplifies human MORE = displacement risk is LOWER
+// Curved inversion: augVal=50 → D3≈37 (protective, not neutral)
+export const calculateD3 = (wt: string) => {
+  const raw = AUGMENTATION[wt] ?? 50;
+  return Math.round(100 * (1 - Math.pow(raw / 100, D3_CURVE_EXPONENT)));
+};
+
+// ─── D4: Experience Shield ────────────────────────────────────────
+// BUG-C3 FIX: Was returning hardcoded 50. Now uses experience sensitivity data.
+// Higher seniority in high-sensitivity roles = more protected.
+// Output: lower D4 = more protected (consistent with other dimensions)
+export const calculateD4 = (workType: string, experience: string = '5-10'): number => {
+  const sensFactor = EXP_SENSITIVITY[workType] ?? 0.42;
+  const baseRisk = EXP_RISK_BASE[experience] ?? 50;
+  // sensFactor of 0.92 (e.g. surgeon) means very high protection at senior levels
+  const shieldedRisk = baseRisk * (1 - sensFactor);
+  return Math.min(Math.max(Math.round(shieldedRisk), 0), 100);
+};
+
+// ─── D5: Country Net AI Exposure ─────────────────────────────────
+// BUG-C3 FIX: Was returning hardcoded 50. Now uses COUNTRY_DATA table.
+// Formula: net exposure = (AI adoption - regulation * 0.6) / 1.4
+// USA (adoption=90, reg=28) → ~54 (high exposure)
+// Germany (adoption=72, reg=82) → ~16 (well regulated, low exposure)
+export const calculateD5 = (country: string = 'usa'): number => {
+  const key = country.toLowerCase().replace(/\s+/g, '_');
+  const [adoption, regulation] = COUNTRY_DATA[key] ?? COUNTRY_DATA['other'] ?? [55, 40];
+  const netExposure = (adoption - regulation * 0.6) / 1.4;
+  return Math.min(Math.max(Math.round(netExposure), 0), 100);
+};
+
+// ─── D6: Social Capital Moat ─────────────────────────────────────
+// Lower score = stronger professional network = more protected
+export const calculateD6 = (workType: string): number => NETWORK_MOAT[workType] ?? 50;
+
+// ─── UI Helpers ──────────────────────────────────────────────────
+export const getScoreColor = (score: number) => {
+  if (score < 25) return '#10b981';   // Emerald — AI-Resistant
+  if (score < 50) return '#3b82f6';   // Blue — Resilient
+  if (score < 70) return '#f59e0b';   // Amber — Exposed
+  return '#ef4444';                   // Red — Critical Risk
+};
+
+export const getVerdict = (score: number) => {
+  if (score < 25) return 'AI-Resistant';
+  if (score < 50) return 'Resilient';
+  if (score < 70) return 'Exposed';
+  return 'Critical Risk';
+};
+
+export const getTimeline = (score: number) => {
+  if (score < 25) return '8-12 Years';
+  if (score < 50) return '5-8 Years';
+  if (score < 70) return '2-4 Years';
+  return 'Immediate (< 2 Years)';
+};
+
+export const getUrgency = (score: number) => {
+  if (score < 25) return 'Low';
+  if (score < 50) return 'Moderate';
+  if (score < 70) return 'High';
+  return 'Critical';
+};
+
+export const getConfidence = (_workType: string) => 'HIGH';
+export const getAutomationExp = (_workType: string) => 'Expanding';
+
+// ─── Master Calculation Function ─────────────────────────────────
+// BUG-C3 FIX: Updated weights to match marketed 6D spec:
+//   D1=26%, D2=18%, D3=20%, D4=16%, D5=9%, D6=11%
+// Previously used: D1=35%, D2=25%, D3=25%, D6=15% (only 4 dims!)
+export function calculateScore(
+  workType: string,
+  industry: string,
+  experience: string = '5-10',
+  country: string = 'usa'
+): ScoreResult {
+  const induMult = INDUSTRY_KEY_MULT[industry] || 1.0;
+
+  // D1 — Task Automatability (industry-adjusted)
+  const d1_raw = calculateD1(workType, industry);
+  const d1 = Math.min(d1_raw * (induMult > 1 ? 1.1 : 0.9), 100);
+
+  // D2 — AI Tool Maturity
+  const d2 = calculateD2(workType);
+
+  // D3 — Human Amplification (curved inversion)
+  const d3 = calculateD3(workType);
+
+  // D4 — Experience Shield (BUG-C3 FIX: was stub returning 50)
+  const d4 = calculateD4(workType, experience);
+
+  // D5 — Country Exposure (BUG-C3 FIX: was stub returning 50)
+  const d5 = calculateD5(country);
+
+  // D6 — Social Capital Moat
+  const d6 = calculateD6(workType);
+
+  // Weighted sum matching marketed specification
+  const total = Math.round(
+    (d1 * 0.26) +
+    (d2 * 0.18) +
+    (d3 * 0.20) +
+    (d4 * 0.16) +
+    (d5 * 0.09) +
+    (d6 * 0.11)
+  );
+
+  // Determine data quality based on how many dimensions have real data
+  const hasSpecificD1 = !!(TASK_AUTO[industry]?.[workType]);
+  const hasSpecificD2 = !!(DISRUPTION_VELOCITY[workType]);
+  const dataQuality = hasSpecificD1 && hasSpecificD2 ? 'DQ_FULL' : 'DQ_PARTIAL';
+
+  return {
+    total: Math.min(Math.max(total, 0), 100),
+    dimensions: [
+      { key: 'D1', label: 'Task Automatability', score: Math.round(d1), weight: 26 },
+      { key: 'D2', label: 'AI Tool Maturity',    score: Math.round(d2), weight: 18 },
+      { key: 'D3', label: 'Human Amplification', score: Math.round(d3), weight: 20 },
+      { key: 'D4', label: 'Experience Shield',   score: Math.round(d4), weight: 16 },
+      { key: 'D5', label: 'Country Exposure',    score: Math.round(d5), weight: 9  },
+      { key: 'D6', label: 'Social Capital Moat', score: Math.round(d6), weight: 11 },
+    ],
+    confidence: dataQuality === 'DQ_FULL' ? 'HIGH' : 'MODERATE',
+    dataQuality,
+    ...generateStructuredFallbackRoadmap(d1, d2, d3, d4, d5, d6, workType, industry, experience, total),
+  };
+}
+
+/**
+ * Data-First Career Intelligence Generator
+ *
+ * Strategy:
+ * 1. Check if careerIntelligenceDB has pre-seeded data for this role → use it
+ * 2. Fall back to modular roadmap block engine (dimension-driven selection)
+ * 3. Use DANGER_SKILLS + SAFE_SKILLS + TRANSITION_RECS for semi-specific skill data
+ * 4. Generate contextual inaction scenario based on D1+D2 score
+ */
+function generateStructuredFallbackRoadmap(
+  d1: number,
+  d2: number,
+  d3: number,
+  d4: number,
+  d5: number,
+  d6: number,
+  workType: string,
+  industry: string,
+  experience: string = '5-10',
+  total: number = 50
+) {
+  // ── Path 1: Pre-seeded career intelligence ────────────────────────────
+  if (hasSeededData(workType)) {
+    const intel = getCareerIntelligence(workType)!;
+    const expKey = experience as '0-2' | '2-5' | '5-10' | '10-20' | '20+';
+    const roadmapData = getRoleRoadmap(workType, expKey);
+    const skills = getRoleSkills(workType);
+    const careerPaths = getRoleCareerPaths(workType);
+    const inactionScenario = getInactionScenario(workType);
+    const riskTrend = getRiskTrend(workType);
+
+    // Map seeded skills to the AI edge function format
+    const ai_risk_skills = skills ? {
+      obsolete: skills.obsolete.map(s => ({
+        skill: s.skill,
+        reason: s.reason,
+        timeline: s.horizon.replace('yr', ' years'),
+        riskScore: s.riskScore,
+      })),
+      at_risk: skills.at_risk.map(s => ({
+        skill: s.skill,
+        reason: s.reason,
+        timeline: s.horizon.replace('yr', ' years'),
+        riskScore: s.riskScore,
+      })),
+      safe: skills.safe.map(s => ({
+        skill: s.skill,
+        reason: s.whySafe,
+        timeline: '5+ years',
+        longTermValue: s.longTermValue,
+        resource: s.resource,
+      })),
+    } : { obsolete: [], at_risk: [], safe: [] };
+
+    // Map seeded career paths to AI edge function format
+    const safer_career_paths = careerPaths.map(p => ({
+      role: p.role,
+      risk_reduction_pct: p.riskReduction,
+      skill_gap: p.skillGap,
+      transition_difficulty: p.transitionDifficulty,
+      salary_delta: p.salaryDelta,
+      time_to_transition: p.timeToTransition,
+    }));
+
+    // Map seeded roadmap to AI edge function format
+    const roadmap = roadmapData ? {
+      phase_1: {
+        timeline: roadmapData.phase_1.timeline,
+        actions: roadmapData.phase_1.actions,
+      },
+      phase_2: {
+        timeline: roadmapData.phase_2.timeline,
+        actions: roadmapData.phase_2.actions,
+      },
+      phase_3: {
+        timeline: roadmapData.phase_3.timeline,
+        actions: roadmapData.phase_3.actions,
+      },
+    } : null;
+
+    return {
+      ai_risk_skills,
+      safer_career_paths,
+      roadmap: roadmap ?? generateModularFallbackRoadmap(d1, d2, d6, total, experience),
+      inaction_scenario: inactionScenario ?? generateInactionScenario(workType, d1, d2, total),
+      riskTrend,
+      content_confidence: intel.confidenceScore,
+      isSeeded: true,
+    };
+  }
+
+  // ── Path 2: Modular block engine + skillsData semi-specific fallback ──
+  return generateSemiSpecificFallback(d1, d2, d3, d4, d5, d6, workType, industry, experience, total);
+}
+
+/**
+ * Modular block-based roadmap for un-seeded roles
+ */
+function generateModularFallbackRoadmap(
+  d1: number,
+  d2: number,
+  d6: number,
+  total: number,
+  experience: string
+) {
+  const blocks = selectRoadmapBlocks({ d1, d2, d6, total, experience });
+  const merged = mergeBlocksIntoRoadmap(blocks);
+
+  if (!merged) {
+    return {
+      phase_1: { timeline: '0–30 days', actions: [{ action: 'Audit your automatable tasks', why: 'Know your risk surface', outcome: 'Clear automation risk log' }] },
+      phase_2: { timeline: '1–3 months', actions: [{ action: 'Learn the AI tool most relevant to your field', why: 'AI-native professionals earn 30% more', outcome: 'New AI tool in daily workflow' }] },
+      phase_3: { timeline: '3–12 months', actions: [{ action: 'Apply for strategy or oversight roles in your field', why: 'Strategic roles have 60% lower AI risk than execution roles', outcome: 'New role with higher AI resilience' }] },
+    };
+  }
+
+  return merged;
+}
+
+/**
+ * Semi-specific fallback using skillsData (DANGER_SKILLS, SAFE_SKILLS, TRANSITION_RECS)
+ * This replaces the old 100% generic fallback with partial role-specificity
+ */
+function generateSemiSpecificFallback(
+  d1: number,
+  d2: number,
+  d3: number,
+  d4: number,
+  d5: number,
+  d6: number,
+  workType: string,
+  industry: string,
+  experience: string,
+  total: number
+) {
+  // Fetch role-specific skills from existing skillsData
+  const dangerSkills = DANGER_SKILLS[workType] ?? DANGER_SKILLS['default'] ?? [];
+  const safeSkills = SAFE_SKILLS[workType] ?? SAFE_SKILLS['default'] ?? [];
+  const transitionRecs = TRANSITION_RECS[workType] ?? TRANSITION_RECS['default'] ?? [];
+
+  // Build skill matrix from skillsData
+  const ai_risk_skills = {
+    obsolete: dangerSkills.slice(0, 3).map((skill, i) => ({
+      skill,
+      reason: d1 > 70
+        ? `High automatability (D1: ${Math.round(d1)}%) — AI tools now handle this task at scale.`
+        : `Moderate-high AI tool maturity in this category — displacement risk is real.`,
+      timeline: i === 0 ? '1-2 years' : i === 1 ? '2-3 years' : '3-5 years',
+    })),
+    at_risk: dangerSkills.slice(3, 6).map((skill, i) => ({
+      skill,
+      reason: `AI tools augment this skill — partial automation is underway with ${Math.round(d2)}% AI tool maturity.`,
+      timeline: i === 0 ? '2-4 years' : '3-5 years',
+    })),
+    safe: safeSkills.slice(0, 3).map(skill => ({
+      skill,
+      reason: 'Complex human judgment, relationships, or contextual expertise — AI only partially replicates this.',
+      timeline: '5+ years',
+    })),
+  };
+
+  // Build career paths from transition recommendations
+  const safer_career_paths = transitionRecs.slice(0, 3).map((rec, i) => {
+    const [role, ...rest] = rec.split(' — ');
+    return {
+      role: role.trim(),
+      risk_reduction_pct: [45, 35, 50][i] ?? 40,
+      skill_gap: rest.join(' ').trim() || 'Develop strategic thinking, AI tool fluency, and domain expertise',
+      transition_difficulty: ['Medium', 'Hard', 'Medium'][i] ?? 'Medium',
+    };
+  });
+
+  // Generate modular roadmap from blocks
+  const roadmap = generateModularFallbackRoadmap(d1, d2, d6, total, experience);
+
+  return {
+    ai_risk_skills,
+    safer_career_paths,
+    roadmap,
+    inaction_scenario: generateInactionScenario(workType, d1, d2, total),
+    riskTrend: [],
+    content_confidence: 65,
+    isSeeded: false,
+  };
+}
+
+/**
+ * Generate contextual inaction scenario based on risk dimensions
+ */
+function generateInactionScenario(workType: string, d1: number, d2: number, total: number): string {
+  if (total >= 80) {
+    return `Your role faces imminent automation pressure — AI tools have reached ${Math.round(d2)}% maturity in your field and ${Math.round(d1)}% of your tasks are automatable. Without pivoting to strategy, oversight, or an adjacent role within 12 months, you risk position elimination as companies find AI-first alternatives to your current function.`;
+  } else if (total >= 60) {
+    return `Your role is in the high-risk zone with ${Math.round(d1)}% task automatability. Companies are actively deploying AI tools in your function. Without developing AI-native skills, governance capabilities, or moving toward strategic work in the next 18-24 months, your market value will compress significantly.`;
+  } else if (total >= 40) {
+    return `You are in the AI augmentation zone — AI tools will reshape your role substantially over 3-5 years. Professionals who position themselves as AI-native practitioners now will capture the value. Those who don't will find their salaries stagnant as AI handles the execution layer.`;
+  } else {
+    return `Your role has relatively strong AI resilience today, but no function is permanently immune. Investing now in your human-only capabilities — relationship networks, strategic judgment, and novel problem-solving — ensures you remain ahead of the curve for the long term.`;
+  }
+}
+
+// Legacy aliases for backward compatibility (used by DisplacementForecast, etc.)
+export { calculateD4 as getExpRisk_v2 };
+export { calculateD5 as getCountryRisk };
+export { calculateD1 as getD1, calculateD2 as getD2, calculateD3 as getD3 };

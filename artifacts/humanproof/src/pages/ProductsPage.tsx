@@ -1,8 +1,5 @@
 import { useState } from 'react';
-
-interface ProductsPageProps {
-  onNavigate: (page: string) => void;
-}
+import { useNavigate } from 'react-router-dom';
 
 const resources = [
   { tag: 'free',     tagLabel: 'Free',     title: 'AI Risk Score Calculator',             desc: '6-dimension calculator. 250+ roles, 70+ countries, Q1 2026 data. No signup required.',           emoji: '🧮' },
@@ -27,7 +24,8 @@ const FILTER_MAP: Record<Filter, string | null> = {
   'All': null, 'Free': 'free', 'Guides': 'guide', 'Templates': 'template', 'Reports': 'report',
 };
 
-export default function ProductsPage({ onNavigate }: ProductsPageProps) {
+export default function ProductsPage() {
+  const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState<Filter>('All');
 
   const filtered = activeFilter === 'All'
@@ -75,11 +73,11 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
               <div className="resource-desc">{r.desc}</div>
               <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
                 {r.tag === 'free' ? (
-                  <button className="btn-primary" style={{ fontSize: '0.75rem', padding: '8px 16px' }} onClick={() => onNavigate('calculator')}>
+                  <button className="btn-primary" style={{ fontSize: '0.75rem', padding: '8px 16px' }} onClick={() => navigate('/calculator')}>
                     Use Free →
                   </button>
                 ) : (
-                  <button className="btn-teal" style={{ fontSize: '0.75rem', padding: '8px 16px' }} onClick={() => onNavigate('pricing')}>
+                  <button className="btn-teal" style={{ fontSize: '0.75rem', padding: '8px 16px' }} onClick={() => navigate('/pricing')}>
                     Get Access →
                   </button>
                 )}
@@ -88,12 +86,6 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
           ))}
         </div>
 
-        {filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text2)' }}>
-            No resources match this filter yet.
-          </div>
-        )}
-
         <div style={{ marginTop: 80, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, padding: '48px 40px', textAlign: 'center' }} className="reveal">
           <h2 style={{ fontFamily: 'var(--heading)', fontSize: 'clamp(1.5rem,3vw,2rem)', fontWeight: 800, marginBottom: 12 }}>
             Want Unlimited Access?
@@ -101,7 +93,7 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
           <p style={{ color: 'var(--text2)', maxWidth: 500, margin: '0 auto 28px', lineHeight: 1.7 }}>
             HumanProof Pro gives you unlimited calculator runs, all reports, all templates, team assessments, and quarterly updates delivered to your inbox.
           </p>
-          <button className="btn-primary" onClick={() => onNavigate('pricing')}>
+          <button className="btn-primary" onClick={() => navigate('/pricing')}>
             View Pricing Plans →
           </button>
         </div>

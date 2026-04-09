@@ -1,0 +1,73 @@
+﻿[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 2652 modules transformed.
+node.exe : [31m✗[39m Build failed in 3.72s
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" 
+"C:\Users\L.venkateswara rao\App ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( 
+   [31m✗[39m Build failed in 3.72s:String) [  
+  ], RemoteException
+    + FullyQualifiedErrorId : NativeCommandErr 
+   or
+ 
+[31merror during build:
+[31msrc/components/DisplacementForecast.tsx 
+(5:9): "projectScore" is not exported by 
+"src/data/riskFormula.ts", imported by 
+"src/components/DisplacementForecast.tsx".[31m
+file: [36mC:/supabase/humanproofs1/artifacts/h
+umanproof/src/components/DisplacementForecast.t
+sx:5:9[31m
+[33m
+3: } from 'recharts';
+4: import { useHumanProof } from 
+'../context/HumanProofContext';
+5: import { projectScore } from 
+'../data/riskFormula';
+            ^
+6: 
+7: // Section 4.5 — 2026 calibrated annual 
+risk decay factors
+[31m
+    at getRollupError (file:///C:/supabase/huma
+nproofs1/node_modules/.pnpm/rollup@4.59.0/node_
+modules/rollup/dist/es/shared/parseAst.js:402:4
+1)
+    at error (file:///C:/supabase/humanproofs1/
+node_modules/.pnpm/rollup@4.59.0/node_modules/r
+ollup/dist/es/shared/parseAst.js:398:42)
+    at Module.error (file:///C:/supabase/humanp
+roofs1/node_modules/.pnpm/rollup@4.59.0/node_mo
+dules/rollup/dist/es/shared/node-entry.js:17040
+:16)
+    at Module.traceVariable (file:///C:/supabas
+e/humanproofs1/node_modules/.pnpm/rollup@4.59.0
+/node_modules/rollup/dist/es/shared/node-entry.
+js:17452:29)
+    at ModuleScope.findVariable (file:///C:/sup
+abase/humanproofs1/node_modules/.pnpm/rollup@4.
+59.0/node_modules/rollup/dist/es/shared/node-en
+try.js:15070:39)
+    at FunctionScope.findVariable (file:///C:/s
+upabase/humanproofs1/node_modules/.pnpm/rollup@
+4.59.0/node_modules/rollup/dist/es/shared/node-
+entry.js:5673:38)
+    at FunctionBodyScope.findVariable (file:///
+C:/supabase/humanproofs1/node_modules/.pnpm/rol
+lup@4.59.0/node_modules/rollup/dist/es/shared/n
+ode-entry.js:5673:38)
+    at ReturnValueScope.findVariable (file:///C
+:/supabase/humanproofs1/node_modules/.pnpm/roll
+up@4.59.0/node_modules/rollup/dist/es/shared/no
+de-entry.js:5673:38)
+    at FunctionBodyScope.findVariable (file:///
+C:/supabase/humanproofs1/node_modules/.pnpm/rol
+lup@4.59.0/node_modules/rollup/dist/es/shared/n
+ode-entry.js:5673:38)
+    at Identifier.bind (file:///C:/supabase/hum
+anproofs1/node_modules/.pnpm/rollup@4.59.0/node
+_modules/rollup/dist/es/shared/node-entry.js:54
+47:40)[39m

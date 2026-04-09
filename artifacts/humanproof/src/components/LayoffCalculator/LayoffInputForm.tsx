@@ -4,6 +4,8 @@ import { lookupCompany } from '../../data/companyDatabase';
 import { industryRiskData } from '../../data/industryRiskData';
 import { getAllRoleTitles } from '../../data/roleExposureData';
 import { CompanyData } from '../../data/companyDatabase';
+import { profileUnknownCompany } from '../../services/ensemble/quickProfilerAgent';
+import { Building, Search, Briefcase, Globe, Info } from 'lucide-react';
 
 interface Props {
   onNext: () => void;
@@ -48,15 +50,13 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
 
   // Step 1 state
   const [companySearch, setCompanySearch] = useState(state.companyName || '');
-  const [searchResults, setSearchResults] = useState<CompanyData[]>([]);
+  const [searchResults, setSearchResults] = useState<(CompanyData & { logo?: string; domain?: string; isExternal?: boolean })[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<CompanyData | null>(state.companyData || null);
+  const [isProfiling, setIsProfiling] = useState(false);
   const [roleTitle, setRoleTitle] = useState(state.roleTitle || '');
   const [roleSuggestions, setRoleSuggestions] = useState<string[]>([]);
   const [showRoleSuggestions, setShowRoleSuggestions] = useState(false);
   const [department, setDepartment] = useState(state.department || 'Engineering');
-  const [manualIndustry, setManualIndustry] = useState('Technology');
-  const [manualSize, setManualSize] = useState('50');
-  const [manualIsPublic, setManualIsPublic] = useState(false);
   const roleInputRef = useRef<HTMLInputElement>(null);
 
   // Step 2 state
@@ -68,23 +68,87 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
 
   const allRoles = useMemo(() => getAllRoleTitles(), []);
 
-  const handleCompanySearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCompanySearch = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setCompanySearch(val);
     setSelectedCompany(null);
+    
     if (!val || val.length < 2) {
       setSearchResults([]);
       return;
     }
-    if (!manualMode) {
-      setSearchResults(lookupCompany(val));
+
+    // 1. Local Search (Instant)
+    const local = lookupCompany(val).map(c => ({ ...c, isExternal: false }));
+    setSearchResults(local);
+
+    // 2. Clearbit Autocomplete (Global)
+    try {
+      const resp = await fetch(`https://autocomplete.clearbit.com/v1/companies/suggest?query=${val}`);
+      if (resp.ok) {
+        const external = await resp.json();
+        // Merge results, removing duplicates based on name match
+        const merged = [...local];
+        external.forEach((ext: any) => {
+          if (!merged.find(m => m.name.toLowerCase() === ext.name.toLowerCase())) {
+            merged.push({
+              name: ext.name,
+              logo: ext.logo,
+              domain: ext.domain,
+              isPublic: false, // will profile later
+              industry: 'Detecting...', 
+              region: 'GLOBAL',
+              employeeCount: 0,
+              layoffsLast24Months: [],
+              layoffRounds: 0,
+              lastLayoffPercent: null,
+              revenuePerEmployee: 150000,
+              aiInvestmentSignal: 'medium',
+              source: 'Clearbit',
+              lastUpdated: new Date().toISOString(),
+              isExternal: true
+            } as any);
+          }
+        });
+        setSearchResults(merged.slice(0, 8));
+      }
+    } catch (err) {
+      // ignore network errors for suggestions
     }
   };
 
-  const selectCompany = (comp: CompanyData) => {
-    setSelectedCompany(comp);
+  const selectCompany = async (comp: any) => {
     setCompanySearch(comp.name);
     setSearchResults([]);
+
+    if (comp.isExternal) {
+      setIsProfiling(true);
+      const profile = await profileUnknownCompany(comp.name);
+      setIsProfiling(false);
+
+      if (profile) {
+        const fullComp: CompanyData = {
+          ...comp,
+          industry: profile.industry,
+          isPublic: profile.isPublic,
+          employeeCount: profile.employeeCount,
+          region: profile.region,
+          ticker: profile.ticker,
+          source: `AI Profile (${comp.name})`
+        };
+        setSelectedCompany(fullComp);
+      } else {
+        // Fallback if AI fails
+        setSelectedCompany({
+          ...comp,
+          industry: 'Technology',
+          employeeCount: 500,
+          source: 'User Entry'
+        } as CompanyData);
+      }
+    } else {
+      setSelectedCompany(comp);
+    }
   };
 
   useEffect(() => {
@@ -133,15 +197,22 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleNextStep1 = () => {
+  const handleNextStep1 = async () => {
+    if (!companySearch || !roleTitle.trim()) return;
+
     let finalCompany = selectedCompany;
-    if (manualMode && companySearch) {
+    if (!finalCompany) {
+      setIsProfiling(true);
+      const profile = await profileUnknownCompany(companySearch);
+      setIsProfiling(false);
+
       finalCompany = {
         name: companySearch,
-        isPublic: manualIsPublic,
-        industry: manualIndustry,
-        region: 'US',
-        employeeCount: parseInt(manualSize, 10),
+        isPublic: profile?.isPublic ?? false,
+        industry: profile?.industry ?? 'Technology',
+        region: profile?.region ?? 'GLOBAL',
+        employeeCount: profile?.employeeCount ?? 500,
+        ticker: profile?.ticker,
         revenueGrowthYoY: null,
         stock90DayChange: null,
         layoffsLast24Months: [],
@@ -149,25 +220,15 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
         lastLayoffPercent: null,
         revenuePerEmployee: 150000,
         aiInvestmentSignal: 'medium',
-        source: 'User Input',
+        source: profile ? `AI Profile (${companySearch})` : 'User Input',
         lastUpdated: new Date().toISOString(),
       };
     }
 
-    if (!finalCompany && !manualMode && companySearch.trim().length === 0) return;
-    if (!roleTitle.trim()) return;
-
-    // Store company data in context
-    if (finalCompany) {
-      dispatch({ type: 'SET_COMPANY_DATA', payload: finalCompany });
-    } else {
-       // Clear old data so the calculator knows it must fetch dynamically
-       dispatch({ type: 'SET_COMPANY_DATA', payload: null });
-    }
-    
+    dispatch({ type: 'SET_COMPANY_DATA', payload: finalCompany });
     dispatch({
       type: 'SET_INPUTS',
-      payload: { companyName: finalCompany?.name || companySearch.trim(), roleTitle: roleTitle.trim(), department },
+      payload: { companyName: finalCompany.name, roleTitle: roleTitle.trim(), department },
     });
 
     setStep(2);
@@ -231,71 +292,84 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
               borderColor: selectedCompany ? 'var(--cyan, #00F5FF)' : 'rgba(255,255,255,0.1)',
             }}
           />
-          {selectedCompany && (
-            <div style={{ position: 'absolute', right: '12px', top: '12px', color: 'var(--cyan, #00F5FF)', fontSize: '0.8rem' }}>
-              ✓ matched
+          {isProfiling && (
+            <div style={{ position: 'absolute', right: '12px', top: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '12px', height: '12px', border: '2px solid rgba(0,245,255,0.2)', borderTopColor: 'var(--cyan)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <span style={{ fontSize: '0.75rem', color: '#9ba5b4' }}>profiling...</span>
             </div>
           )}
-          {!manualMode && searchResults.length > 0 && (
+          {selectedCompany && !isProfiling && (
+            <div style={{ position: 'absolute', right: '12px', top: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: 'var(--cyan, #00F5FF)', fontSize: '0.8rem', fontWeight: 600 }}>MATCHED</span>
+              {selectedCompany.ticker && <span style={{ fontSize: '0.75rem', color: '#4b5563', background: 'rgba(255,255,255,0.05)', padding: '1px 4px', borderRadius: '4px' }}>{selectedCompany.ticker}</span>}
+            </div>
+          )}
+          {searchResults.length > 0 && (
             <div style={{
               position: 'absolute', top: '100%', left: 0, right: 0,
               background: 'var(--bg2, #111827)', border: '1px solid rgba(255,255,255,0.1)',
-              zIndex: 10, borderRadius: '8px', overflow: 'hidden', maxHeight: '240px', overflowY: 'auto',
+              zIndex: 10, borderRadius: '8px', overflow: 'hidden', maxHeight: '320px', overflowY: 'auto',
+              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)', marginTop: '4px'
             }}>
               {searchResults.map(res => (
                 <div
-                  key={res.name}
+                  key={res.name + (res.domain || '')}
                   onClick={() => selectCompany(res)}
                   role="option"
                   tabIndex={0}
                   onKeyDown={e => { if (e.key === 'Enter') selectCompany(res); }}
-                  style={{ padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                  style={{ 
+                    padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    display: 'flex', alignItems: 'center', gap: '14px',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
-                  <div style={{ color: '#fff' }}>{res.name} {res.ticker ? `(${res.ticker})` : ''}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#9ba5b4' }}>
-                    {res.industry} · {res.employeeCount.toLocaleString()} employees · {res.region}
+                  <div style={{ width: '32px', height: '32px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {res.logo ? (
+                      <img src={res.logo} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    ) : (
+                      <Building size={16} color="#4b5563" />
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {res.name}
+                      {res.isPublic && <span style={{ fontSize: '0.65rem', background: 'rgba(0,245,255,0.1)', color: 'var(--cyan)', padding: '1px 4px', borderRadius: '4px' }}>PUBLIC</span>}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {res.industry !== 'Detecting...' ? res.industry : (res.domain || 'Global Search')} · {res.employeeCount > 0 ? `${res.employeeCount.toLocaleString()} employees` : 'Select to profile'}
+                    </div>
                   </div>
                 </div>
               ))}
+              <div style={{ padding: '10px 16px', background: 'rgba(255,255,255,0.02)', color: '#4b5563', fontSize: '0.72rem', fontStyle: 'italic', textAlign: 'center' }}>
+                Search powered by Clearbit & AI Intelligence
+              </div>
             </div>
           )}
         </div>
 
-        <div style={{ textAlign: 'right', marginBottom: '16px' }}>
-          <button
-            style={{ background: 'none', border: 'none', color: '#9ba5b4', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}
-            onClick={() => { setManualMode(!manualMode); setSearchResults([]); setSelectedCompany(null); }}
-          >
-            {manualMode ? '← Back to search' : "My company isn't listed"}
-          </button>
-        </div>
-
-        {manualMode && (
-          <div style={{ marginBottom: '16px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div>
-              <label htmlFor="industry-select" style={labelStyle}>Select Industry</label>
-              <select id="industry-select" value={manualIndustry} onChange={e => setManualIndustry(e.target.value)} style={{...inputStyle, marginBottom: 0}}>
-                {Object.keys(industryRiskData).map(ind => (
-                  <option key={ind} value={ind}>{ind}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="size-select" style={labelStyle}>Company Size (Employees)</label>
-              <select id="size-select" value={manualSize} onChange={e => setManualSize(e.target.value)} style={{...inputStyle, marginBottom: 0}}>
-                <option value="25">Small (1 - 50)</option>
-                <option value="100">Medium (51 - 200)</option>
-                <option value="500">Large (201 - 1000)</option>
-                <option value="2500">Enterprise (1001 - 5000)</option>
-                <option value="10000">Giant (5000+)</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input type="checkbox" id="public-check" checked={manualIsPublic} onChange={e => setManualIsPublic(e.target.checked)} style={{ accentColor: 'var(--cyan)' }} />
-              <label htmlFor="public-check" style={{ color: '#d1d5db', fontSize: '0.9rem', cursor: 'pointer' }}>Is this a Publicly Traded Company?</label>
-            </div>
-          </div>
+        {selectedCompany && (
+           <div style={{ 
+             margin: '4px 0 20px', padding: '10px 14px', 
+             background: 'rgba(0,245,255,0.03)', border: '1px solid rgba(0,245,255,0.1)', 
+             borderRadius: '8px', display: 'flex', alignItems: 'flex-start', gap: '10px',
+             animation: 'slideDown 0.3s ease-out'
+           }}>
+             <Info size={14} color="var(--cyan)" style={{ marginTop: '2px', flexShrink: 0 }} />
+             <div style={{ fontSize: '0.82rem', color: '#9ba5b4', lineHeight: 1.4 }}>
+               <strong style={{ color: 'var(--cyan)' }}>Analysis Profile:</strong> {selectedCompany.industry} ({selectedCompany.employeeCount?.toLocaleString()} staff) in {selectedCompany.region}. 
+               AI agents will now scan this profile for risk.
+             </div>
+           </div>
         )}
+
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        `}</style>
 
         <label htmlFor="role-input" style={labelStyle}>Your Job Title</label>
         <div ref={roleInputRef} style={{ position: 'relative' }}>

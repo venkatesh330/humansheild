@@ -74,7 +74,9 @@ export const safeCareers = pgTable('safe_careers', {
   automationD1:     real('automation_d1'),
   augmentationD3:   real('augmentation_d3'),
   disruptionD2:     real('disruption_d2'),
-  safetyReason:     text('safety_reason'),                // human-readable explanation
+  isSmeStable:      integer('is_sme_stable').default(0),  // 1 = True, 0 = False (integer for better compatibility)
+  smeStabilityReason: text('sme_stability_reason'),
+  safetyReason:       text('safety_reason'),                // human-readable explanation
   computedAt:       timestamp('computed_at').defaultNow().notNull(),
 });
 
@@ -93,6 +95,8 @@ export const freeResources = pgTable('free_resources', {
   targetDimension:text('target_dimension'),                // 'D1'|'D3'|'general' — which risk it addresses
   riskLevelTarget:text('risk_level_target'),               // 'critical'|'high'|'moderate'|'all'
   tags:           text('tags').array(),
+  rating:         real('rating').notNull().default(0),
+  reviewCount:    integer('review_count').notNull().default(0),
   syncedAt:       timestamp('synced_at').defaultNow().notNull(),
 });
 
@@ -102,3 +106,20 @@ export type SignalWeight     = typeof signalWeights.$inferSelect;
 export type DataAuditEntry  = typeof dataAuditLog.$inferSelect;
 export type SafeCareer      = typeof safeCareers.$inferSelect;
 export type FreeResource    = typeof freeResources.$inferSelect;
+
+// OSINT cached data for company intelligence (zero-cost engine)
+export const cachedCompanyIntelligence = pgTable('cached_company_intelligence', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  companyName:        text('company_name').notNull().unique(),
+  domain:             text('domain'),
+  employeeCount:      integer('employee_count'),
+  revenueYoy:         real('revenue_yoy'),
+  stock90dChange:     real('stock_90d_change'),
+  recentLayoffNews:   integer('recent_layoff_news'), // e.g. sentiment score or count of relevant articles
+  industry:           text('industry'),
+  isPublic:           text('is_public').default('false'), 
+  lastUpdated:        timestamp('last_updated').defaultNow().notNull(),
+  nextRefreshDue:     timestamp('next_refresh_due').notNull(),
+});
+
+export type CachedCompanyIntelligence = typeof cachedCompanyIntelligence.$inferSelect;

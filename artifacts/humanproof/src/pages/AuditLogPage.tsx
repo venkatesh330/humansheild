@@ -114,7 +114,8 @@ export function AuditLogPage() {
     : entries;
 
   return (
-    <div style={{ padding: '32px 24px', maxWidth: 900, margin: '0 auto' }}>
+    <div className="page-wrap" style={{ background: 'var(--bg)' }}>
+      <div className="container" style={{ maxWidth: 900 }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
@@ -197,6 +198,7 @@ export function AuditLogPage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

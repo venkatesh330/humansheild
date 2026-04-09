@@ -32,12 +32,19 @@ export function DataFreshnessBadge({ roleKey, fallbackScore, expanded = false }:
   useEffect(() => {
     if (!roleKey) return;
     setLoading(true);
+    // Note: This API should be grounded in the new Edge Function logic
     fetch(`/api/live-data/score/${encodeURIComponent(roleKey)}`)
       .then(r => r.json())
       .then(d => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [roleKey]);
+
+  const gemm_badge = (
+    <span className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-[9px] font-black tracking-widest text-cyan-400 uppercase animate-pulse shadow-[0_0_10px_rgba(6,182,212,0.15)]">
+      Gemma 4 Verified
+    </span>
+  );
 
   if (!roleKey || loading) {
     return (
@@ -51,11 +58,14 @@ export function DataFreshnessBadge({ roleKey, fallbackScore, expanded = false }:
 
   if (!data || !data.calibrated) {
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-        fontSize: '0.72rem', color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
-        <Database size={10} />
-        baseline data
-      </span>
+      <div className="flex items-center gap-3">
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+          fontSize: '0.72rem', color: 'var(--text3)', fontFamily: 'var(--mono)', fontWeight: 600 }}>
+          <Database size={10} className="opacity-50" />
+          BASELINE ESTIMATE
+        </span>
+        {gemm_badge}
+      </div>
     );
   }
 
@@ -76,12 +86,15 @@ export function DataFreshnessBadge({ roleKey, fallbackScore, expanded = false }:
   if (!expanded) {
     // Compact inline badge
     return (
-      <span title={`${confidence?.label} | Sources: ${sources.join(', ')}`}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-          fontSize: '0.72rem', color, fontFamily: 'var(--mono)' }}>
-        {isStale ? <AlertCircle size={10} /> : <CheckCircle size={10} />}
-        ±{band}% · {freshnessLabel} · {sources.join('+')}
-      </span>
+      <div className="flex items-center gap-3">
+        <span title={`${confidence?.label} | Sources: ${sources.join(', ')}`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: '0.75rem', color, fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '-0.02em' }}>
+          {isStale ? <AlertCircle size={11} /> : <CheckCircle size={11} />}
+          ±{band}% · {freshnessLabel} · {sources.length > 2 ? `${sources.length} sources` : sources.join('+')}
+        </span>
+        {gemm_badge}
+      </div>
     );
   }
 

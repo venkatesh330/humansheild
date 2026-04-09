@@ -3,6 +3,7 @@ import { useLayoff } from '../../context/LayoffContext';
 import { LayoffInputForm } from './LayoffInputForm';
 import { LayoffScoreDisplay } from './LayoffScoreDisplay';
 import { calculateLayoffScore, simulateScenario, ScoreInputs, ScenarioOverrides } from '../../services/layoffScoreEngine';
+import { runFullEnsembleAnalysis } from '../../services/ensemble/ensembleOrchestrator';
 import { getCompanyByName, CompanyData } from '../../data/companyDatabase';
 import { industryRiskData, IndustryRisk } from '../../data/industryRiskData';
 import { RoleExposure } from '../../data/roleExposureData';
@@ -12,6 +13,7 @@ import { LayoffShareCard } from './LayoffShareCard';
 import { LayoffScoreHistory } from './LayoffScoreHistory';
 import { LayoffScenarioPanel } from './LayoffScenarioPanel';
 import { RecommendationPanel } from './RecommendationPanel';
+import { EnsembleLoadingState } from './EnsembleLoadingState';
 import { supabase } from '../../utils/supabase';
 
 interface Props {
@@ -43,9 +45,12 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
   const { state, dispatch } = useLayoff();
   const [showShareCard, setShowShareCard] = useState(false);
   const [lastScoreInputs, setLastScoreInputs] = useState<ScoreInputs | null>(null);
+  // 0=idle, 1=engine+agents running, 2=gemini synthesizing, 3=done
+  const [ensembleStage, setEnsembleStage] = useState(0);
 
   const handleCalculate = async () => {
     dispatch({ type: 'SET_CALCULATING', payload: true });
+    setEnsembleStage(0);
 
     try {
       let companyData: CompanyData | null = null;
@@ -75,7 +80,6 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
             employeeCount: osintData.employee_count || 500,
             revenueGrowthYoY: osintData.revenue_yoy,
             stock90DayChange: osintData.stock_90d_change,
-            // If they have recent news, simulate a recent layoff impact for scoring engine
             layoffsLast24Months: osintData.recent_layoff_news ? [{ date: new Date().toISOString(), percentCut: 2 }] : [],
             layoffRounds: osintData.recent_layoff_news || 0,
             lastLayoffPercent: osintData.recent_layoff_news ? 2 : null,
@@ -142,6 +146,7 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
 
       const industryData: IndustryRisk | undefined = fetchedIndustryData || industryRiskData[companyData.industry];
 
+      // ── Keep ScoreInputs for scenario simulation (uses deterministic engine) ──
       const inputs: ScoreInputs = {
         companyData,
         industryData,
@@ -156,13 +161,46 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
         },
         roleExposureOverride: fetchedRoleExposure,
       };
-
-      const result = calculateLayoffScore(inputs);
       setLastScoreInputs(inputs);
-      dispatch({ type: 'SET_SCORE_RESULT', payload: result });
+
+      // ── Stage 1: Engine + parallel AI agents ──
+      setEnsembleStage(1);
+
+      const ensembleResult = await runFullEnsembleAnalysis({
+        companyName:        companyData.name,
+        companyData,
+        industry:           companyData.industry,
+        industryData,
+        roleTitle:          inputs.roleTitle,
+        department:         inputs.department,
+        tenureYears:        inputs.userFactors.tenureYears,
+        isUniqueRole:       inputs.userFactors.isUniqueRole,
+        performanceTier:    inputs.userFactors.performanceTier,
+        hasRecentPromotion: inputs.userFactors.hasRecentPromotion,
+        hasKeyRelationships: inputs.userFactors.hasKeyRelationships,
+        roleExposureOverride: fetchedRoleExposure,
+      });
+
+      // ── Stage 2: Gemini synthesis (already done inside orchestrator, update stage) ──
+      setEnsembleStage(2);
+      // Small delay so users see the Gemini synthesis step before result appears
+      await new Promise(resolve => setTimeout(resolve, 400));
+      setEnsembleStage(3);
+
+      dispatch({ type: 'SET_SCORE_RESULT', payload: ensembleResult });
+
+      const modelCount = ensembleResult.modelsUsed?.length || 1;
+      dispatch({ type: 'SHOW_TOAST', payload: {
+        message: modelCount >= 4
+          ? `4-model ensemble complete · ${ensembleResult.confidencePercent}% confidence`
+          : `Analysis complete · ${ensembleResult.confidence} confidence`,
+        type: 'success',
+      }});
+
     } catch (e) {
       console.error(e);
       dispatch({ type: 'SET_CALCULATING', payload: false });
+      setEnsembleStage(0);
     }
   };
 
@@ -207,12 +245,7 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
       )}
 
       {state.isCalculating && (
-        <div style={{ textAlign: 'center', padding: '100px 0' }}>
-          <div style={{ width: '64px', height: '64px', margin: '0 auto 24px', border: '4px solid rgba(0,245,255,0.2)', borderTopColor: 'var(--cyan, #00F5FF)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-          <h2 style={{ color: '#fff', marginBottom: '12px' }}>Analysing Market Signals...</h2>
-          <p style={{ color: '#9ba5b4' }}>Synthesising company health, role exposure, and macroeconomic trends.</p>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
+        <EnsembleLoadingState stage={ensembleStage} />
       )}
 
       {state.hasCompletedAssessment && state.scoreResult && !state.isCalculating && (

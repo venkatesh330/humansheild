@@ -1,153 +1,39 @@
-<<<<<<< HEAD
-import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
-import { safeCareers } from "@workspace/db/schema";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
-=======
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
->>>>>>> audit-fixes-2026-04-07
 
 const router = Router();
 
 // Get all safe careers
 router.get('/', async (req: Request, res: Response) => {
   const { data, error } = await supabase
-    .from('careers')
+    .from('safe_careers')
     .select('*')
-    .order('ai_resistance', { ascending: false });
+    .order('risk_score', { ascending: true }); // Lower risk = safer
 
-<<<<<<< HEAD
-    const {
-      industry,
-      remote,
-      education,
-      maxRisk = "45",
-      minGrowth = "0",
-      minSalary,
-      isSmeStable,
-      sort = "risk",
-      limit = "20",
-      offset = "0",
-      q,
-    } = req.query as Record<string, string>;
-
-    const parsedLimit  = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
-    const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
-    const parsedMaxRisk = Math.min(97, Math.max(3, parseFloat(maxRisk) || 45));
-    const parsedMinGrowth = parseFloat(minGrowth) || 0;
-
-    const conditions = [
-      lte(safeCareers.riskScore, parsedMaxRisk),
-    ];
-
-    if (industry) conditions.push(eq(safeCareers.industryKey, industry));
-    if (remote)   conditions.push(eq(safeCareers.remoteViable, remote));
-    if (education) conditions.push(eq(safeCareers.educationRequired, education));
-    if (isSmeStable === 'true') conditions.push(eq(safeCareers.isSmeStable, 1));
-    if (minSalary) {
-      conditions.push(gte(safeCareers.medianSalaryUsd, parseInt(minSalary, 10)));
-    }
-    if (parsedMinGrowth > 0) {
-      conditions.push(gte(safeCareers.growthProjection, parsedMinGrowth));
-    }
-    if (q) {
-      const term = `%${q.toLowerCase()}%`;
-      conditions.push(
-        sql`(lower(${safeCareers.roleTitle}) like ${term} or lower(${safeCareers.industryLabel}) like ${term})`
-      );
-    }
-
-    // Determine sort column
-    const sortMap: Record<string, ReturnType<typeof asc | typeof desc>> = {
-      risk:   asc(safeCareers.riskScore),
-      growth: desc(sql`COALESCE(${safeCareers.growthProjection}, 0)`),
-      salary: desc(sql`COALESCE(${safeCareers.medianSalaryUsd}, 0)`),
-    };
-    const orderBy = sortMap[sort] ?? asc(safeCareers.riskScore);
-
-    const results = await db
-      .select()
-      .from(safeCareers)
-      .where(and(...conditions))
-      .orderBy(orderBy)
-      .limit(parsedLimit)
-      .offset(parsedOffset);
-
-    // Get total count for pagination
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(safeCareers)
-      .where(and(...conditions));
-
-    return res.json({
-      data: results,
-      pagination: {
-        total: Number(count),
-        limit: parsedLimit,
-        offset: parsedOffset,
-        hasMore: parsedOffset + parsedLimit < Number(count),
-      },
-      filters: { industry, remote, education, maxRisk: parsedMaxRisk, minGrowth: parsedMinGrowth, q },
-    });
-  } catch (e: any) {
-    console.error("[safe-careers]", e);
-    return res.status(500).json({ error: "Failed to fetch safe careers", details: e.message });
-  }
-});
-
-/**
- * GET /api/safe-careers/stats
- * Returns aggregate statistics: total count, avg salary, top sector
- * FIX: Replaces the wasteful 200-record frontend fetch just for header stats
- */
-router.get("/stats", async (_req: any, res: any) => {
-  try {
-    if (!db) return res.status(503).json({ error: "DB not connected" });
-
-    const [stats] = await db
-      .select({
-        total: sql<number>`count(*)`,
-        avgSalary: sql<number>`round(avg(${safeCareers.medianSalaryUsd}))`,
-      })
-      .from(safeCareers);
-
-    // Top sector by role count
-    const sectorCounts = await db
-      .select({ label: safeCareers.industryLabel, count: sql<number>`count(*)` })
-      .from(safeCareers)
-      .groupBy(safeCareers.industryLabel)
-      .orderBy(desc(sql`count(*)`))
-      .limit(1);
-
-    return res.json({
-      total: Number(stats.total),
-      avgSalaryK: stats.avgSalary ? Math.round(Number(stats.avgSalary) / 1000) : 0,
-      topSector: sectorCounts[0]?.label || '',
-    });
-  } catch (e: any) {
-    return res.status(500).json({ error: e.message });
-  }
-});
-
-/**
- * GET /api/safe-careers/industries
- * Returns distinct industry keys + labels for the filter dropdown
- */
-router.get("/industries", async (_req: any, res: any) => {
-=======
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+
+  // Map to the frontend contract
+  const mappedData = data.map((c: any) => ({
+    id: c.id,
+    title: c.role_title,
+    sector: c.industry_label,
+    growth_rate: c.growth_projection ? `+${c.growth_projection}%` : 'Stable',
+    avg_salary: c.median_salary_usd,
+    human_factor: 100 - (c.risk_score || 0),
+    ai_resistance: (c.risk_score < 20) ? 'Critical' : (c.risk_score < 40) ? 'Very High' : 'High',
+    why_safe: c.safety_reason || '',
+    skills: []
+  }));
+
+  res.json(mappedData);
 });
 
-// New Endpoint: Stats aggregate (BUG-006)
-// Provides header statistics in a single call instead of fetching all records
+// Stats aggregate
 router.get('/stats', async (req: Request, res: Response) => {
->>>>>>> audit-fixes-2026-04-07
   try {
     const { data: careers, error } = await supabase
-      .from('careers')
-      .select('avg_salary, sector');
+      .from('safe_careers')
+      .select('median_salary_usd, industry_label');
 
     if (error) throw error;
     if (!careers || careers.length === 0) {
@@ -155,11 +41,11 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
 
     const total = careers.length;
-    const avgSalary = careers.reduce((acc, c) => acc + c.avg_salary, 0) / total;
+    const avgSalary = careers.reduce((acc, c) => acc + (c.median_salary_usd || 0), 0) / total;
     
-    // Simple frequency count for top sector
     const sectors = careers.reduce((acc: any, c) => {
-      acc[c.sector] = (acc[c.sector] || 0) + 1;
+      const sector = c.industry_label || 'Unknown';
+      acc[sector] = (acc[sector] || 0) + 1;
       return acc;
     }, {});
     const topSector = Object.keys(sectors).sort((a, b) => sectors[b] - sectors[a])[0];
@@ -171,4 +57,3 @@ router.get('/stats', async (req: Request, res: Response) => {
 });
 
 export default router;
- Simon

@@ -1,6 +1,7 @@
-import { createContext, useContext, useReducer, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useReducer, useEffect, useState, useCallback, ReactNode } from 'react';
 import { saveScore } from '../utils/scoreStorage';
 import { KEY_REGISTRY } from '../data/riskData';
+import { assessmentAPI } from '../utils/apiClient';
 
 interface SkillEntry {
   id: number;
@@ -19,6 +20,7 @@ interface HumanProofState {
   skillBreakdown: SkillEntry[];
   humanScore: number | null;
   humanDimensions: Record<string, number>;
+  humanJustification: string | null;
   userName: string | null;
   industry: string | null;
   lastUpdated: string | null;
@@ -34,7 +36,7 @@ interface HumanProofState {
 type Action =
   | { type: 'SET_JOB_RISK'; score: number; title: string; industry?: string }
   | { type: 'SET_SKILL_RISK'; score: number; skills: SkillEntry[]; breakdown: SkillEntry[] }
-  | { type: 'SET_HUMAN_SCORE'; score: number; dimensions: Record<string, number> }
+  | { type: 'SET_HUMAN_SCORE'; score: number; dimensions: Record<string, number>; justification?: string }
   | { type: 'SET_USER_NAME'; name: string }
   | { type: 'SET_ACTIVE_TAB'; tab: string }
   | { type: 'SET_JOB_ID'; payload: string }
@@ -52,6 +54,7 @@ const defaultState: HumanProofState = {
   skillBreakdown: [],
   humanScore: null,
   humanDimensions: {},
+  humanJustification: null,
   userName: null,
   industry: null,
   lastUpdated: null,
@@ -95,6 +98,7 @@ function reducer(state: HumanProofState, action: Action): HumanProofState {
         ...state,
         humanScore: action.score,
         humanDimensions: action.dimensions,
+        humanJustification: action.justification ?? state.humanJustification,
         lastUpdated: new Date().toISOString(),
         assessmentTimestamp: Date.now(),
       };
@@ -117,10 +121,21 @@ function reducer(state: HumanProofState, action: Action): HumanProofState {
 }
 
 
+interface AssessmentData {
+  industry: string;
+  workType: string;
+  country: string;
+  experience?: string;
+  score: number;
+  details: any;
+}
+
 interface HumanProofContextValue {
   state: HumanProofState;
   dispatch: React.Dispatch<Action>;
   isHydrated: boolean;
+  // BUG-C1 FIX: saveAssessment was called in CalculatorPage but never existed on context
+  saveAssessment: (data: AssessmentData) => Promise<void>;
 }
 
 const HumanProofContext = createContext<HumanProofContextValue | null>(null);
@@ -177,10 +192,34 @@ export function HumanProofProvider({ children }: { children: ReactNode }) {
     setIsHydrated(true);
   }, []);
 
+  // BUG-C1 FIX: saveAssessment method — was called in CalculatorPage but missing from context
+  // Saves to localStorage via dispatch and attempts API persist (silent fail if not authed)
+  const saveAssessment = useCallback(async (data: AssessmentData) => {
+    // Always save locally via dispatch
+    dispatch({
+      type: 'SET_JOB_RISK',
+      score: data.score,
+      title: data.workType,
+      industry: data.industry,
+    });
+    // Best-effort API persist (silently ignored if not authenticated)
+    try {
+      await assessmentAPI.saveAssessmentData(
+        data.industry,
+        data.workType,
+        data.country,
+        data.score,
+        data.details
+      );
+    } catch {
+      // Not authenticated or network error — local save is sufficient
+    }
+  }, []);
+
   if (!isHydrated) return <LoadingScreen />;
 
   return (
-    <HumanProofContext.Provider value={{ state, dispatch, isHydrated }}>
+    <HumanProofContext.Provider value={{ state, dispatch, isHydrated, saveAssessment }}>
       {children}
     </HumanProofContext.Provider>
   );

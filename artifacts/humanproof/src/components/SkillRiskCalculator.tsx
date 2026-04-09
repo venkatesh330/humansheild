@@ -4,12 +4,16 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, Cell,
 } from 'recharts';
-import { skillsDataNew, Skill } from '../data/skillsDataNew';
+import { skillsDataNew } from '../data/skillsDataNew';
 import { getRiskLabel } from '../utils/riskCalculations';
 import { useHumanProof } from '../context/HumanProofContext';
-import { SKILL_INSIGHTS_2026, SkillInsight } from '../data/skillInsights';
+import { SKILL_INSIGHTS_2026 } from '../data/skillInsights';
 import { RESEARCH_SOURCES_2026 } from '../data/sources2026';
 import { projectSkillRisk, getProjectionGuidance, aggregatePortfolioRisk } from '../utils/riskProjection';
+import { discoverSkillRisk, DynamicSkillResult } from '../services/ensemble/skillDiscoveryAgent';
+import { Skill, SkillInsight, WeightedSkill } from '../types/skillRisk';
+import { SkillIntelligenceCard } from './SkillRisk/SkillIntelligenceCard';
+import { Search, Sparkles, AlertCircle, Info, ChevronRight, X, PlusCircle, Activity } from 'lucide-react';
 
 const MAX_SKILLS = 50;
 
@@ -97,33 +101,7 @@ function getRelevantAITools(insight: SkillInsight, industry: string | null): str
   return filtered.length > 0 ? filtered : allTools.slice(0, 2);
 }
 
-function getSkillInsight(skill: Skill): SkillInsight {
-  const explicit = SKILL_INSIGHTS_2026[skill.name];
-  if (explicit) return explicit;
-  if (skill.riskScore < 30) {
-    return {
-      why_protected: `${skill.name} requires human judgment, trust, or embodied experience that AI cannot reliably replicate.`,
-      action: `Document measurable outcomes where your ${skill.name.toLowerCase()} created irreplaceable value.`,
-    };
-  } else if (skill.riskScore >= 70) {
-    return {
-      threat: `AI tooling is automating core ${skill.name.toLowerCase()} workflows. Score ${skill.riskScore} places this in the high-displacement zone.`,
-      pivot: `Identify the highest-complexity applications of ${skill.name.toLowerCase()} that require uniquely human judgment and reposition there.`,
-    };
-  }
-  return {
-    threat: `${skill.name} sits in a mid-range risk zone — parts are automatable, others are not.`,
-    action: `Focus on the most judgment-intensive applications of ${skill.name.toLowerCase()} and document your edge.`,
-  };
-}
-
 const LS_KEY = 'hp_skill_selections';
-
-interface WeightedSkill extends Skill {
-  weight: 0.5 | 1 | 2;
-  // Section 2.5 — trend delta from pre-2026 baseline
-  trendDelta?: number;
-}
 
 // Section 2.5 — Trend delta computation
 function getTrendArrow(delta?: number): { arrow: string; color: string; label: string } | null {
@@ -137,8 +115,11 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
   const { state, dispatch } = useHumanProof();
   const [search, setSearch] = useState('');
   const [selectedSkills, setSelectedSkills] = useState<WeightedSkill[]>([]);
+  const [dynamicInsights, setDynamicInsights] = useState<Record<string, SkillInsight>>({});
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [customSkill, setCustomSkill] = useState('');
+  const [isProfiling, setIsProfiling] = useState<string | null>(null);
+  const [isHydrating, setIsHydrating] = useState(false);
+  const [skillBeingHydrated, setSkillBeingHydrated] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState<1 | 3 | 5>(1);
@@ -184,9 +165,81 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
 
   const addSkill = (skill: Skill) => {
     if (selectedSkills.length >= MAX_SKILLS) return;
+    if (selectedSkills.find(s => s.name.toLowerCase() === skill.name.toLowerCase())) {
+       setSearch('');
+       setDropdownOpen(false);
+       return;
+    }
     setSelectedSkills(prev => [...prev, { ...skill, weight: 1 }]);
     setSearch('');
-    setDropdownOpen(false); // Close dropdown after selection
+    setDropdownOpen(false); 
+  };
+
+  const handleMagicSearch = async () => {
+    const skillName = search.trim();
+    if (!skillName || selectedSkills.length >= MAX_SKILLS) return;
+    
+    // Check if it's already in the local list (preseeded)
+    const exact = skillsDataNew.find(s => s.name.toLowerCase() === skillName.toLowerCase());
+    if (exact) {
+      addSkill(exact);
+      return;
+    }
+
+    // AI Discovery
+    setIsProfiling(skillName);
+    setDropdownOpen(false);
+    
+    const result = await discoverSkillRisk(skillName);
+    setIsProfiling(null);
+
+    if (result) {
+      setDynamicInsights(prev => ({ ...prev, [result.skill.name]: result.insight }));
+      setSelectedSkills(prev => [...prev, { ...result.skill, weight: 1 }]);
+      setSearch('');
+    } else {
+      // Basic fallback
+      const fallbackScore = scoreCustomSkill(skillName, state.industry);
+      setSelectedSkills(prev => [...prev, {
+        id: Date.now(),
+        name: skillName,
+        category: 'Analysis Pending',
+        riskScore: fallbackScore,
+        trend: 'stable',
+        weight: 1
+      }]);
+      setSearch('');
+    }
+  };
+
+  const hydrateSkills = async () => {
+    const unhydrated = selectedSkills.filter(s => !s.factors && !dynamicInsights[s.name]);
+    if (unhydrated.length === 0) {
+      setShowResults(true);
+      return;
+    }
+
+    setIsHydrating(true);
+    
+    // Hydrate sequentially to avoid overwhelming the rate limit
+    for (const skill of unhydrated) {
+      setSkillBeingHydrated(skill.name);
+      const result = await discoverSkillRisk(skill.name);
+      if (result) {
+        setDynamicInsights(prev => ({ ...prev, [result.skill.name]: result.insight }));
+        setSelectedSkills(prev => prev.map(s => s.name === skill.name ? { ...s, ...result.skill } : s));
+      }
+    }
+    setSkillBeingHydrated(null);
+
+    setIsHydrating(false);
+    setShowResults(true);
+    dispatch({ 
+      type: 'SET_SKILL_RISK', 
+      score: weightedScore, 
+      skills: selectedSkills, 
+      breakdown: selectedSkills 
+    });
   };
 
   const removeSkill = (id: number) => {
@@ -198,19 +251,8 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
     setSelectedSkills(prev => prev.map(s => s.id === id ? { ...s, weight } : s));
   };
 
-  const addCustomSkill = () => {
-    if (!customSkill.trim() || selectedSkills.length >= MAX_SKILLS) return;
-    const riskScore = scoreCustomSkill(customSkill, state.industry);
-    const newSkill: WeightedSkill = {
-      id: Date.now(),
-      name: customSkill.trim(),
-      category: 'Custom',
-      riskScore,
-      trend: 'rising',
-      weight: 1,
-    };
-    setSelectedSkills(prev => [...prev, newSkill]);
-    setCustomSkill('');
+  const handleCalculate = async () => {
+    await hydrateSkills();
   };
 
   const hasCustomWeights = selectedSkills.some(s => s.weight !== 1);
@@ -222,11 +264,9 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
       )
     : 0;
 
-  const sorted = [...selectedSkills].sort((a, b) => a.riskScore - b.riskScore);
-  const safestTake = Math.min(3, Math.max(1, Math.floor(sorted.length / 2)));
-  const safest = sorted.slice(0, safestTake);
-  const safestIds = new Set(safest.map(s => s.id));
-  const riskiest = [...sorted].reverse().slice(0, 3).filter(s => !safestIds.has(s.id));
+  const sorted = [...selectedSkills].sort((a, b) => b.riskScore - a.riskScore);
+
+  const riskInfo = getRiskLabel(weightedScore);
 
   const radarData = selectedSkills.map(s => ({
     skill: s.name.length > 14 ? s.name.slice(0, 13) + '…' : s.name,
@@ -238,14 +278,6 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
     score: s.riskScore,
     color: getRiskLabel(s.riskScore).cssVar,
   }));
-
-  const handleCalculate = () => {
-    if (selectedSkills.length === 0) return;
-    setShowResults(true);
-    dispatch({ type: 'SET_SKILL_RISK', score: weightedScore, skills: selectedSkills, breakdown: selectedSkills });
-  };
-
-  const riskInfo = getRiskLabel(weightedScore);
 
   const weightBtn = (id: number, w: 0.5 | 1 | 2, label: string, current: 0.5 | 1 | 2) => (
     <button
@@ -277,77 +309,91 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
         </p>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 24, position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
           <label style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Search Skills
+            Unified Skill Search
           </label>
           <div style={{ fontSize: '0.7rem', color: 'var(--cyan)', fontFamily: 'var(--mono)' }}>
-            228 available • {selectedSkills.length}/{MAX_SKILLS} selected
+            Global Coverage • {selectedSkills.length}/{MAX_SKILLS} selected
           </div>
         </div>
         <div style={{ position: 'relative' }} ref={dropdownRef}>
+          <div style={{ position: 'absolute', left: '14px', top: '12px', color: 'var(--text2)' }}>
+            <Search size={18} />
+          </div>
           <input
             type="text"
             value={search}
             onChange={e => { setSearch(e.target.value); setDropdownOpen(true); }}
             onFocus={() => setDropdownOpen(true)}
-            placeholder="Search 228 skills by name or category…"
-            style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border2)', borderRadius: 8, padding: '10px 14px', color: 'var(--text)', fontFamily: 'var(--body)', fontSize: '0.9rem', outline: 'none' }}
+            onKeyDown={e => e.key === 'Enter' && handleMagicSearch()}
+            placeholder="Type any skill (e.g. Python, AI Ethics, Strategy)..."
+            style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border2)', borderRadius: 10, padding: '12px 14px 12px 42px', color: 'var(--text)', fontFamily: 'var(--body)', fontSize: '1rem', outline: 'none', transition: 'border 0.2s' }}
           />
-          {dropdownOpen && filtered.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#111128', border: '1px solid var(--border2)', borderRadius: 8, maxHeight: 280, overflowY: 'auto', marginTop: 4 }} onClick={() => setDropdownOpen(false)}>
+          
+          {isProfiling && (
+            <div style={{ position: 'absolute', right: '12px', top: '12px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(17,17,40,0.8)', padding: '4px 10px', borderRadius: '6px' }}>
+              <div style={{ width: 14, height: 14, border: '2px solid rgba(0,245,255,0.2)', borderTopColor: 'var(--cyan)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <span style={{ fontSize: '0.75rem', color: 'var(--cyan)', fontFamily: 'var(--mono)' }}>Analysing {isProfiling}...</span>
+            </div>
+          )}
+
+          {dropdownOpen && (filtered.length > 0 || search.trim().length > 1) && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#111128', border: '1px solid var(--border2)', borderRadius: 8, maxHeight: 320, overflowY: 'auto', marginTop: 8, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)' }}>
               {filtered.map(skill => {
                 const { label, cssVar } = getRiskLabel(skill.riskScore);
-                // Section 2.5 — show trend arrow in dropdown
                 const trend = getTrendArrow((skill as any).trendDelta);
                 return (
                   <div
                     key={skill.id}
                     onClick={() => addSkill(skill)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
                     <div>
-                      <div style={{ color: 'var(--text)', fontSize: '0.875rem' }}>{skill.name}</div>
+                      <div style={{ color: 'var(--text)', fontSize: '0.9rem', fontWeight: 500 }}>{skill.name}</div>
                       <div style={{ color: 'var(--text2)', fontSize: '0.75rem' }}>{skill.category}</div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                       {trend && (
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: '0.72rem', color: trend.color }} title={trend.label}>
-                          {trend.arrow}
-                        </span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: '0.72rem', color: trend.color }}>{trend.arrow}</span>
                       )}
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: cssVar }}>{skill.riskScore}</span>
-                      <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: 4, border: `1px solid ${cssVar}`, color: cssVar }}>{label}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: '0.85rem', color: cssVar, fontWeight: 700 }}>{skill.riskScore}</span>
+                      <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: 4, border: `1px solid ${cssVar}`, color: cssVar }}>{label}</span>
                     </div>
                   </div>
                 );
               })}
+              
+              {search.trim().length > 1 && !filtered.find(f => f.name.toLowerCase() === search.trim().toLowerCase()) && (
+                <div
+                  onClick={handleMagicSearch}
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', cursor: 'pointer', background: 'rgba(0,245,255,0.03)', borderTop: '1px solid rgba(0,245,255,0.1)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,245,255,0.08)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,245,255,0.03)')}
+                >
+                  <Sparkles size={18} color="var(--cyan)" />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: 'var(--text)', fontSize: '0.9rem', fontWeight: 600 }}>Discover risk for "{search}"</div>
+                    <div style={{ color: 'var(--text2)', fontSize: '0.75rem' }}>Full AI Labor Market Analysis • (Gemma 3)</div>
+                  </div>
+                  <ChevronRight size={16} color="var(--cyan)" />
+                </div>
+              )}
             </div>
           )}
         </div>
-
-        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-          <input
-            type="text"
-            value={customSkill}
-            onChange={e => setCustomSkill(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addCustomSkill()}
-            placeholder="Or type a custom skill…"
-            style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px', color: 'var(--text)', fontFamily: 'var(--body)', fontSize: '0.875rem', outline: 'none' }}
-          />
-          <button onClick={addCustomSkill} style={{ background: 'transparent', border: '1px solid var(--cyan)', color: 'var(--cyan)', borderRadius: 8, padding: '8px 16px', fontFamily: 'var(--mono)', fontSize: '0.75rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Add
-          </button>
+        
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: '8px', color: '#4b5563', fontSize: '0.75rem' }}>
+          <Info size={14} />
+          <span>Press Enter to analyze custom skills with real-time AI modeling.</span>
         </div>
-        {customSkill && (
-          <div style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text2)' }}>
-            Estimated score: <span style={{ color: 'var(--cyan)', fontFamily: 'var(--mono)' }}>{scoreCustomSkill(customSkill, state.industry)}</span>
-            {' '}— based on 2026 keyword + industry analysis
-          </div>
-        )}
+
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
       </div>
 
       {selectedSkills.length > 0 && (
@@ -382,77 +428,129 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
       )}
 
       {selectedSkills.length > 0 && !showResults && (
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', marginTop: 32 }}>
           <button
-            onClick={handleCalculate}
-            style={{ background: 'var(--cyan)', color: 'var(--bg)', border: 'none', borderRadius: 8, padding: '12px 32px', fontFamily: 'var(--mono)', fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+            onClick={hydrateSkills}
+            disabled={isHydrating}
+            className="premium-pulse"
+            style={{
+              background: 'linear-gradient(135deg, var(--cyan) 0%, #00d4ff 100%)',
+              color: '#0a0a1a',
+              border: 'none',
+              borderRadius: 12,
+              padding: '16px 48px',
+              fontSize: '1rem',
+              fontWeight: 700,
+              fontFamily: 'var(--mono)',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 12,
+              boxShadow: '0 0 30px rgba(0,245,255,0.3)',
+              transition: 'all 0.3s ease',
+              opacity: isHydrating ? 0.7 : 1
+            }}
           >
-            Analyse My Skill Profile →
+            {isHydrating ? (
+              <>
+                <div style={{ width: 18, height: 18, border: '2px solid rgba(10,10,26,0.2)', borderTopColor: 'var(--bg)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                HYDRATING INTELLIGENCE...
+              </>
+            ) : (
+              <>
+                ANALYSE MY SKILL PROFILE
+                <ChevronRight size={20} />
+              </>
+            )}
           </button>
+          <p style={{ color: 'var(--text2)', fontSize: '0.75rem', marginTop: 12, opacity: 0.6 }}>
+            {isHydrating ? 'Decomposing skill set into multi-factor components...' : 'Powered by Multi-Model Ensemble Consensus (Gemma 3 + Gemini 2)'}
+          </p>
         </div>
       )}
 
       {showResults && selectedSkills.length > 0 && (
         <div className="reveal">
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 28, marginBottom: 24, textAlign: 'center' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-              {hasCustomWeights ? 'Weighted' : 'Average'} Skill Risk Score (2026)
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 16, padding: '32px 40px', marginBottom: 40, textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--cyan), transparent)' }} />
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '0.8rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 16 }}>
+              Aggregated Skill Portfolio Risk (2026)
             </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '4rem', fontWeight: 700, color: riskInfo.cssVar, lineHeight: 1 }}>{weightedScore}</div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginTop: 10 }}>
-              <div style={{ fontSize: '0.85rem', padding: '4px 16px', borderRadius: 20, border: `1px solid ${riskInfo.cssVar}`, color: riskInfo.cssVar }}>{riskInfo.label}</div>
-              {hasCustomWeights && (
-                <div style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: 12, background: 'rgba(0,245,255,0.1)', border: '1px solid rgba(0,245,255,0.3)', color: 'var(--cyan)' }}>
-                  Weighted analysis
-                </div>
-              )}
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '5rem', fontWeight: 800, color: riskInfo.cssVar, lineHeight: 1, textShadow: `0 0 40px ${riskInfo.cssVar}33` }}>{weightedScore}</div>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', alignItems: 'center', marginTop: 20 }}>
+              <div style={{ fontSize: '0.9rem', padding: '6px 20px', borderRadius: 20, border: `1px solid ${riskInfo.cssVar}`, color: riskInfo.cssVar, fontWeight: 600 }}>{riskInfo.label}</div>
+              <div style={{ fontSize: '0.7rem', padding: '6px 12px', borderRadius: 12, background: 'rgba(0,245,255,0.1)', border: '1px solid rgba(0,245,255,0.3)', color: 'var(--cyan)', fontFamily: 'var(--mono)' }}>
+                ENSEMBLE VERIFIED
+              </div>
             </div>
 
-            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Future Year Projections</div>
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 32, paddingTop: 32, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 20 }}>Projected Risk Trajectory</div>
+              <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
                 {[1, 3, 5].map(year => {
                   const proj = aggregatePortfolioRisk(selectedSkills, year as 1 | 3 | 5);
                   const projInfo = getRiskLabel(proj);
+                  const active = selectedTimeframe === year;
                   return (
                     <button
                       key={year}
                       onClick={() => setSelectedTimeframe(year as 1 | 3 | 5)}
                       style={{
-                        background: selectedTimeframe === year ? `${projInfo.cssVar}20` : 'transparent',
-                        border: `1px solid ${selectedTimeframe === year ? projInfo.cssVar : 'var(--border2)'}`,
-                        borderRadius: 8,
-                        padding: '10px 16px',
+                        background: active ? `${projInfo.cssVar}15` : 'rgba(255,255,255,0.02)',
+                        border: `1px solid ${active ? projInfo.cssVar : 'rgba(255,255,255,0.08)'}`,
+                        borderRadius: 12,
+                        padding: '14px 24px',
                         cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        textAlign: 'center'
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        textAlign: 'center',
+                        minWidth: 100
                       }}
                     >
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: '1.2rem', fontWeight: 700, color: projInfo.cssVar }}>{proj}</div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text2)', marginTop: 4 }}>Year {2026 + year}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '1.5rem', fontWeight: 800, color: projInfo.cssVar }}>{proj}</div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text2)', marginTop: 6, fontFamily: 'var(--mono)' }}>YEAR {2026 + year}</div>
                     </button>
                   );
                 })}
               </div>
-              <div style={{ marginTop: 12, fontSize: '0.75rem', color: 'var(--text2)', fontStyle: 'italic' }}>
-                {getProjectionGuidance(weightedScore, aggregatePortfolioRisk(selectedSkills, 5), selectedSkills.length > 0 ? (selectedSkills.some(s => s.trend === 'rising') ? 'rising' : 'stable') : 'stable')}
-              </div>
             </div>
           </div>
 
-          {/* NEW-01: Peer Benchmark for Skill Risk */}
-          <PeerBenchmark
-            score={weightedScore}
-            scoreType="skill"
-            jobTitle={state.jobTitle}
-            industry={state.industry}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 32, marginBottom: 40 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--cyan)' }} />
+              <h2 style={{ fontSize: '1.25rem', color: 'var(--text)', margin: 0, fontWeight: 600 }}>Decision Intelligence Feed</h2>
+              <div style={{ height: 1, flex: 1, background: 'linear-gradient(90deg, rgba(0,245,255,0.2), transparent)' }} />
+            </div>
+            
+            {sorted.map(s => {
+              const explicit = SKILL_INSIGHTS_2026[s.name];
+              const dynamic = dynamicInsights[s.name];
+              const displayInsight = dynamic || (explicit as any);
 
-          {/* v3 FIX: show radar at 4+ skills (triangle at 3 looks odd); bar chart for ≤3 */}
-          {selectedSkills.length >= 4 ? (
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 24 }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Skill Risk Radar</div>
-              <ResponsiveContainer width="100%" height={320}>
+              return (
+                <SkillIntelligenceCard 
+                  key={s.id} 
+                  skill={s} 
+                  insight={displayInsight} 
+                  isHydrating={skillBeingHydrated === s.name}
+                />
+              );
+            })}
+          </div>
+
+          <div style={{ marginBottom: 40 }}>
+            <PeerBenchmark
+              score={weightedScore}
+              scoreType="skill"
+              jobTitle={state.jobTitle}
+              industry={state.industry}
+            />
+          </div>
+
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 12, padding: 32, marginBottom: 40 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 24 }}>Skill Risk Portfolio Mapping</div>
+            {selectedSkills.length >= 4 ? (
+              <ResponsiveContainer width="100%" height={360}>
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="rgba(0,245,255,0.12)" />
                   <PolarAngleAxis dataKey="skill" tick={{ fill: 'var(--text2)', fontSize: 11 }} />
@@ -460,11 +558,8 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
                   <Tooltip contentStyle={{ background: '#111128', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)' }} />
                 </RadarChart>
               </ResponsiveContainer>
-            </div>
-          ) : (
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 24 }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Skill Risk Breakdown</div>
-              <ResponsiveContainer width="100%" height={Math.max(80, selectedSkills.length * 52)}>
+            ) : (
+              <ResponsiveContainer width="100%" height={selectedSkills.length * 60}>
                 <BarChart data={barData} layout="vertical" margin={{ top: 5, right: 40, left: 10, bottom: 5 }}>
                   <XAxis type="number" domain={[0, 100]} tick={{ fill: 'var(--text2)', fontSize: 11 }} axisLine={{ stroke: 'var(--border)' }} />
                   <YAxis dataKey="name" type="category" width={140} tick={{ fill: 'var(--text2)', fontSize: 11 }} axisLine={{ stroke: 'var(--border)' }} />
@@ -474,95 +569,45 @@ export default function SkillRiskCalculator({ onNavigate }: { onNavigate?: (tab:
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
-            <div style={{ background: 'rgba(0,255,159,0.05)', border: '1px solid rgba(0,255,159,0.2)', borderRadius: 12, padding: 20 }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', color: 'var(--emerald)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>✓ Your Safest Skills</div>
-              {safest.map(s => {
-                const insight = getSkillInsight(s);
-                return (
-                  <div key={s.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ color: 'var(--text)', fontSize: '0.85rem', fontWeight: 500 }}>{s.name}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: '0.85rem', color: 'var(--emerald)', fontWeight: 700 }}>{s.riskScore}</span>
-                    </div>
-                    {insight.why_protected && <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 4, fontStyle: 'italic', lineHeight: 1.4 }}>{insight.why_protected}</div>}
-                    {insight.action && <div style={{ fontSize: '0.72rem', color: 'var(--cyan)', marginTop: 4 }}>→ {insight.action}</div>}
-                    {insight.source && <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>Source: {insight.source}</div>}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ background: 'rgba(255,71,87,0.05)', border: '1px solid rgba(255,71,87,0.2)', borderRadius: 12, padding: 20 }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>⚠ Highest Risk Skills</div>
-              {riskiest.map(s => {
-                const insight = getSkillInsight(s);
-                // Section 2.3 — filter aiTools by industry
-                const relevantTools = getRelevantAITools(insight, state.industry);
-                return (
-                  <div key={s.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ color: 'var(--text)', fontSize: '0.85rem', fontWeight: 500 }}>{s.name}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {/* Section 2.5 — trend arrow on results */}
-                        {s.trendDelta && s.trendDelta > 5 && (
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', color: 'var(--red)' }} title={`+${s.trendDelta} risk increase since 2025`}>↑</span>
-                        )}
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: '0.85rem', color: 'var(--red)', fontWeight: 700 }}>{s.riskScore}</span>
-                      </div>
-                    </div>
-                    {insight.threat && <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 4, fontStyle: 'italic', lineHeight: 1.4 }}>{insight.threat}</div>}
-                    {relevantTools.length > 0 && (
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-                        {relevantTools.map(tool => (
-                          <span key={tool} style={{ fontSize: '0.62rem', padding: '2px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'var(--text2)', border: '1px solid rgba(255,255,255,0.12)' }}>{tool}</span>
-                        ))}
-                      </div>
-                    )}
-                    {insight.pivot && <div style={{ fontSize: '0.72rem', color: 'var(--cyan)', marginTop: 4 }}>→ {insight.pivot}</div>}
-                  </div>
-                );
-              })}
-            </div>
+            )}
           </div>
 
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 32 }}>
             <button
               onClick={() => setShowSources(v => !v)}
-              style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 6, padding: '6px 14px', fontFamily: 'var(--mono)', fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+              style={{ background: 'none', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 8, padding: '10px 20px', fontFamily: 'var(--mono)', fontSize: '0.75rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}
             >
-              {showSources ? '▲ Hide' : '▼ Show'} 2026 Research Sources
+              {showSources ? '▲ Hide' : '▼ Show'} 2026 Empirical Sources
             </button>
             {showSources && (
-              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
                 {RESEARCH_SOURCES_2026.map((src, i) => (
-                  <div key={i} style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 8 }}>
-                    <a href={src.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--cyan)', fontSize: '0.8rem', fontWeight: 500 }}>{src.name}</a>
-                    <div style={{ color: 'var(--text2)', fontSize: '0.75rem', marginTop: 4 }}>{src.key_finding}</div>
+                  <div key={i} style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border2)', borderRadius: 10 }}>
+                    <a href={src.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--cyan)', fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none' }}>{src.name}</a>
+                    <div style={{ color: 'var(--text2)', fontSize: '0.75rem', marginTop: 6, lineHeight: 1.4 }}>{src.key_finding}</div>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <button
               onClick={() => onNavigate?.('roadmap')}
-              style={{ flex: 1, minWidth: 180, background: 'var(--cyan)', color: 'var(--bg)', border: 'none', borderRadius: 8, padding: '12px 20px', fontFamily: 'var(--mono)', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.06em' }}
+              style={{ flex: 1, minWidth: 200, background: 'var(--cyan)', color: 'var(--bg)', border: 'none', borderRadius: 12, padding: '16px 24px', fontFamily: 'var(--mono)', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.06em', boxShadow: '0 4px 20px rgba(0,245,255,0.2)' }}
             >
               See Upskilling Roadmap →
             </button>
             <button
               onClick={() => onNavigate?.('progress')}
-              style={{ flex: 1, minWidth: 180, background: 'transparent', border: '1px solid var(--violet)', color: 'var(--violet-light)', borderRadius: 8, padding: '12px 20px', fontFamily: 'var(--mono)', fontSize: '0.8rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.06em' }}
+              style={{ flex: 1, minWidth: 200, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 12, padding: '16px 24px', fontFamily: 'var(--mono)', fontSize: '0.85rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.06em' }}
             >
-              Share My Profile →
+              Share Analysis Profile
             </button>
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { ScoreResult, ScoreBreakdown } from '../../services/layoffScoreEngine';
+import { EnsembleResult } from '../../services/ensemble/ensembleOrchestrator';
 import { LayoffActionPlan } from './LayoffActionPlan';
 import { layoffNewsCache } from '../../data/layoffNewsCache';
 
 interface Props {
-  result: ScoreResult;
+  result: ScoreResult | EnsembleResult;
   roleTitle: string;
   companyName: string;
   dataUpdatedDate?: string;
@@ -13,6 +14,139 @@ interface Props {
   onRetake: () => void;
   onSwitchTab?: (tabId: string) => void;
 }
+
+// ── Type guard ───────────────────────────────────────────────────
+const isEnsemble = (r: any): r is EnsembleResult => 'ensembleScore' in r;
+
+// ── Accuracy Badge ────────────────────────────────────────────────
+const AccuracyBadge: React.FC<{
+  accuracyLabel: EnsembleResult['accuracyLabel'];
+  confidencePercent: number;
+  modelsUsed: string[];
+}> = ({ accuracyLabel, confidencePercent, modelsUsed }) => {
+  const colorMap: Record<string, string> = { teal: '#14b8a6', green: '#10b981', amber: '#f59e0b', gray: '#6b7280' };
+  const c = colorMap[accuracyLabel.color] || '#6b7280';
+  return (
+    <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: '8px',
+        background: `${c}15`, border: `1px solid ${c}40`,
+        borderRadius: '24px', padding: '8px 18px', marginBottom: '8px',
+      }}>
+        <span style={{ width: '8px', height: '8px', background: c, borderRadius: '50%', animation: 'pulse 1.4s ease-in-out infinite' }} />
+        <span style={{ color: c, fontWeight: 600, fontSize: '0.85rem' }}>{accuracyLabel.label}</span>
+        <span style={{ color: '#9ba5b4', fontSize: '0.8rem' }}>·</span>
+        <span style={{ color: '#9ba5b4', fontSize: '0.8rem' }}>{confidencePercent}% confidence</span>
+      </div>
+      <p style={{ margin: 0, color: '#6b7280', fontSize: '0.8rem' }}>{accuracyLabel.detail}</p>
+      <p style={{ margin: '4px 0 0', color: '#4b5563', fontSize: '0.75rem' }}>
+        Models: {modelsUsed.map(m => ({
+          engine: 'Engine', 'gemma-3-27b': 'Gemma', 'deepseek-v3': 'DeepSeek',
+          'llama-3.3-70b': 'Llama', 'gemini-2.0-flash': 'Gemini',
+        }[m] || m)).join(' · ')}
+      </p>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }`}</style>
+    </div>
+  );
+};
+
+// ── Model Agreement Meter ─────────────────────────────────────────
+const ModelAgreementMeter: React.FC<{
+  modelAgreement: number;
+  individualScores: EnsembleResult['individualScores'];
+  hasOutlier: boolean;
+  outlierModels: string[];
+}> = ({ modelAgreement, individualScores, hasOutlier, outlierModels }) => {
+  const modelShortName = (m: string) => ({
+    engine: 'Engine', 'gemma-3-27b': 'Gemma', 'deepseek-v3': 'DeepSeek',
+    'llama-3.3-70b': 'Llama', 'gemini-2.0-flash': 'Gemini',
+  }[m] || m);
+  const scoreColor = (s: number) => s >= 65 ? '#ef4444' : s >= 40 ? '#f59e0b' : '#10b981';
+  const barColor = modelAgreement >= 80 ? '#14b8a6' : modelAgreement >= 60 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+      borderRadius: '12px', padding: '16px 20px', marginBottom: '20px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <span style={{ color: '#9ba5b4', fontSize: '0.85rem' }}>AI model consensus</span>
+        <span style={{ color: '#fff', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.95rem' }}>{modelAgreement}%</span>
+      </div>
+      <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden', marginBottom: '14px' }}>
+        <div style={{ height: '100%', width: `${modelAgreement}%`, background: barColor, borderRadius: '3px', transition: 'width 1s ease' }} />
+      </div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        {individualScores.map(s => (
+          <div key={s.model} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            background: 'rgba(255,255,255,0.04)', border: `1px solid ${scoreColor(s.score)}30`,
+            borderRadius: '8px', padding: '8px 12px', minWidth: '72px',
+          }}>
+            <span style={{ color: '#9ba5b4', fontSize: '0.7rem', marginBottom: '4px' }}>{modelShortName(s.model)}</span>
+            <span style={{ color: scoreColor(s.score), fontWeight: 700, fontFamily: 'monospace', fontSize: '1rem' }}>{Math.round(s.score)}%</span>
+          </div>
+        ))}
+      </div>
+      {hasOutlier && (
+        <p style={{ margin: '12px 0 0', color: '#f59e0b', fontSize: '0.78rem' }}>
+          ⚡ {outlierModels.map(m => modelShortName(m)).join(', ')} flagged a different signal — Gemini synthesis applied to resolve.
+        </p>
+      )}
+    </div>
+  );
+};
+
+// ── AI Insight Cards ──────────────────────────────────────────────
+const AIInsightCards: React.FC<{
+  dominantRisk: string | null;
+  keyProtection: string | null;
+  timeHorizon: string | null;
+  verificationNote: string | null;
+  engineScore: number;
+  ensembleScore: number;
+}> = ({ dominantRisk, keyProtection, timeHorizon, verificationNote, engineScore, ensembleScore }) => {
+  const formatTimeHorizon = (h: string) => ({
+    '3months': 'Next 3 months', '6months': 'Next 6 months',
+    '12months': 'Within a year', 'beyond12months': 'Beyond 12 months',
+  }[h] || h);
+  const adjustment = ensembleScore - engineScore;
+
+  const cards = [
+    dominantRisk    && { id: 'risk',    emoji: '⚠', label: 'Dominant risk',       value: dominantRisk,            borderColor: '#ef444440' },
+    keyProtection   && { id: 'protect', emoji: '🛡', label: 'Strongest protection', value: keyProtection,           borderColor: '#10b98140' },
+    timeHorizon     && { id: 'time',    emoji: '⏱', label: 'Risk window',          value: formatTimeHorizon(timeHorizon), borderColor: '#a78bfa40' },
+    verificationNote && { id: 'ai',     emoji: '◎', label: 'AI synthesis',         value: verificationNote,        borderColor: '#60a5fa40' },
+    Math.abs(adjustment) >= 3 && {
+      id: 'adj', emoji: adjustment > 0 ? '↑' : '↓',
+      label: 'Score adjustment vs engine',
+      value: `${adjustment > 0 ? '+' : ''}${adjustment} points (AI consensus ${adjustment > 0 ? 'higher' : 'lower'} than deterministic engine)`,
+      borderColor: '#f59e0b40',
+    },
+  ].filter(Boolean) as { id: string; emoji: string; label: string; value: string; borderColor: string }[];
+
+  if (!cards.length) return null;
+
+  return (
+    <div style={{ marginBottom: '24px' }}>
+      <h4 style={{ color: '#9ba5b4', fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '12px' }}>AI Insights</h4>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+        {cards.map(card => (
+          <div key={card.id} style={{
+            background: 'rgba(255,255,255,0.03)',
+            border: `1px solid ${card.borderColor}`,
+            borderRadius: '10px', padding: '14px 16px',
+          }}>
+            <div style={{ color: '#6b7280', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+              {card.emoji} {card.label}
+            </div>
+            <div style={{ color: '#e5e7eb', fontSize: '0.9rem', lineHeight: 1.4 }}>{card.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // Animated counter for score reveal
 const AnimatedScore: React.FC<{ target: number; color: string; size: number }> = ({ target, color, size }) => {
@@ -132,7 +266,8 @@ const shouldShowActionPlan = (tierColor: string): boolean => {
 };
 
 export const LayoffScoreDisplay: React.FC<Props> = ({ result, roleTitle, companyName, dataUpdatedDate, onSave, onShare, onRetake, onSwitchTab }) => {
-  const { score, tier, breakdown, confidence, disclaimer } = result;
+  const { score, tier, breakdown, disclaimer } = result;
+  const ensembleData = isEnsemble(result) ? result : null;
 
   const relevantNews = React.useMemo(() => {
     return layoffNewsCache.find(n => n.companyName.toLowerCase() === companyName.toLowerCase());
@@ -188,12 +323,47 @@ export const LayoffScoreDisplay: React.FC<Props> = ({ result, roleTitle, company
         <p style={{ margin: 0, color: '#d1d5db', fontSize: '1.05rem', lineHeight: 1.5 }}>{tier.advice}</p>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '8px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: '#9ba5b4', fontSize: '0.9rem' }}>Data source:</span>
+      {/* ── Ensemble accuracy badge (only shown when AI ensemble ran) ── */}
+      {ensembleData && (
+        <AccuracyBadge
+          accuracyLabel={ensembleData.accuracyLabel}
+          confidencePercent={ensembleData.confidencePercent}
+          modelsUsed={ensembleData.modelsUsed}
+        />
+      )}
+
+      {/* ── Model agreement meter ── */}
+      {ensembleData && ensembleData.individualScores?.length > 0 && (
+        <ModelAgreementMeter
+          modelAgreement={ensembleData.modelAgreement}
+          individualScores={ensembleData.individualScores}
+          hasOutlier={ensembleData.hasOutlier}
+          outlierModels={ensembleData.outlierModels}
+        />
+      )}
+
+      {/* ── AI insight cards ── */}
+      {ensembleData && (
+        <AIInsightCards
+          dominantRisk={ensembleData.dominantRisk}
+          keyProtection={ensembleData.keyProtection}
+          timeHorizon={ensembleData.timeHorizon}
+          verificationNote={ensembleData.geminiSynthesis?.verificationNote ?? null}
+          engineScore={ensembleData.engineScore}
+          ensembleScore={ensembleData.ensembleScore}
+        />
+      )}
+
+      {/* ── Data source row (fallback / legacy) ── */}
+      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px 16px', borderRadius: '8px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ color: '#9ba5b4', fontSize: '0.85rem' }}>Data source:</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>LIVE OSINT</span>
-          <strong style={{ color: '#fff' }}>{confidence}</strong>
-          <span title="Based on real-time cross-referenced data points from news and financial API aggregators." style={{ cursor: 'help', color: '#6b7280' }}>ⓘ</span>
+          {ensembleData
+            ? <span style={{ background: 'rgba(0,245,255,0.15)', color: '#00F5FF', padding: '2px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>4-AI ENSEMBLE</span>
+            : <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>LIVE OSINT</span>
+          }
+          <strong style={{ color: '#fff' }}>{result.confidence}</strong>
+          <span title="Based on AI ensemble analysis of public signals from 4 independent models." style={{ cursor: 'help', color: '#6b7280' }}>ⓘ</span>
         </div>
       </div>
 
