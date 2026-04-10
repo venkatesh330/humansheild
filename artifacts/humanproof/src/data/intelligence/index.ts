@@ -1,10 +1,10 @@
-import { CareerIntelligence } from './types';
-import { TECH_INTELLIGENCE } from './tech';
-import { FINANCE_INTELLIGENCE } from './finance';
-import { SERVICES_INTELLIGENCE } from './services';
-import { HEALTHCARE_INTELLIGENCE } from './healthcare';
-import { INDUSTRY_INTELLIGENCE } from './industry';
-import { CREATIVE_INTELLIGENCE } from './creative';
+import { CareerIntelligence } from './types.ts';
+import { TECH_INTELLIGENCE } from './tech.ts';
+import { FINANCE_INTELLIGENCE } from './finance.ts';
+import { SERVICES_INTELLIGENCE } from './services.ts';
+import { HEALTHCARE_INTELLIGENCE } from './healthcare.ts';
+import { INDUSTRY_INTELLIGENCE } from './industry.ts';
+import { CREATIVE_INTELLIGENCE } from './creative.ts';
 
 /**
  * MASTER_CAREER_INTELLIGENCE

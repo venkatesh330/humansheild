@@ -31,6 +31,7 @@ export const SafeCareersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSector, setSelectedSector] = useState('');
+  const [visibleCount, setVisibleCount] = useState(12);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -59,6 +60,9 @@ export const SafeCareersPage: React.FC = () => {
     const matchesSector = !selectedSector || c.sector === selectedSector;
     return matchesSearch && matchesSector;
   });
+
+  const visibleCareers = filtered.slice(0, visibleCount);
+  const hasMore = visibleCount < filtered.length;
 
   return (
     <div className="page-wrap" style={{ background: 'var(--bg)' }}>
@@ -150,7 +154,7 @@ export const SafeCareersPage: React.FC = () => {
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-            {filtered.map((career, i) => {
+            {visibleCareers.map((career, i) => {
               const r = RESISTANCE_MAP[career.ai_resistance] || RESISTANCE_MAP['High'];
               return (
                 <div key={career.id} className={`card card-hover reveal reveal-delay-${(i % 3) + 1}`} style={{ padding: '28px' }}>
@@ -189,6 +193,18 @@ export const SafeCareersPage: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {hasMore && !loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '48px', marginBottom: '80px' }}>
+            <button 
+              onClick={() => setVisibleCount(prev => prev + 12)}
+              className="btn btn-premium reveal"
+              style={{ padding: '16px 40px', fontSize: '0.9rem' }}
+            >
+              Load More Pathways
+            </button>
           </div>
         )}
       </div>

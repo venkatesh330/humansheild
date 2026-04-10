@@ -3,7 +3,7 @@ import path from 'path';
 
 const PROJECT_ID = 'ysenimczeasmaeojzlkt';
 const FUNCTION_NAME = 'calculate-grounded-risk';
-const ACCESS_TOKEN = 'sbp_fbd3daae223834c661a94f77565c5c0578ed39bd'; 
+const ACCESS_TOKEN = 'sbp_c6848ab9483c77c00cf7f1dda0cbc172e6b01495'; 
 
 async function deploy() {
   console.log(`Starting deployment for ${FUNCTION_NAME}...`);

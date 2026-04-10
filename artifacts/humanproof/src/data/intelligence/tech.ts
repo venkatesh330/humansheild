@@ -1,4 +1,4 @@
-import { CareerIntelligence } from './types';
+import { CareerIntelligence } from './types.ts';
 
 export const TECH_INTELLIGENCE: Record<string, CareerIntelligence> = {
   sw_backend: {
@@ -31,11 +31,6 @@ export const TECH_INTELLIGENCE: Record<string, CareerIntelligence> = {
     inactionScenario: 'Pure UI "painters" will be replaced. Success requires moving toward UX strategy and design systems.',
     riskTrend: [{ year: 2024, riskScore: 45, label: 'Now' }, { year: 2027, riskScore: 75, label: '+3yr' }],
     confidenceScore: 92,
-    roadmap: {
-      '0-2': {
-        phase_1: { timeline: '30 days', focus: 'Generative UI', actions: [{ action: 'Master v0.dev and Shadcn', why: 'Focus on assembly.', outcome: 'UI Speed' }] },
-      }
-    }
   },
   sw_cloud: {
     displayRole: 'Cloud Engineer',
@@ -49,64 +44,209 @@ export const TECH_INTELLIGENCE: Record<string, CareerIntelligence> = {
     inactionScenario: 'Standard "console-clickers" will be obsolete. Success requires moving toward High-scale Architecture and FinOps.',
     riskTrend: [{ year: 2024, riskScore: 28, label: 'Now' }, { year: 2027, riskScore: 45, label: '+3yr' }],
     confidenceScore: 95,
-    roadmap: {
-      '2-5': {
-        phase_1: { timeline: '30 days', focus: 'Multi-Cloud', actions: [{ action: 'AWS Certified Solutions Architect - Professional', why: 'Essential level.', outcome: 'Certified' }] },
-      }
-    }
   },
   it_cybersec: {
     displayRole: 'Cybersecurity Analyst',
     summary: 'High resilience due to the zero-sum game of offense/defense; AI augments threat detection.',
     skills: {
       obsolete: [{ skill: 'Standard log analysis', riskScore: 95, riskType: 'Automatable', horizon: '1yr', reason: 'AI-SIEM platforms flag 99% of routine anomalies.', aiReplacement: 'Full' }],
-      at_risk: [{ skill: 'Phishing simulation', riskScore: 82, riskType: 'Augmented', horizon: '1yr', reason: 'AI generates more convincing social engineering.', aiReplacement: 'Full' }],
       safe: [{ skill: 'Novel Threat Hunting', whySafe: 'Responding to zero-day attacks requires non-linear human adversarial thinking.', longTermValue: 99, difficulty: 'Very High' }],
     },
     careerPaths: [{ role: 'DevSecOps Engineer', riskReduction: 52, skillGap: 'CI/CD security, Policy-as-code', transitionDifficulty: 'Hard', industryMapping: ['Tech'], salaryDelta: '+40–80%', timeToTransition: '18 months' }],
-    inactionScenario: 'SOC Tier 1 analysts will be obsolete. Success requires moving to incident response and offensive security.',
     riskTrend: [{ year: 2024, riskScore: 18, label: 'Now' }, { year: 2027, riskScore: 35, label: '+3yr' }],
     confidenceScore: 98,
-    roadmap: {
-      '5-10': {
-        phase_1: { timeline: '30 days', focus: 'AI Security', actions: [{ action: 'Complete a course in LLM Red Teaming', why: 'The new high-value niche.', outcome: 'Red Team expert' }] },
-      }
-    }
   },
   it_qa: {
     displayRole: 'QA Engineer',
-    summary: 'High disruption in standard test case generation and execution; resilience in strategic test planning and edge case discovery.',
+    summary: 'High disruption in standard test case generation; resilience in strategic test planning.',
     skills: {
-      obsolete: [{ skill: 'Standard test case execution', riskScore: 98, riskType: 'Automatable', horizon: '1yr', reason: 'AI agents (Cypress AI) execute and self-heal tests autonomously.', aiReplacement: 'Full', aiTool: 'Cypress AI' }],
-      at_risk: [{ skill: 'Manual regression testing', riskScore: 92, riskType: 'Augmented', horizon: '1yr', reason: 'AI identifies visual and logical regressions instantly.', aiReplacement: 'Full' }],
-      safe: [{ skill: 'Strategic Test Architecture', whySafe: 'Designing the "Quality Culture" and determining what AI should/should not test.', longTermValue: 95, difficulty: 'High' }],
+      obsolete: [{ skill: 'Standard test case execution', riskScore: 98, riskType: 'Automatable', horizon: '1yr', reason: 'AI agents execute and self-heal tests.', aiReplacement: 'Full' }],
+      safe: [{ skill: 'Strategic Test Architecture', whySafe: 'Designing the "Quality Culture" and choosing what to test.', longTermValue: 95, difficulty: 'High' }],
     },
-    careerPaths: [{ role: 'QA Automation Lead (AI Focused)', riskReduction: 55, skillGap: 'AI self-healing scripts, visual testing tools', transitionDifficulty: 'Medium', industryMapping: ['Tech'], salaryDelta: '+25–45%', timeToTransition: '9 months' }],
-    inactionScenario: 'Manual testers will face extreme salary compression. Success requires moving to Automation Architecture and AI-driven quality strategy.',
+    careerPaths: [{ role: 'QA Automation Lead (AI)', riskReduction: 55, skillGap: 'Self-healing scripts', transitionDifficulty: 'Medium', industryMapping: ['Tech'], salaryDelta: '+25–45%', timeToTransition: '9 months' }],
     riskTrend: [{ year: 2024, riskScore: 55, label: 'Now' }, { year: 2027, riskScore: 85, label: '+3yr' }],
     confidenceScore: 92,
-    roadmap: {
-      '0-2': {
-        phase_1: { timeline: '30 days', focus: 'Automation Tools', actions: [{ action: 'Learn Playwright and Playwright AI', why: 'Modern automation baseline.', outcome: 'Automation expert' }] },
-      }
-    }
   },
-  sw_fullstack: {
-    displayRole: 'Full Stack Developer',
-    summary: 'Moderate resilience due to systems-level thinking; high disruption in standard feature development.',
+  mob_ios: {
+    displayRole: 'iOS Developer',
+    summary: 'Moderate resilience in hardware integration.',
     skills: {
-      obsolete: [{ skill: 'Form and UI boilerplate', riskScore: 94, riskType: 'Automatable', horizon: '1yr', reason: 'AI generates full-stack features (UI, API, DB) from natural language.', aiReplacement: 'Full' }],
-      at_risk: [{ skill: 'Standard DB schema design', riskScore: 65, riskType: 'Augmented', horizon: '2yr', reason: 'AI optimizes schemas based on query patterns.', aiReplacement: 'Partial' }],
-      safe: [{ skill: 'Product Logic & Complex Integrations', whySafe: 'Synthesizing conflicting business requirements into working software.', longTermValue: 96, difficulty: 'High' }],
+      safe: [{ skill: 'On-device ML Integration', whySafe: 'Optimizing for local neural engines requires deep hardware intuition.', longTermValue: 95, difficulty: 'High' }],
     },
-    careerPaths: [{ role: 'Product Engineer', riskReduction: 52, skillGap: 'Product management, User research, Analytics', transitionDifficulty: 'Medium', industryMapping: ['Startups'], salaryDelta: '+20–40%', timeToTransition: '12 months' }],
-    inactionScenario: 'Standard "feature-shippers" will be replaced. Success requires moving toward Product Engineering and AI systems.',
+    careerPaths: [{ role: 'Mobile Platform Architect', riskReduction: 58, skillGap: 'CoreML', transitionDifficulty: 'Hard', industryMapping: ['Product'], salaryDelta: '+30–60%', timeToTransition: '18 months' }],
+    riskTrend: [{ year: 2024, riskScore: 35, label: 'Now' }, { year: 2027, riskScore: 60, label: '+3yr' }],
+    confidenceScore: 94,
+  },
+  ds_scientist: {
+    displayRole: 'Data Scientist',
+    summary: 'High disruption in modeling; resilience in problem formulation.',
+    skills: {
+      safe: [{ skill: 'Strategic Problem Formulation', whySafe: 'Defining "what" to solve for the business.', longTermValue: 98, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'AI Strategy Consultant', riskReduction: 65, skillGap: 'Business strategy', transitionDifficulty: 'Medium', industryMapping: ['Consulting'], salaryDelta: '+50–100%', timeToTransition: '12 months' }],
+    riskTrend: [{ year: 2024, riskScore: 40, label: 'Now' }, { year: 2027, riskScore: 72, label: '+3yr' }],
+    confidenceScore: 95,
+  },
+  ml_engineer: {
+    displayRole: 'ML Engineer',
+    summary: 'High resilience in architecture.',
+    skills: {
+      safe: [{ skill: 'AI System Architecture (RAG)', whySafe: 'Designing multi-component AI systems at scale.', longTermValue: 98, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'Chief AI Architect', riskReduction: 70, skillGap: 'Platform strategy', transitionDifficulty: 'Very Hard', industryMapping: ['Tech'], salaryDelta: '+100–300%', timeToTransition: '60 months' }],
+    riskTrend: [{ year: 2024, riskScore: 22, label: 'Now' }, { year: 2027, riskScore: 45, label: '+3yr' }],
+    confidenceScore: 98,
+  },
+  sw_embedded: {
+    displayRole: 'Embedded Developer',
+    summary: 'Exremely high resilience.',
+    skills: {
+      safe: [{ skill: 'Safety-Critical Design', whySafe: 'Developing firmware where failure is fatal.', longTermValue: 99, difficulty: 'Very High' }],
+    },
+    careerPaths: [{ role: 'Robotics Software Engineer', riskReduction: 45, skillGap: 'ROS', transitionDifficulty: 'Medium', industryMapping: ['IoT'], salaryDelta: '+30-60%', timeToTransition: '18 months' }],
+    riskTrend: [{ year: 2024, riskScore: 12, label: 'Now' }, { year: 2027, riskScore: 25, label: '+3yr' }],
+    confidenceScore: 98,
+  },
+  sw_legacy: {
+    displayRole: 'Legacy Systems (COBOL)',
+    summary: 'High resilience.',
+    skills: {
+      safe: [{ skill: 'Legacy Knowledge Moat', whySafe: 'Understanding "why" a system was built 40 years ago.', longTermValue: 98, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'Modernization Architect', riskReduction: 60, skillGap: 'Cloud patterns', transitionDifficulty: 'Hard', industryMapping: ['Banking'], salaryDelta: '+50-100%', timeToTransition: '24 months' }],
+    riskTrend: [{ year: 2024, riskScore: 15, label: 'Now' }, { year: 2027, riskScore: 30, label: '+3yr' }],
+    confidenceScore: 96,
+  },
+  it_sre: {
+    displayRole: 'SRE',
+    summary: 'High resilience.',
+    skills: {
+      safe: [{ skill: 'Novel Failure Diagnosis', whySafe: 'Solving "black swan" events in massive systems.', longTermValue: 99, difficulty: 'Very High' }],
+    },
+    careerPaths: [{ role: 'Platform Engineer', riskReduction: 55, skillGap: 'Developer experience', transitionDifficulty: 'Medium', industryMapping: ['Tech'], salaryDelta: '+30-60%', timeToTransition: '12 months' }],
+    riskTrend: [{ year: 2024, riskScore: 20, label: 'Now' }, { year: 2027, riskScore: 40, label: '+3yr' }],
+    confidenceScore: 98,
+  },
+  data_eng: {
+    displayRole: 'Data Engineer',
+    summary: 'Moderate resilience.',
+    skills: {
+      safe: [{ skill: 'Data Quality Governance & Ethics', whySafe: 'Ensuring biased data doesn\'t poison AI models.', longTermValue: 98, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'AI Infrastructure Engineer', riskReduction: 65, skillGap: 'Vector DBs', transitionDifficulty: 'Medium', industryMapping: ['Tech'], salaryDelta: '+40-80%', timeToTransition: '12 months' }],
+    riskTrend: [{ year: 2024, riskScore: 28, label: 'Now' }, { year: 2027, riskScore: 52, label: '+3yr' }],
+    confidenceScore: 97,
+  },
+  it_lead: {
+    displayRole: 'Tech Lead',
+    summary: 'High resilience.',
+    skills: {
+      safe: [{ skill: 'High-Stakes Mentorship', whySafe: 'Developing human talent.', longTermValue: 99, difficulty: 'Very High' }],
+    },
+    careerPaths: [{ role: 'VP Engineering', riskReduction: 45, skillGap: 'Business strategy', transitionDifficulty: 'Hard', industryMapping: ['Enterprise'], salaryDelta: '+50-150%', timeToTransition: '36 months' }],
+    riskTrend: [{ year: 2024, riskScore: 18, label: 'Now' }, { year: 2027, riskScore: 28, label: '+3yr' }],
+    confidenceScore: 98,
+  },
+  sw_devops: {
+    displayRole: 'DevOps Engineer',
+    summary: 'High resilience.',
+    skills: {
+      safe: [{ skill: 'Zero-Trust Architecture Design', whySafe: 'Designing security perimeters across multi-cloud.', longTermValue: 99, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'Platform Architect', riskReduction: 55, skillGap: 'IDP design', transitionDifficulty: 'Hard', industryMapping: ['Tech'], salaryDelta: '+40-80%', timeToTransition: '24 months' }],
+    riskTrend: [{ year: 2024, riskScore: 22, label: 'Now' }, { year: 2027, riskScore: 35, label: '+3yr' }],
+    confidenceScore: 98,
+  },
+  sw_pm: {
+    displayRole: 'Product Manager',
+    summary: 'High resilience.',
+    skills: {
+      safe: [{ skill: 'Market Empathy & Vision Synthesis', whySafe: 'Identifying non-obvious human needs.', longTermValue: 99, difficulty: 'Very High' }],
+    },
+    careerPaths: [{ role: 'CPO', riskReduction: 60, skillGap: 'Executive strategy', transitionDifficulty: 'Very Hard', industryMapping: ['Product'], salaryDelta: '+100-300%', timeToTransition: '48 months' }],
+    riskTrend: [{ year: 2024, riskScore: 25, label: 'Now' }, { year: 2027, riskScore: 40, label: '+3yr' }],
+    confidenceScore: 97,
+  },
+  sw_agile: {
+    displayRole: 'Scrum Master',
+    summary: 'Moderate resilience.',
+    skills: {
+      safe: [{ skill: 'Human-Centric Conflict Resolution', whySafe: 'Managing the emotional friction in teams.', longTermValue: 95, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'Org Design Consultant', riskReduction: 52, skillGap: 'Systems thinking', transitionDifficulty: 'Medium', industryMapping: ['Enterprise'], salaryDelta: '+30-60%', timeToTransition: '18 months' }],
+    riskTrend: [{ year: 2024, riskScore: 42, label: 'Now' }, { year: 2027, riskScore: 68, label: '+3yr' }],
+    confidenceScore: 94,
+  },
+  sw_security_arch: {
+    displayRole: 'Security Architect',
+    summary: 'Extremely high resilience.',
+    skills: {
+      safe: [{ skill: 'Threat Modeling for AI Vectors', whySafe: 'Designing defenses against unprecedented AI attacks.', longTermValue: 99, difficulty: 'Very High' }],
+    },
+    careerPaths: [{ role: 'CISO', riskReduction: 45, skillGap: 'Board governance', transitionDifficulty: 'Very Hard', industryMapping: ['Enterprise'], salaryDelta: '+100-250%', timeToTransition: '60 months' }],
+    riskTrend: [{ year: 2024, riskScore: 12, label: 'Now' }, { year: 2027, riskScore: 22, label: '+3yr' }],
+    confidenceScore: 99,
+  },
+  sw_game_dev: {
+    displayRole: 'Game Developer',
+    summary: 'Moderate resilience.',
+    skills: {
+      safe: [{ skill: 'Emergent Gameplay Design', whySafe: 'Designing complex, fun interactions.', longTermValue: 95, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'Virtual Production Lead', riskReduction: 55, skillGap: 'Unreal Engine', transitionDifficulty: 'Medium', industryMapping: ['Film'], salaryDelta: '+30-60%', timeToTransition: '18 months' }],
     riskTrend: [{ year: 2024, riskScore: 35, label: 'Now' }, { year: 2027, riskScore: 58, label: '+3yr' }],
     confidenceScore: 94,
-    roadmap: {
-      '2-5': {
-        phase_1: { timeline: '30 days', focus: 'AI Integration', actions: [{ action: 'Build a RAG-based search for your application', why: 'Master the new stack.', outcome: 'RAG Feature delivered' }] },
-      }
-    }
+  },
+  sw_bioinformatics: {
+    displayRole: 'Bioinformatics Engineer',
+    summary: 'High resilience.',
+    skills: {
+      safe: [{ skill: 'Biological Signal Synthesis', whySafe: 'Developing novel hypotheses from multi-modal omics.', longTermValue: 99, difficulty: 'Very High' }],
+    },
+    careerPaths: [{ role: 'Precision Medicine Architect', riskReduction: 60, skillGap: 'Clinical informatics', transitionDifficulty: 'Hard', industryMapping: ['Biotech'], salaryDelta: '+40-80%', timeToTransition: '24 months' }],
+    riskTrend: [{ year: 2024, riskScore: 15, label: 'Now' }, { year: 2027, riskScore: 28, label: '+3yr' }],
+    confidenceScore: 98,
+  },
+  sw_quantum: {
+    displayRole: 'Quantum Scientist',
+    summary: 'Extremely high resilience.',
+    skills: {
+      safe: [{ skill: 'Error Mitigation Architecture', whySafe: 'Developing the logical bridge for NISQ hardware.', longTermValue: 99, difficulty: 'Extremely High' }],
+    },
+    careerPaths: [{ role: 'PQC Lead', riskReduction: 50, skillGap: 'Lattice-based crypto', transitionDifficulty: 'Hard', industryMapping: ['Gov'], salaryDelta: '+60-150%', timeToTransition: '36 months' }],
+    riskTrend: [{ year: 2024, riskScore: 5, label: 'Now' }, { year: 2027, riskScore: 12, label: '+3yr' }],
+    confidenceScore: 99,
+  },
+  sw_blockchain_arch: {
+    displayRole: 'Blockchain Architect',
+    summary: 'High resilience.',
+    skills: {
+      safe: [{ skill: 'Decentralized Incentive Synthesis', whySafe: 'Designing the balance of human incentives.', longTermValue: 98, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'DeFi Ecosystem Lead', riskReduction: 55, skillGap: 'Governance strategy', transitionDifficulty: 'Medium', industryMapping: ['Web3'], salaryDelta: '+40-100%', timeToTransition: '18 months' }],
+    riskTrend: [{ year: 2024, riskScore: 22, label: 'Now' }, { year: 2027, riskScore: 35, label: '+3yr' }],
+    confidenceScore: 97,
+  },
+  sw_edge_ai_iot: {
+    displayRole: 'Edge AI / IoT Systems Lead',
+    summary: 'High resilience due to the convergence of hardware-constrained AI, real-time physical latency requirements, and distributed system complexity.',
+    skills: {
+      obsolete: [{ skill: 'Routine IoT dashboard and cloud-connector boilerplate', riskScore: 92, riskType: 'Automatable', horizon: '1yr', reason: 'AI auto-generates standard MQTT-to-Cloud connectors and dashboard templates instantly.', aiReplacement: 'Full' }],
+      safe: [{ skill: 'Distributed Edge Inference Optimization', whySafe: 'Balancing model quantization, power constraints, and real-time physical response logic.', longTermValue: 98, difficulty: 'High' }],
+    },
+    careerPaths: [{ role: 'Industrial Autonomy Architect', riskReduction: 45, skillGap: 'Robotic sensing, safety-critical edge loops', transitionDifficulty: 'Hard', industryMapping: ['Manufacturing / Automotive'], salaryDelta: '+50-120%', timeToTransition: '36 months' }],
+    riskTrend: [{ year: 2024, riskScore: 12, label: 'Now' }, { year: 2027, riskScore: 25, label: '+3yr' }],
+    confidenceScore: 99,
+  },
+  sw_simulation_finite: {
+    displayRole: 'FEA / Computational Simulation Lead',
+    summary: 'High resilience in high-stakes physical world failure prediction; disruption in routine mesh generation.',
+    skills: {
+      obsolete: [{ skill: 'Routine geometric mesh generation and cleanup', riskScore: 96, riskType: 'Automatable', horizon: '1styr', reason: 'AI auto-remeshes and optimizes standard geometries for simulation accuracy instantly.', aiReplacement: 'Full' }],
+      safe: [{ skill: 'Non-Linear Failure Mode Synthesis', whySafe: 'Predicting how novel materials and geometries fail in unprecedented high-stress physical environments.', longTermValue: 99, difficulty: 'Very High' }],
+    },
+    careerPaths: [{ role: 'Digital Twin Architect', riskReduction: 55, skillGap: 'IoT-to-Simulation loops, real-time physics engines', transitionDifficulty: 'Hard', industryMapping: ['Heavy Industry'], salaryDelta: '+30-60%', timeToTransition: '24 months' }],
+    riskTrend: [{ year: 2024, riskScore: 18, label: 'Now' }, { year: 2027, riskScore: 30, label: '+3yr' }],
+    confidenceScore: 98,
   },
 };

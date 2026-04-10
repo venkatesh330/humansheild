@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { INDUSTRIES, WORK_TYPES, COUNTRIES } from '../data/catalogData';
 import {
   calculateScore,
@@ -14,6 +14,31 @@ import { PortfolioShield } from '../components/PortfolioShield';
 import { downloadAssessmentPDF, generateAssessmentSnapshot, generateShareableLink } from '../utils/assessmentExport';
 import { supabase } from '../utils/supabase';
 import { getCachedRisk, setCachedRisk } from '../services/cache/riskCache';
+import { PremiumSelect, SelectOption } from '../components/ui/PremiumSelect';
+import { 
+  Briefcase, 
+  Cpu, 
+  Database, 
+  Globe, 
+  Layout, 
+  Lock, 
+  Smartphone, 
+  Users, 
+  ShieldCheck, 
+  BarChart, 
+  PenTool, 
+  Stethoscope, 
+  Gavel, 
+  GraduationCap, 
+  Factory, 
+  ShoppingBag, 
+  Zap,
+  Clock,
+  User,
+  Star,
+  Shield,
+  Search
+} from 'lucide-react';
 
 const EXPERIENCE_LEVELS = [
   { key: '0-2',   label: '0–2 years (Entry)' },
@@ -22,6 +47,47 @@ const EXPERIENCE_LEVELS = [
   { key: '10-20', label: '10–20 years (Senior)' },
   { key: '20+',   label: '20+ years (Principal)' },
 ];
+
+const CAT_COLORS: Record<string, string> = {
+  'Technology': 'var(--cyan)',
+  'Finance & Business': 'var(--emerald)',
+  'Media & Creative': 'var(--violet)',
+  'Services': 'var(--amber)',
+  'Healthcare & Science': 'var(--red)',
+  'Education': '#38bdf8',
+  'Industry & Engineering': '#94a3b8',
+  'Retail & Consumer': '#f472b6',
+  'Government & Social': '#4ade80',
+};
+
+const getRoleIcon = (label: string) => {
+  const l = label.toLowerCase();
+  if (l.includes('backend') || l.includes('api') || l.includes('db') || l.includes('sql')) return <Database className="w-4 h-4" />;
+  if (l.includes('frontend') || l.includes('web') || l.includes('react') || l.includes('ui') || l.includes('ux') || l.includes('design')) return <Layout className="w-4 h-4" />;
+  if (l.includes('mobile') || l.includes('ios') || l.includes('android')) return <Smartphone className="w-4 h-4" />;
+  if (l.includes('ai') || l.includes('ml') || l.includes('model') || l.includes('data')) return <Cpu className="w-4 h-4" />;
+  if (l.includes('security') || l.includes('cyber')) return <Lock className="w-4 h-4" />;
+  if (l.includes('manager') || l.includes('lead') || l.includes('product') || l.includes('pm')) return <Briefcase className="w-4 h-4" />;
+  if (l.includes('test') || l.includes('qa')) return <Search className="w-4 h-4" />;
+  if (l.includes('devops') || l.includes('cloud') || l.includes('infra')) return <Globe className="w-4 h-4" />;
+  if (l.includes('content') || l.includes('write') || l.includes('copy')) return <PenTool className="w-4 h-4" />;
+  if (l.includes('marketing') || l.includes('seo') || l.includes('ads')) return <BarChart className="w-4 h-4" />;
+  if (l.includes('doctor') || l.includes('nurse') || l.includes('specialist')) return <Stethoscope className="w-4 h-4" />;
+  if (l.includes('legal') || l.includes('law')) return <Gavel className="w-4 h-4" />;
+  if (l.includes('teach') || l.includes('learn') || l.includes('edu')) return <GraduationCap className="w-4 h-4" />;
+  if (l.includes('mfg') || l.includes('eng') || l.includes('production')) return <Factory className="w-4 h-4" />;
+  if (l.includes('retail') || l.includes('shop') || l.includes('ecom')) return <ShoppingBag className="w-4 h-4" />;
+  return <Briefcase className="w-4 h-4" />;
+};
+
+const getExperienceIcon = (key: string) => {
+  if (key === '0-2') return <Zap className="w-4 h-4" />;
+  if (key === '2-5') return <Clock className="w-4 h-4" />;
+  if (key === '5-10') return <User className="w-4 h-4" />;
+  if (key === '10-20') return <Star className="w-4 h-4" />;
+  if (key === '20+') return <ShieldCheck className="w-4 h-4" />;
+  return <Briefcase className="w-4 h-4" />;
+};
 
 const DIM_INFO: Record<string, { icon: string; label: string }> = {
   D1: { icon: '⚡', label: 'Task Automatability' },
@@ -152,45 +218,69 @@ export default function CalculatorPage() {
             Configure Parameters
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '28px' }}>
-            <div className="input-wrap">
-              <label className="input-label">Industry Cluster</label>
-              <select
-                value={industryKey}
-                onChange={e => { setIndustryKey(e.target.value); setWorkTypeKey(''); }}
-                className="input"
-              >
-                <option value="">Select domain...</option>
-                {INDUSTRIES.map(i => <option key={i.key} value={i.key}>{i.label}</option>)}
-              </select>
-            </div>
+            <PremiumSelect
+              label="Industry Cluster"
+              value={industryKey}
+              onChange={val => { setIndustryKey(val); setWorkTypeKey(''); }}
+              options={INDUSTRIES.map(i => ({
+                key: i.key,
+                label: i.label,
+                icon: i.icon,
+                cat: i.cat,
+                color: CAT_COLORS[i.cat]
+              }))}
+              placeholder="Select domain..."
+              groups={useMemo(() => {
+                const grps: Record<string, SelectOption[]> = {};
+                INDUSTRIES.forEach(i => {
+                  if (!grps[i.cat]) grps[i.cat] = [];
+                  grps[i.cat].push({
+                    key: i.key,
+                    label: i.label,
+                    icon: i.icon,
+                    cat: i.cat,
+                    color: CAT_COLORS[i.cat]
+                  });
+                });
+                return grps;
+              }, [])}
+            />
 
-            <div className="input-wrap">
-              <label className="input-label">Role Designation</label>
-              <select
-                value={workTypeKey}
-                onChange={e => setWorkTypeKey(e.target.value)}
-                disabled={!industryKey}
-                className="input"
-                style={{ opacity: !industryKey ? 0.4 : 1 }}
-              >
-                <option value="">Select role...</option>
-                {workTypes.map((w: any) => <option key={w.key} value={w.key}>{w.label}</option>)}
-              </select>
-            </div>
+            <PremiumSelect
+              label="Role Designation"
+              value={workTypeKey}
+              onChange={setWorkTypeKey}
+              disabled={!industryKey}
+              placeholder={!industryKey ? "Select industry first..." : "Select role..."}
+              options={workTypes.map((w: any) => ({
+                key: w.key,
+                label: w.label,
+                icon: getRoleIcon(w.label),
+                color: industryKey ? CAT_COLORS[INDUSTRIES.find(i => i.key === industryKey)?.cat || ''] : undefined
+              }))}
+            />
 
-            <div className="input-wrap">
-              <label className="input-label">Experience Level <span style={{ color: 'var(--cyan)', fontSize: '0.6rem' }}>D4</span></label>
-              <select value={experience} onChange={e => setExperience(e.target.value)} className="input">
-                {EXPERIENCE_LEVELS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
-              </select>
-            </div>
+            <PremiumSelect
+              label="Experience Level"
+              value={experience}
+              onChange={setExperience}
+              options={EXPERIENCE_LEVELS.map(l => ({
+                key: l.key,
+                label: l.label,
+                icon: getExperienceIcon(l.key)
+              }))}
+            />
 
-            <div className="input-wrap">
-              <label className="input-label">Territory Exposure <span style={{ color: 'var(--cyan)', fontSize: '0.6rem' }}>D5</span></label>
-              <select value={countryKey} onChange={e => setCountryKey(e.target.value)} className="input">
-                {COUNTRIES.map(c => <option key={c.key} value={c.key}>{c.flag} {c.label}</option>)}
-              </select>
-            </div>
+            <PremiumSelect
+              label="Territory Exposure"
+              value={countryKey}
+              onChange={setCountryKey}
+              options={COUNTRIES.map(c => ({
+                key: c.key,
+                label: c.label,
+                icon: c.flag
+              }))}
+            />
           </div>
 
           <button
