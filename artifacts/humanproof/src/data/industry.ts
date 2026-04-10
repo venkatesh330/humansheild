@@ -1,4 +1,4 @@
-import { CareerIntelligence } from './types';
+import { CareerIntelligence } from './intelligence/types';
 
 export const INDUSTRY_INTELLIGENCE: Record<string, CareerIntelligence> = {
   eng_civil: {

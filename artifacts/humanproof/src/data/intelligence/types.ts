@@ -5,10 +5,10 @@
 export interface SkillRisk {
   skill: string;
   riskScore: number;        // 0–100
-  riskType: 'Automatable' | 'Augmented' | 'Safe';
-  horizon: '1-3yr' | '3-5yr' | '5yr+';
+  riskType: 'Automatable' | 'Augmented' | 'Safe' | string;
+  horizon: '1-3yr' | '3-5yr' | '5yr+' | string;
   reason: string;
-  aiReplacement: 'Full' | 'Partial' | 'None';
+  aiReplacement: 'Full' | 'Partial' | 'None' | string;
   aiTool?: string;
 }
 
@@ -16,7 +16,7 @@ export interface SafeSkill {
   skill: string;
   whySafe: string;
   longTermValue: number;    // 0–100
-  difficulty: 'Low' | 'Medium' | 'High';
+  difficulty: 'Low' | 'Medium' | 'High' | string;
   resource?: string;
 }
 
@@ -24,7 +24,7 @@ export interface CareerPath {
   role: string;
   riskReduction: number;    // percentage points
   skillGap: string;
-  transitionDifficulty: 'Easy' | 'Medium' | 'Hard' | 'Very Hard';
+  transitionDifficulty: 'Easy' | 'Medium' | 'Hard' | 'Very Hard' | string;
   industryMapping: string[];
   salaryDelta: string;
   timeToTransition: string;
@@ -45,8 +45,8 @@ export interface RoadmapPhase {
 
 export interface ExperienceRoadmap {
   phase_1: RoadmapPhase;
-  phase_2: RoadmapPhase;
-  phase_3: RoadmapPhase;
+  phase_2?: RoadmapPhase;
+  phase_3?: RoadmapPhase;
 }
 
 export interface TrendPoint {
@@ -59,17 +59,17 @@ export interface CareerIntelligence {
   displayRole: string;
   summary: string;
   skills: {
-    obsolete: SkillRisk[];
-    at_risk: SkillRisk[];
+    obsolete?: SkillRisk[];
+    at_risk?: SkillRisk[];
     safe: SafeSkill[];
   };
   careerPaths: CareerPath[];
   roadmap: {
-    '0-2': ExperienceRoadmap;
-    '2-5': ExperienceRoadmap;
-    '5-10': ExperienceRoadmap;
-    '10-20': ExperienceRoadmap;
-    '20+': ExperienceRoadmap;
+    '0-2'?: ExperienceRoadmap;
+    '2-5'?: ExperienceRoadmap;
+    '5-10'?: ExperienceRoadmap;
+    '10-20'?: ExperienceRoadmap;
+    '20+'?: ExperienceRoadmap;
   };
   inactionScenario: string;
   riskTrend: TrendPoint[];

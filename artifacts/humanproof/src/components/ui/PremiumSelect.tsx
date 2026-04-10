@@ -73,14 +73,14 @@ const PremiumSelect = ({
                   <SelectPrimitive.Group key={groupName}>
                     <SelectPrimitive.Label className="select-group-label">{groupName}</SelectPrimitive.Label>
                     {groupOptions.map((opt) => (
-                      <SelectItem key={opt.key} option={opt} />
+                      <SelectItem key={opt.key} value={opt.key} option={opt} />
                     ))}
                     <SelectPrimitive.Separator className="select-separator" />
                   </SelectPrimitive.Group>
                 ))
               ) : (
                 options.map((opt) => (
-                  <SelectItem key={opt.key} option={opt} />
+                  <SelectItem key={opt.key} value={opt.key} option={opt} />
                 ))
               )}
             </SelectPrimitive.Viewport>
@@ -103,7 +103,6 @@ const SelectItem = React.forwardRef<
     <SelectPrimitive.Item
       ref={ref}
       className={cn("select-item", className)}
-      value={option.key}
       style={option.color ? { ['--item-accent' as any]: option.color } : undefined}
       {...props}
     >
