@@ -64,14 +64,14 @@ export interface CareerIntelligence {
     safe: SafeSkill[];
   };
   careerPaths: CareerPath[];
-  roadmap: {
+  roadmap?: {
     '0-2'?: ExperienceRoadmap;
     '2-5'?: ExperienceRoadmap;
     '5-10'?: ExperienceRoadmap;
     '10-20'?: ExperienceRoadmap;
     '20+'?: ExperienceRoadmap;
   };
-  inactionScenario: string;
-  riskTrend: TrendPoint[];
-  confidenceScore: number;
+  inactionScenario?: string;
+  riskTrend?: TrendPoint[];
+  confidenceScore?: number;
 }
