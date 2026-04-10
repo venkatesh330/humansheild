@@ -6,7 +6,8 @@
     "types": ["node"],
     "noImplicitAny": false,
     "noImplicitReturns": false,
-    "strictNullChecks": false
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false
   },
   "include": ["src", "api"]
 }

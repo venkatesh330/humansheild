@@ -1,0 +1,11 @@
+name = "humanproof-api"
+main = "src/worker.ts"
+compatibility_date = "2024-10-01"
+compatibility_flags = [ "nodejs_compat" ]
+
+[vars]
+# These can be overridden in the Cloudflare Dashboard
+NODE_ENV = "production"
+
+# Add your secrets (SUPABASE_URL, OPENROUTER_API_KEY, etc.)
+# via `wrangler secret put <NAME>` or the Cloudflare Dashboard

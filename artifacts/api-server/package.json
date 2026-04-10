@@ -7,6 +7,8 @@
     "dev": "pnpm run build && node --env-file=.env ./build-local/index.mjs",
     "build": "node ./build.mjs",
     "vercel-build": "ls",
+    "deploy": "wrangler deploy",
+    "dev:worker": "wrangler dev src/worker.ts",
     "start": "node --enable-source-maps ./build-local/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -28,6 +30,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
+    "@cloudflare/workers-types": "^4.20241218.0",
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",

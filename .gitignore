@@ -2,11 +2,14 @@
 
 # compiled output
 dist
+build-local/
 tmp
 out-tsc
 *.tsbuildinfo
 .expo
 .expo-shared
+.wrangler/
+.dev.vars
 
 # dependencies
 node_modules
