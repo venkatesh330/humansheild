@@ -47,6 +47,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+.replit-artifact/
 
 # Environment files (never commit secrets)
 .env
