@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createInsertSchema } from 'drizzle-zod';
-import { z } from 'zod/v4';
+import { z } from 'zod';
 
 export const digestSubscribersTable = pgTable('digest_subscribers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -14,7 +14,7 @@ export const insertDigestSubscriberSchema = createInsertSchema(digestSubscribers
   id: true,
   subscribedAt: true,
   unsubscribedAt: true,
-});
+} as any);
 
 export type InsertDigestSubscriber = z.infer<typeof insertDigestSubscriberSchema>;
 export type DigestSubscriber = typeof digestSubscribersTable.$inferSelect;

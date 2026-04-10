@@ -3,11 +3,12 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": ".",
-    "types": ["node"],
+    "types": ["node", "@cloudflare/workers-types"],
     "noImplicitAny": false,
     "noImplicitReturns": false,
     "strictNullChecks": false,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
+    "useUnknownInCatchVariables": false
   },
   "include": ["src", "api"]
 }

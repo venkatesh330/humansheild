@@ -55,7 +55,7 @@ Respond with valid JSON: { "score": 3-97, "reasoning": "string (150 chars max)" 
       });
 
       if (gemmaResp.ok) {
-        const data = await gemmaResp.json();
+        const data = (await gemmaResp.json()) as any;
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         
         // ── Robust JSON extraction ──────────────────────────────────────────
