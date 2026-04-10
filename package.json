@@ -9,6 +9,7 @@
     "dev": "pnpm -r --parallel dev"
   },
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "devDependencies": {
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
