@@ -15,12 +15,12 @@ export const TermsPage: React.FC = () => {
                 <div className="space-y-12 text-slate-500 font-medium leading-[1.8]">
                     <section className="reveal">
                         <h2 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest mb-4">01. ACCEPTABLE SIGNAL USE</h2>
-                        <p>By initializing the HumanProof terminal, you agree to provide authentic signal data for calibration. Automated extraction of proprietary risk vectors or stress-testing our API nodes for non-personal use is strictly prohibited.</p>
+                        <p>By initializing the HumanShield terminal, you agree to provide authentic signal data for calibration. Automated extraction of proprietary risk vectors or stress-testing our API nodes for non-personal use is strictly prohibited.</p>
                     </section>
 
                     <section className="reveal">
                         <h2 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest mb-4">02. INTELLECTUAL SOVEREIGNTY</h2>
-                        <p>All systemic algorithms, UI architecture, and generative signal pathways are the exclusive intellectual property of HUMANPROOF SYSTEM ARCHITECTURE. Unauthorized replication of our audit standard is a violation of deployment terms.</p>
+                        <p>All systemic algorithms, UI architecture, and generative signal pathways are the exclusive intellectual property of HUMANSHIELD SYSTEM ARCHITECTURE. Unauthorized replication of our audit standard is a violation of deployment terms.</p>
                     </section>
 
                     <section className="reveal">

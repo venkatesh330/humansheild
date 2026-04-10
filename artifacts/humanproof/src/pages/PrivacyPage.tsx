@@ -36,7 +36,7 @@ export const PrivacyPage: React.FC = () => {
                 
                 <div className="mt-32 pt-12 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 opacity-40 text-[10px] font-black uppercase tracking-widest">
                     <span>Protocol Revision: 7.2.2026</span>
-                    <span>© HUMANPROOF SYSTEM ARCHITECTURE</span>
+                    <span>© HUMANSHIELD SYSTEM ARCHITECTURE</span>
                 </div>
             </div>
         </div>

@@ -12,7 +12,7 @@ const VALUES = [
 ];
 
 const MILESTONES = [
-  { year: '2024', label: 'Founded', desc: 'HumanProof born from a mission to bring data clarity to the AI displacement crisis.' },
+  { year: '2024', label: 'Founded', desc: 'HumanShield born from a mission to bring data clarity to the AI displacement crisis.' },
   { year: 'Q2 \'24', label: 'First Dataset', desc: 'Partnered with McKinsey Global Institute to validate our first 50,000-role taxonomy.' },
   { year: 'Q4 \'24', label: 'Gemma Integration', desc: 'Deployed local-inference Gemma framework for real-time, privacy-first risk scoring.' },
   { year: 'Q1 \'26', label: 'Global Launch', desc: 'Expanded to 72+ countries covering 250+ role types across all major industry sectors.' },
@@ -45,7 +45,7 @@ export const AboutPage: React.FC = () => {
             }}>Human Era.</span>
           </h1>
           <p style={{ color: 'var(--text-2)', fontSize: '1.1rem', maxWidth: 560, margin: '0 auto', lineHeight: 1.75 }}>
-            HumanProof was engineered to navigate the new frontier of labor. We solve for clarity in the AI transition — providing the highest-fidelity professional resilience intelligence available.
+            HumanShield was engineered to navigate the new frontier of labor. We solve for clarity in the AI transition — providing the highest-fidelity professional resilience intelligence available.
           </p>
         </div>
 
@@ -100,7 +100,7 @@ export const AboutPage: React.FC = () => {
             Ready to Verify Your Future?
           </h2>
           <p style={{ color: 'var(--text-2)', maxWidth: 480, margin: '0 auto 36px', lineHeight: 1.7 }}>
-            Join thousands of professionals securing their trajectory through the HumanProof intelligence standard.
+            Join thousands of professionals securing their trajectory through the HumanShield intelligence standard.
           </p>
           <button className="btn btn-primary btn-xl" onClick={() => navigate('/calculator')}>
             Take the Assessment →

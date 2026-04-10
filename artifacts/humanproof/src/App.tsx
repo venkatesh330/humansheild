@@ -173,7 +173,7 @@ function AppNav({ isDark, toggleTheme, onAuthOpen }: {
       }}>
         <Link to="/" className="nav-logo" style={{ textDecoration: 'none' }}>
           <span className="nav-logo-dot" />
-          H.PROOF
+          HumanShield
         </Link>
 
         {/* Desktop nav */}
@@ -314,10 +314,10 @@ function AppFooter() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <span style={{ width: 6, height: 6, background: 'var(--cyan)', borderRadius: '50%', display: 'block' }} />
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '1rem', color: 'var(--text)', letterSpacing: '-0.04em' }}>H.PROOF</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '1rem', color: 'var(--text)', letterSpacing: '-0.04em' }}>HumanShield</span>
             </div>
             <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', lineHeight: 1.7, maxWidth: '320px', marginBottom: '24px' }}>
-              The high-fidelity standard for career irreplaceability. Powered by Gemma 4 intelligence and verified global research.
+              The high-fidelity standard for career protection in the AI era. Powered by state-of-the-art frontier AI systems and verified global research.
             </p>
             <form onSubmit={handleSubscribe} style={{ display: 'flex', maxWidth: '320px', gap: '8px' }}>
               <input
