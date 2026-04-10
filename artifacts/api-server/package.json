@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm run build && node --env-file=.env ./dist/index.mjs",
+    "dev": "pnpm run build && node --env-file=.env ./build-local/index.mjs",
     "build": "node ./build.mjs",
     "vercel-build": "ls",
-    "start": "node --enable-source-maps ./dist/index.mjs",
+    "start": "node --enable-source-maps ./build-local/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
