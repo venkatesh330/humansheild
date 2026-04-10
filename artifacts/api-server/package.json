@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm run build && node --env-file=.env ./dist/index.mjs",
     "build": "node ./build.mjs",
+    "vercel-build": "ls",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
