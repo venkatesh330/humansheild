@@ -32,13 +32,16 @@ export const runDeepSeekFinancial = async (
   companyName: string,
   industry: string,
   companySize: number | string,
-  layoffHistory: LayoffRound[]
+  layoffHistory: LayoffRound[],
+  swarmContext?: string
 ): Promise<DeepSeekResult> => {
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   if (!apiKey) return { model: 'deepseek-v3', success: false, signals: null, rawConfidence: 0 };
   if (!checkRateLimit('openrouter')) return { model: 'deepseek-v3', success: false, signals: null, rawConfidence: 0 };
 
-  const prompt = `You are a financial risk analyst specializing in corporate workforce restructuring patterns.
+  const swarmSection = swarmContext ? `\n\n${swarmContext}\n` : '';
+
+  const prompt = `You are a financial risk analyst specializing in corporate workforce restructuring patterns.${swarmSection}
 
 Perform a financial risk assessment for layoff probability:
 

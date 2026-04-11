@@ -12,6 +12,10 @@ import { getCachedAnalysis, setCachedAnalysis } from '../cache/analysisCache';
 import { CompanyData } from '../../data/companyDatabase';
 import { IndustryRisk } from '../../data/industryRiskData';
 import { RoleExposure } from '../../data/roleExposureData';
+// ── [SWARM] Swarm Intelligence Layer imports ──────────────────────────────────
+import { runSwarmLayer } from '../swarm/swarmOrchestrator';
+import { buildSwarmContext } from '../swarm/swarmContextBuilder';
+import { SwarmReport } from '../swarm/swarmTypes';
 
 // ── Extended result type (superset of ScoreResult) ──────────────────────────
 export interface EnsembleResult extends ScoreResult {
@@ -32,6 +36,9 @@ export interface EnsembleResult extends ScoreResult {
   geminiSynthesis:   GeminiResult['synthesis'];
   modelsUsed:        string[];
   fromCache:         boolean;
+  // ── [SWARM] Swarm Intelligence additions ──────────────────────────────────
+  swarmReport?:      SwarmReport;     // Full 30-agent swarm output
+  swarmScore?:       number;          // 0–100 swarm risk score
 }
 
 export interface EnsembleInputs {
@@ -82,6 +89,20 @@ export const runFullEnsembleAnalysis = async (inputs: EnsembleInputs): Promise<E
     }
   }
 
+  // ── [SWARM] Step 1.5: Run Swarm Intelligence Layer ──────────────────────
+  let swarmReport: SwarmReport | undefined;
+  let swarmContext = '';
+  try {
+    swarmReport = await runSwarmLayer(
+      { companyName, companyData, industry, industryData, roleTitle, department, tenureYears, userFactors: { tenureYears, isUniqueRole, performanceTier, hasRecentPromotion, hasKeyRelationships } },
+      forceRefresh
+    );
+    swarmContext = buildSwarmContext(swarmReport);
+    console.log(`[Swarm] Score: ${swarmReport.swarmRiskScore}/100 | Confidence: ${swarmReport.swarmConfidence}% | Live agents: ${swarmReport.liveAgentsUsed}`);
+  } catch (swarmErr: any) {
+    console.warn('[Swarm] Layer failed — continuing without swarm data:', swarmErr.message);
+  }
+
   // ── Step 2: Run deterministic 5-layer engine (always, no API cost) ────────
   const engineResult: ScoreResult = calculateLayoffScore({
     companyData,
@@ -92,11 +113,11 @@ export const runFullEnsembleAnalysis = async (inputs: EnsembleInputs): Promise<E
     roleExposureOverride,
   });
 
-  // ── Step 3: Fire Gemma, DeepSeek, Llama in PARALLEL ──────────────────────
+  // ── Step 3: Fire Gemma, DeepSeek, Llama in PARALLEL (with swarm context) ──
   const [gemmaSettled, deepseekSettled, llamaSettled] = await Promise.allSettled([
-    runGemmaOSINT(companyName, industry, roleTitle),
-    runDeepSeekFinancial(companyName, industry, companyData?.employeeCount ?? 'unknown', companyData?.layoffsLast24Months ?? []),
-    runLlamaRoleValidation(roleTitle, department, industry, tenureYears, isUniqueRole),
+    runGemmaOSINT(companyName, industry, roleTitle, swarmContext),
+    runDeepSeekFinancial(companyName, industry, companyData?.employeeCount ?? 'unknown', companyData?.layoffsLast24Months ?? [], swarmContext),
+    runLlamaRoleValidation(roleTitle, department, industry, tenureYears, isUniqueRole, swarmContext),
   ]);
 
   // Safely unwrap settled results
@@ -131,13 +152,14 @@ export const runFullEnsembleAnalysis = async (inputs: EnsembleInputs): Promise<E
 
   console.log('[Ensemble] Gemini synthesis:', geminiResult.success);
 
-  // ── Step 5: Final aggregation with all models ─────────────────────────────
+  // ── Step 5: Final aggregation with all models (+ optional swarm blend) ─────
   const aggregate = aggregateEnsembleResults({
     gemmaResult,
     deepseekResult,
     llamaResult,
     geminiResult,
     engineScore: engineResult.score,
+    swarmScore:  swarmReport?.swarmRiskScore,
   });
 
   // ── Step 6: Determine which models actually contributed ───────────────────
@@ -180,6 +202,9 @@ export const runFullEnsembleAnalysis = async (inputs: EnsembleInputs): Promise<E
     geminiSynthesis:   geminiResult.synthesis,
     modelsUsed,
     fromCache:         false,
+    // ── [SWARM] Swarm Intelligence output ──────────────────────────────────
+    swarmReport,
+    swarmScore:        swarmReport?.swarmRiskScore,
   };
 
   // ── Step 8: Cache for future requests ────────────────────────────────────

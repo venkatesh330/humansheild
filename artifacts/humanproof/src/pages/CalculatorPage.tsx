@@ -124,15 +124,17 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
 }
 
 export default function CalculatorPage() {
-  const { saveAssessment } = useHumanProof();
-  const [industryKey, setIndustryKey] = useState('');
-  const [workTypeKey, setWorkTypeKey] = useState('');
+  const { state, saveAssessment, dispatch } = useHumanProof();
+  const [industryKey, setIndustryKey] = useState(state.initialIndustryKey || '');
+  const [workTypeKey, setWorkTypeKey] = useState(state.initialWorkTypeKey || '');
   const [countryKey, setCountryKey] = useState('usa');
   const [experience, setExperience] = useState('5-10');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [loadingText, setLoadingText] = useState('Initializing Generator Agent...');
   const resultRef = useRef<HTMLDivElement>(null);
+  const hasTriggered = useRef(false);
+
 
   useEffect(() => {
     if (!loading) return;
@@ -153,11 +155,14 @@ export default function CalculatorPage() {
     return () => clearInterval(interval);
   }, [loading]);
 
-  const handleCalculate = async () => {
-    if (!industryKey || !workTypeKey || !countryKey) return;
+  const handleCalculate = async (ind?: string, wt?: string) => {
+    const finalInd = ind || industryKey;
+    const finalWt = wt || workTypeKey;
+
+    if (!finalInd || !finalWt || !countryKey) return;
 
     // ── Check Cache ────────────────────────────────────────────────────────
-    const cached = getCachedRisk({ roleKey: workTypeKey, industry: industryKey, country: countryKey, experience });
+    const cached = getCachedRisk({ roleKey: finalWt, industry: finalInd, country: countryKey, experience });
     if (cached) {
       setResult({ ...cached, fromCache: true });
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
@@ -171,28 +176,49 @@ export default function CalculatorPage() {
       const resp = await fetch(`${supabaseUrl}/functions/v1/calculate-grounded-risk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || ''}` },
-        body: JSON.stringify({ roleKey: workTypeKey, industry: industryKey, country: countryKey, experience }),
+        body: JSON.stringify({ roleKey: finalWt, industry: finalInd, country: countryKey, experience }),
       });
       if (!resp.ok) throw new Error('Grounded Engine Offline');
       const aiResult = await resp.json();
-      const finalResult = { ...aiResult, workTypeKey, industryKey, countryKey, experience };
+      const finalResult = { ...aiResult, workTypeKey: finalWt, industryKey: finalInd, countryKey, experience };
 
       // ── Save to Cache ──────────────────────────────────────────────────────
-      setCachedRisk({ roleKey: workTypeKey, industry: industryKey, country: countryKey, experience }, finalResult);
+      setCachedRisk({ roleKey: finalWt, industry: finalInd, country: countryKey, experience }, finalResult);
 
       setResult(finalResult);
-      await saveAssessment({ industry: industryKey, workType: workTypeKey, country: countryKey, experience, score: aiResult.total, details: finalResult });
+      await saveAssessment({ industry: finalInd, workType: finalWt, country: countryKey, experience, score: aiResult.total, details: finalResult });
     } catch {
-
-      const scoreOperations = calculateScore(workTypeKey, industryKey, experience, countryKey);
-      const fallbackResult = { ...scoreOperations, workTypeKey, industryKey, countryKey, experience, isGrounded: false };
+      const scoreOperations = calculateScore(finalWt, finalInd, experience, countryKey);
+      const fallbackResult = { ...scoreOperations, workTypeKey: finalWt, industryKey: finalInd, countryKey, experience, isGrounded: false };
       setResult(fallbackResult);
-      await saveAssessment({ industry: industryKey, workType: workTypeKey, country: countryKey, experience, score: scoreOperations.total, details: fallbackResult });
+      await saveAssessment({ industry: finalInd, workType: finalWt, country: countryKey, experience, score: scoreOperations.total, details: fallbackResult });
     } finally {
       setLoading(false);
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
     }
   };
+  
+  // Auto-fill from context and trigger calculation if coming from the modal
+  useEffect(() => {
+    if (state.initialIndustryKey && state.initialWorkTypeKey && !hasTriggered.current) {
+      hasTriggered.current = true;
+      
+      const targetInd = state.initialIndustryKey;
+      const targetWt = state.initialWorkTypeKey;
+
+      // Small delay to ensure UI components are hydrated
+      const timer = setTimeout(() => {
+        setIndustryKey(targetInd);
+        setWorkTypeKey(targetWt);
+        handleCalculate(targetInd, targetWt);
+        
+        // Clear the initial role from context once consumed
+        dispatch({ type: 'CLEAR_INITIAL_ROLE' });
+      }, 300); // Slightly longer delay for stability
+      
+      return () => clearTimeout(timer);
+    }
+  }, [state.initialIndustryKey, state.initialWorkTypeKey, dispatch]);
 
   const workTypes = industryKey ? (WORK_TYPES[industryKey] ?? []) : [];
   const scoreColor = result ? getScoreColor(result.total) : 'var(--cyan)';
@@ -284,7 +310,7 @@ export default function CalculatorPage() {
           </div>
 
           <button
-            onClick={handleCalculate}
+            onClick={() => handleCalculate()}
             disabled={!industryKey || !workTypeKey || loading}
             className="btn btn-primary btn-full btn-lg"
             style={{

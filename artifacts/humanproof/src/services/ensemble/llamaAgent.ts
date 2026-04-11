@@ -32,13 +32,16 @@ export const runLlamaRoleValidation = async (
   department: string,
   industry: string,
   tenureYears: number,
-  isUniqueRole: boolean
+  isUniqueRole: boolean,
+  swarmContext?: string
 ): Promise<LlamaResult> => {
   const apiKey = import.meta.env.VITE_GROQ_API_KEY;
   if (!apiKey) return { model: 'llama-3.3-70b', success: false, signals: null, rawConfidence: 0 };
   if (!checkRateLimit('groq')) return { model: 'llama-3.3-70b', success: false, signals: null, rawConfidence: 0 };
 
-  const prompt = `You are a workforce transformation expert with deep knowledge of which roles are being eliminated in 2025-2026.
+  const swarmSection = swarmContext ? `\n\n${swarmContext}\n` : '';
+
+  const prompt = `You are a workforce transformation expert with deep knowledge of which roles are being eliminated in 2025-2026.${swarmSection}
 
 Assess the layoff risk for this specific role profile:
 

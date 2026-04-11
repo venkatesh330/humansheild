@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Shield, Cpu, Activity, ArrowRight, X } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { MASTER_CAREER_INTELLIGENCE } from '../data/intelligence';
+import { useHumanProof } from '../context/HumanProofContext';
+import { WORK_TYPES } from '../data/catalogData';
 
 interface RoleSelectorModalProps {
   isOpen: boolean;
@@ -10,18 +12,52 @@ interface RoleSelectorModalProps {
 }
 
 export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
+  const { dispatch } = useHumanProof();
   const [search, setSearch] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
 
   const roles = Object.values(MASTER_CAREER_INTELLIGENCE);
-  const filteredRoles = roles.filter(role => 
-    role.title.toLowerCase().includes(search.toLowerCase()) ||
-    role.industry.toLowerCase().includes(search.toLowerCase())
-  ).slice(0, 8);
+  const filteredRoles = roles.filter(role => {
+    const title = role.displayRole || '';
+    return title.toLowerCase().includes(search.toLowerCase());
+  }).slice(0, 8);
 
-  const startAnalysis = () => {
+  const startAnalysis = (role: any) => {
+    // Sync with context so CalculatorPage can pre-fill
+    // We need to find the correct keys. In this data structure, 
+    // we might need to find which category the role belongs to.
+    // For now we will pass a best-guess or just the role name.
+    
+    // Find the career key and industry key from MASTER_CAREER_INTELLIGENCE
+    let foundWorkTypeKey = '';
+    let foundIndustryKey = '';
+    
+    for (const [key, value] of Object.entries(MASTER_CAREER_INTELLIGENCE)) {
+      if (value.displayRole === role.displayRole) {
+        foundWorkTypeKey = key;
+        
+        // Find parent industry from WORK_TYPES
+        for (const [iKey, types] of Object.entries(WORK_TYPES)) {
+          if (types.some(t => t.key === key)) {
+            foundIndustryKey = iKey;
+            break;
+          }
+        }
+        
+        // Fallback for default/generic roles
+        if (!foundIndustryKey) foundIndustryKey = 'it_software'; 
+        break;
+      }
+    }
+
+    dispatch({ 
+      type: 'SET_INITIAL_ROLE', 
+      industryKey: foundIndustryKey, 
+      workTypeKey: foundWorkTypeKey 
+    });
+
     setIsAnalyzing(true);
     setProgress(0);
   };
@@ -44,8 +80,7 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
             setTimeout(() => {
               setIsAnalyzing(false);
               onClose();
-              // In a real app, navigate to results
-              window.dispatchEvent(new CustomEvent('navigate', { detail: 'calculator' }));
+              window.dispatchEvent(new CustomEvent('navigate', { detail: 'risk-oracle' }));
             }, 500);
             return 100;
           }
@@ -116,9 +151,9 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {filteredRoles.map((role) => (
                     <button
-                      key={role.title}
-                      className="btn-secondary"
-                      onClick={startAnalysis}
+                      key={role.displayRole}
+                      className="btn btn-secondary"
+                      onClick={() => startAnalysis(role)}
                       style={{ 
                         display: 'flex', 
                         justifyContent: 'space-between', 
@@ -131,7 +166,7 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
                         fontWeight: 600,
                       }}
                     >
-                      <span>{role.title} <span style={{ color: 'var(--text-3)', fontSize: '0.75rem', marginLeft: '8px' }}>{role.industry}</span></span>
+                      <span>{role.displayRole}</span>
                       <ArrowRight size={14} style={{ opacity: 0.5 }} />
                     </button>
                   ))}

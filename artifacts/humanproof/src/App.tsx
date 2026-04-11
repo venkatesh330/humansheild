@@ -1,32 +1,58 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import './index.css';
+import { useState, useEffect, lazy, Suspense } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+  NavLink,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
+import "./index.css";
+import { LiquidAIBackground } from "./components/LiquidAIBackground";
 
 // Pages — critical loads
-import HomePage from './pages/HomePage';
-import PricingPage from './pages/PricingPage';
-import { AboutPage } from './pages/AboutPage';
-import { PrivacyPage } from './pages/PrivacyPage';
-import { TermsPage } from './pages/TermsPage';
-import { BlogPage } from './pages/BlogPage';
-import { ContactPage } from './pages/ContactPage';
+import HomePage from "./pages/HomePage";
+import PricingPage from "./pages/PricingPage";
+import { AboutPage } from "./pages/AboutPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
+import { TermsPage } from "./pages/TermsPage";
+import { BlogPage } from "./pages/BlogPage";
+import { ContactPage } from "./pages/ContactPage";
+import CalculatorPage from "./pages/CalculatorPage";
+import NotFoundPage from "./pages/not-found";
 
 // Pages — lazy-loaded
-const ToolsPage = lazy(() => import('./pages/ToolsPage'));
-const ProductsPage = lazy(() => import('./pages/ProductsPage'));
-const SafeCareersPage = lazy(() => import('./pages/SafeCareersPage').then(m => ({ default: m.SafeCareersPage })));
-const LearningHubPage = lazy(() => import('./pages/LearningHubPage').then(m => ({ default: m.LearningHubPage })));
-const AuditLogPage = lazy(() => import('./pages/AuditLogPage').then(m => ({ default: m.AuditLogPage })));
+const ToolsPage = lazy(() => import("./pages/ToolsPage"));
+const ProductsPage = lazy(() => import("./pages/ProductsPage"));
+const SafeCareersPage = lazy(() =>
+  import("./pages/SafeCareersPage").then((m) => ({
+    default: m.SafeCareersPage,
+  })),
+);
+const CareerDetailPage = lazy(() =>
+  import("./pages/CareerDetailPage").then((m) => ({
+    default: m.CareerDetailPage,
+  })),
+);
+const LearningHubPage = lazy(() =>
+  import("./pages/LearningHubPage").then((m) => ({
+    default: m.LearningHubPage,
+  })),
+);
+const AuditLogPage = lazy(() =>
+  import("./pages/AuditLogPage").then((m) => ({ default: m.AuditLogPage })),
+);
 
 // Context & Components
-import { HumanProofProvider } from './context/HumanProofContext';
-import { LayoffProvider } from './context/LayoffContext';
-import { AuthProvider } from './context/AuthContext';
-import { digestAPI } from './utils/apiClient';
-import { useAuth } from './context/AuthContext';
-import { AuthModal } from './components/AuthModal';
-import { ToastProvider } from './components/Toast';
-import { GlobalErrorBoundary } from './components/GlobalErrorBoundary';
+import { HumanProofProvider } from "./context/HumanProofContext";
+import { LayoffProvider } from "./context/LayoffContext";
+import { AuthProvider } from "./context/AuthContext";
+import { digestAPI } from "./utils/apiClient";
+import { useAuth } from "./context/AuthContext";
+import { AuthModal } from "./components/AuthModal";
+import { ToastProvider } from "./components/Toast";
+import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 
 // ─── Page Loader ──────────────────────────────────────────────────────────────
 function PageLoader() {
@@ -47,101 +73,62 @@ function NavigationBridge() {
 
   useEffect(() => {
     const handleNav = (e: any) => {
-      if (typeof e.detail === 'string') {
-        navigate(`/${e.detail === 'home' ? '' : e.detail}`);
+      if (typeof e.detail === "string") {
+        navigate(`/${e.detail === "home" ? "" : e.detail}`);
       } else if (e.detail?.page) {
-        const path = `/${e.detail.page === 'home' ? '' : e.detail.page}`;
+        const path = `/${e.detail.page === "home" ? "" : e.detail.page}`;
         navigate(path, { state: e.detail.params });
       }
     };
-    window.addEventListener('navigate', handleNav);
-    return () => window.removeEventListener('navigate', handleNav);
+    window.addEventListener("navigate", handleNav);
+    return () => window.removeEventListener("navigate", handleNav);
   }, [navigate]);
 
   // Scroll reveal observer
   useEffect(() => {
     const observer = new IntersectionObserver(
-      (entries) => entries.forEach(e => e.isIntersecting && e.target.classList.add('vis')),
-      { threshold: 0.08 }
+      (entries) =>
+        entries.forEach(
+          (e) => e.isIntersecting && e.target.classList.add("vis"),
+        ),
+      { threshold: 0.08 },
     );
 
-    const observe = () => document.querySelectorAll('.reveal:not(.vis)').forEach(el => observer.observe(el));
+    const observe = () =>
+      document
+        .querySelectorAll(".reveal:not(.vis)")
+        .forEach((el) => observer.observe(el));
     observe();
     setTimeout(observe, 400);
 
-    const main = document.querySelector('main') || document.body;
+    const main = document.querySelector("main") || document.body;
     const mo = new MutationObserver(observe);
     mo.observe(main, { childList: true, subtree: true });
 
-    return () => { observer.disconnect(); mo.disconnect(); };
+    return () => {
+      observer.disconnect();
+      mo.disconnect();
+    };
   }, [location.pathname]);
 
   return null;
 }
 
-// ─── Particle Canvas ──────────────────────────────────────────────────────────
-function useParticleBackground() {
-  useEffect(() => {
-    const canvas = document.getElementById('bg-canvas') as HTMLCanvasElement;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let particles: { x: number; y: number; vx: number; vy: number; r: number; o: number }[] = [];
-    let rafId: number;
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-
-    const init = () => {
-      particles = Array.from({ length: 40 }, () => ({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        r: Math.random() * 1.5 + 0.5,
-        o: Math.random() * 0.5 + 0.1,
-      }));
-    };
-
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      particles.forEach(p => {
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
-        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(148, 163, 184, ${p.o})`;
-        ctx.fill();
-      });
-      rafId = requestAnimationFrame(draw);
-    };
-
-    window.addEventListener('resize', resize);
-    resize();
-    init();
-    rafId = requestAnimationFrame(draw);
-
-    return () => {
-      window.removeEventListener('resize', resize);
-      cancelAnimationFrame(rafId);
-    };
-  }, []);
-}
+// ─── Particle Canvas hook removed — replaced by LiquidAIBackground WebGL component ──
 
 // ─── App Navigation ───────────────────────────────────────────────────────────
 const NAV_ITEMS = [
-  { to: '/',             label: 'Research'  },
-  { to: '/calculator',   label: 'AI Risk'   },
-  { to: '/safe-careers', label: 'Safe List' },
-  { to: '/learning-hub', label: 'Upskill'   },
+  { to: "/", label: "Research" },
+  { to: "/risk-oracle", label: "Risk Oracle" },
+  { to: "/safe-careers", label: "Safe List" },
+  { to: "/learning-hub", label: "Upskill" },
 ];
 
-function AppNav({ isDark, toggleTheme, onAuthOpen }: {
+function AppNav({
+  isDark,
+  toggleTheme,
+  onAuthOpen,
+}: {
   isDark: boolean;
   toggleTheme: () => void;
   onAuthOpen: () => void;
@@ -153,37 +140,50 @@ function AppNav({ isDark, toggleTheme, onAuthOpen }: {
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => setMobileOpen(false), [location.pathname]);
 
   const isActive = (to: string) => {
-    if (to === '/' && location.pathname === '/') return true;
-    if (to !== '/' && location.pathname.startsWith(to)) return true;
+    if (to === "/" && location.pathname === "/") return true;
+    if (to !== "/" && location.pathname.startsWith(to)) return true;
     return false;
   };
 
   return (
     <header className="nav-root" style={{ zIndex: 1000 }}>
-      <nav className="nav-inner" style={{
-        backgroundColor: scrolled ? 'rgba(3,7,18,0.92)' : 'rgba(3,7,18,0.65)',
-        boxShadow: scrolled ? '0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)' : 'none',
-      }}>
-        <Link to="/" className="nav-logo" style={{ textDecoration: 'none' }}>
+      <nav
+        className="nav-inner"
+        style={{
+          backgroundColor: scrolled ? "rgba(3,7,18,0.92)" : "rgba(3,7,18,0.65)",
+          boxShadow: scrolled
+            ? "0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)"
+            : "none",
+        }}
+      >
+        <Link to="/" className="nav-logo" style={{ textDecoration: "none" }}>
           <span className="nav-logo-dot" />
           HumanShield
         </Link>
 
         {/* Desktop nav */}
-        <ul className="nav-links" style={{ listStyle: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {NAV_ITEMS.map(item => (
+        <ul
+          className="nav-links"
+          style={{
+            listStyle: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          {NAV_ITEMS.map((item) => (
             <li key={item.to}>
               <Link
                 to={item.to}
-                className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
-                style={{ textDecoration: 'none' }}
+                className={`nav-link ${isActive(item.to) ? "active" : ""}`}
+                style={{ textDecoration: "none" }}
               >
                 {item.label}
               </Link>
@@ -191,36 +191,67 @@ function AppNav({ isDark, toggleTheme, onAuthOpen }: {
           ))}
         </ul>
 
-        <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div
+          className="nav-actions"
+          style={{ display: "flex", alignItems: "center", gap: "10px" }}
+        >
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
             className="theme-toggle"
-            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
             aria-label="Toggle theme"
           >
             {isDark ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
               </svg>
             ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
               </svg>
             )}
           </button>
 
           {user ? (
             <>
-              <span style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.65rem',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                color: 'var(--text-3)',
-                textTransform: 'uppercase',
-              }}>
-                {user.email?.split('@')[0]}
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.65rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  color: "var(--text-3)",
+                  textTransform: "uppercase",
+                }}
+              >
+                {user.email?.split("@")[0]}
               </span>
               <button
                 onClick={() => signOut()}
@@ -230,10 +261,7 @@ function AppNav({ isDark, toggleTheme, onAuthOpen }: {
               </button>
             </>
           ) : (
-            <button
-              onClick={onAuthOpen}
-              className="btn btn-primary btn-sm"
-            >
+            <button onClick={onAuthOpen} className="btn btn-primary btn-sm">
               Get Access
             </button>
           )}
@@ -241,16 +269,31 @@ function AppNav({ isDark, toggleTheme, onAuthOpen }: {
           {/* Mobile hamburger */}
           <button
             className="theme-toggle"
-            onClick={() => setMobileOpen(p => !p)}
+            onClick={() => setMobileOpen((p) => !p)}
             aria-label="Menu"
-            style={{ display: 'none' }}
+            style={{ display: "none" }}
             id="mobile-menu-btn"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
               {mobileOpen ? (
-                <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </>
               ) : (
-                <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>
+                <>
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </>
               )}
             </svg>
           </button>
@@ -259,23 +302,25 @@ function AppNav({ isDark, toggleTheme, onAuthOpen }: {
 
       {/* Mobile dropdown */}
       {mobileOpen && (
-        <div style={{
-          marginTop: '8px',
-          background: 'rgba(3,7,18,0.97)',
-          border: '1px solid var(--border)',
-          borderRadius: '16px',
-          padding: '16px',
-          backdropFilter: 'blur(24px)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px',
-        }}>
-          {NAV_ITEMS.map(item => (
+        <div
+          style={{
+            marginTop: "8px",
+            background: "rgba(3,7,18,0.97)",
+            border: "1px solid var(--border)",
+            borderRadius: "16px",
+            padding: "16px",
+            backdropFilter: "blur(24px)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+          }}
+        >
+          {NAV_ITEMS.map((item) => (
             <Link
               key={item.to}
               to={item.to}
-              className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
-              style={{ textDecoration: 'none', display: 'block' }}
+              className={`nav-link ${isActive(item.to) ? "active" : ""}`}
+              style={{ textDecoration: "none", display: "block" }}
             >
               {item.label}
             </Link>
@@ -288,85 +333,170 @@ function AppNav({ isDark, toggleTheme, onAuthOpen }: {
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
 function AppFooter() {
-  const [email, setEmail] = useState('');
-  const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [email, setEmail] = useState("");
+  const [subStatus, setSubStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
-    setSubStatus('loading');
+    setSubStatus("loading");
     try {
       await digestAPI.subscribe(email);
-      setSubStatus('success');
-      setEmail('');
-      setTimeout(() => setSubStatus('idle'), 3500);
+      setSubStatus("success");
+      setEmail("");
+      setTimeout(() => setSubStatus("idle"), 3500);
     } catch {
-      setSubStatus('error');
-      setTimeout(() => setSubStatus('idle'), 3000);
+      setSubStatus("error");
+      setTimeout(() => setSubStatus("idle"), 3000);
     }
   };
 
   return (
     <footer className="footer-root">
       <div className="container">
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '48px', marginBottom: '48px' }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr 1fr",
+            gap: "48px",
+            marginBottom: "48px",
+          }}
+        >
           {/* Brand */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-              <span style={{ width: 6, height: 6, background: 'var(--cyan)', borderRadius: '50%', display: 'block' }} />
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '1rem', color: 'var(--text)', letterSpacing: '-0.04em' }}>HumanShield</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "16px",
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  background: "var(--cyan)",
+                  borderRadius: "50%",
+                  display: "block",
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 900,
+                  fontSize: "1rem",
+                  color: "var(--text)",
+                  letterSpacing: "-0.04em",
+                }}
+              >
+                HumanShield
+              </span>
             </div>
-            <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', lineHeight: 1.7, maxWidth: '320px', marginBottom: '24px' }}>
-              The high-fidelity standard for career protection in the AI era. Powered by state-of-the-art frontier AI systems and verified global research.
+            <p
+              style={{
+                color: "var(--text-2)",
+                fontSize: "0.875rem",
+                lineHeight: 1.7,
+                maxWidth: "320px",
+                marginBottom: "24px",
+              }}
+            >
+              The high-fidelity standard for career protection in the AI era.
+              Powered by state-of-the-art frontier AI systems and verified
+              global research.
             </p>
-            <form onSubmit={handleSubscribe} style={{ display: 'flex', maxWidth: '320px', gap: '8px' }}>
+            <form
+              onSubmit={handleSubscribe}
+              style={{ display: "flex", maxWidth: "320px", gap: "8px" }}
+            >
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
                 className="input"
-                style={{ flex: 1, fontSize: '0.8rem', padding: '10px 14px' }}
+                style={{ flex: 1, fontSize: "0.8rem", padding: "10px 14px" }}
               />
               <button
                 type="submit"
                 className="btn btn-black"
-                disabled={subStatus === 'loading'}
+                disabled={subStatus === "loading"}
                 style={{
-                  background: subStatus === 'success' ? 'var(--emerald)' : 'var(--text)',
-                  color: 'var(--bg)',
-                  padding: '10px 16px',
-                  borderRadius: '12px',
+                  background:
+                    subStatus === "success" ? "var(--emerald)" : "var(--text)",
+                  color: "var(--bg)",
+                  padding: "10px 16px",
+                  borderRadius: "12px",
                   fontWeight: 700,
-                  fontSize: '0.75rem',
-                  cursor: 'pointer',
-                  border: 'none',
+                  fontSize: "0.75rem",
+                  cursor: "pointer",
+                  border: "none",
                   flexShrink: 0,
-                  transition: 'all 250ms',
+                  transition: "all 250ms",
                 }}
               >
-                {subStatus === 'loading' ? '...' : subStatus === 'success' ? '✓' : 'Subscribe'}
+                {subStatus === "loading"
+                  ? "..."
+                  : subStatus === "success"
+                    ? "✓"
+                    : "Subscribe"}
               </button>
             </form>
-            {subStatus === 'error' && <p style={{ color: 'var(--red)', fontSize: '0.75rem', marginTop: '8px' }}>Failed. Try again.</p>}
+            {subStatus === "error" && (
+              <p
+                style={{
+                  color: "var(--red)",
+                  fontSize: "0.75rem",
+                  marginTop: "8px",
+                }}
+              >
+                Failed. Try again.
+              </p>
+            )}
           </div>
 
           {/* Protocol links */}
           <div>
-            <h4 className="label-xs" style={{ marginBottom: '20px' }}>Platform</h4>
-            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h4 className="label-xs" style={{ marginBottom: "20px" }}>
+              Platform
+            </h4>
+            <ul
+              style={{
+                listStyle: "none",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
               {[
-                { to: '/calculator', label: 'Risk Oracle' },
-                { to: '/learning-hub', label: 'Learning Hub' },
-                { to: '/safe-careers', label: 'Safe Careers' },
-                { to: '/pricing', label: 'Pricing' },
-                { to: '/about', label: 'About' },
-              ].map(l => (
+                { to: "/risk-oracle", label: "Risk Oracle" },
+                { to: "/calculator", label: "Audit Terminal" },
+                { to: "/learning-hub", label: "Learning Hub" },
+                { to: "/safe-careers", label: "Safe Careers" },
+                { to: "/about", label: "About" },
+              ].map((l) => (
                 <li key={l.to}>
-                  <Link to={l.to} style={{ color: 'var(--text-2)', textDecoration: 'none', fontSize: '0.875rem', fontWeight: 500, transition: 'color 150ms' }}
-                    onMouseEnter={e => (e.target as any).style.color = 'var(--text)'}
-                    onMouseLeave={e => (e.target as any).style.color = 'var(--text-2)'}
-                  >{l.label}</Link>
+                  <Link
+                    to={l.to}
+                    style={{
+                      color: "var(--text-2)",
+                      textDecoration: "none",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      transition: "color 150ms",
+                    }}
+                    onMouseEnter={(e) =>
+                      ((e.target as any).style.color = "var(--text)")
+                    }
+                    onMouseLeave={(e) =>
+                      ((e.target as any).style.color = "var(--text-2)")
+                    }
+                  >
+                    {l.label}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -374,30 +504,71 @@ function AppFooter() {
 
           {/* Legal */}
           <div>
-            <h4 className="label-xs" style={{ marginBottom: '20px' }}>Legal</h4>
-            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h4 className="label-xs" style={{ marginBottom: "20px" }}>
+              Legal
+            </h4>
+            <ul
+              style={{
+                listStyle: "none",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
               {[
-                { to: '/privacy', label: 'Privacy Policy' },
-                { to: '/terms', label: 'Terms of Use' },
-                { to: '/audit-log', label: 'Audit Log' },
-                { to: '/blog', label: 'Blog' },
-                { to: '/contact', label: 'Contact' },
-              ].map(l => (
+                { to: "/privacy", label: "Privacy Policy" },
+                { to: "/terms", label: "Terms of Use" },
+                { to: "/audit-log", label: "Audit Log" },
+                { to: "/blog", label: "Blog" },
+                { to: "/contact", label: "Contact" },
+              ].map((l) => (
                 <li key={l.to}>
-                  <Link to={l.to} style={{ color: 'var(--text-2)', textDecoration: 'none', fontSize: '0.875rem', fontWeight: 500, transition: 'color 150ms' }}
-                    onMouseEnter={e => (e.target as any).style.color = 'var(--text)'}
-                    onMouseLeave={e => (e.target as any).style.color = 'var(--text-2)'}
-                  >{l.label}</Link>
+                  <Link
+                    to={l.to}
+                    style={{
+                      color: "var(--text-2)",
+                      textDecoration: "none",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      transition: "color 150ms",
+                    }}
+                    onMouseEnter={(e) =>
+                      ((e.target as any).style.color = "var(--text)")
+                    }
+                    onMouseLeave={(e) =>
+                      ((e.target as any).style.color = "var(--text-2)")
+                    }
+                  >
+                    {l.label}
+                  </Link>
                 </li>
               ))}
             </ul>
           </div>
         </div>
 
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: 'var(--text-3)', fontSize: '0.8rem' }}>© 2026 HumanProof. All rights reserved.</span>
+        <div
+          style={{
+            borderTop: "1px solid var(--border)",
+            paddingTop: "24px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <span style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>
+            © 2026 HumanShield. All rights reserved.
+          </span>
           <div className="badge badge-cyan">
-            <span style={{ width: 4, height: 4, background: 'var(--cyan)', borderRadius: '50%', display: 'inline-block' }} />
+            <span
+              style={{
+                width: 4,
+                height: 4,
+                background: "var(--cyan)",
+                borderRadius: "50%",
+                display: "inline-block",
+              }}
+            />
             Live · Q1 2026 Dataset
           </div>
         </div>
@@ -411,41 +582,53 @@ function AppContent() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
 
-  useParticleBackground();
-
   const toggleTheme = () => {
-    setIsDark(d => {
+    setIsDark((d) => {
       const next = !d;
-      document.documentElement.classList.toggle('light', !next);
+      document.documentElement.classList.toggle("light", !next);
       return next;
     });
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)', position: 'relative' }}>
-      <canvas id="bg-canvas" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }} />
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        color: "var(--text)",
+        position: "relative",
+      }}
+    >
+      <LiquidAIBackground />
       <div className="page-glow page-glow-1" />
       <div className="page-glow page-glow-2" />
       <NavigationBridge />
 
-      <AppNav isDark={isDark} toggleTheme={toggleTheme} onAuthOpen={() => setIsAuthOpen(true)} />
+      <AppNav
+        isDark={isDark}
+        toggleTheme={toggleTheme}
+        onAuthOpen={() => setIsAuthOpen(true)}
+      />
 
-      <main style={{ position: 'relative', zIndex: 1 }}>
+      <main style={{ position: "relative", zIndex: 1 }}>
         <GlobalErrorBoundary>
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              <Route path="/"             element={<HomePage />} />
-              <Route path="/calculator"   element={<ToolsPage />} />
+              <Route path="/" element={<HomePage />} />
+              <Route path="/risk-oracle" element={<CalculatorPage />} />
+              <Route path="/calculator" element={<ToolsPage />} />
               <Route path="/safe-careers" element={<SafeCareersPage />} />
+              <Route path="/career/:id" element={<CareerDetailPage />} />
               <Route path="/learning-hub" element={<LearningHubPage />} />
-              <Route path="/audit-log"    element={<AuditLogPage />} />
-              <Route path="/products"     element={<ProductsPage />} />
-              <Route path="/pricing"      element={<PricingPage />} />
-              <Route path="/about"        element={<AboutPage />} />
-              <Route path="/contact"      element={<ContactPage />} />
-              <Route path="/privacy"      element={<PrivacyPage />} />
-              <Route path="/terms"        element={<TermsPage />} />
-              <Route path="/blog"         element={<BlogPage />} />
+              <Route path="/audit-log" element={<AuditLogPage />} />
+              <Route path="/products" element={<ProductsPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="/contact" element={<ContactPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/blog" element={<BlogPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
         </GlobalErrorBoundary>

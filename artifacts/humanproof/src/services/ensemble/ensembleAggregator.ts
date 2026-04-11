@@ -62,12 +62,14 @@ export const aggregateEnsembleResults = ({
   llamaResult,
   geminiResult,
   engineScore,
+  swarmScore,
 }: {
   gemmaResult: GemmaResult;
   deepseekResult: DeepSeekResult;
   llamaResult: LlamaResult;
   geminiResult: GeminiResult | null;
   engineScore: number;
+  swarmScore?: number;    // [SWARM] Optional swarm risk score (0–100)
 }): AggregateResult => {
   const scores: IndividualScore[] = [];
   const debugLog: any[] = [];
@@ -151,6 +153,16 @@ export const aggregateEnsembleResults = ({
     const g = geminiResult.synthesis;
     finalScore      = Math.round(consensusScore * 0.70 + g.finalScore * 0.30);
     finalConfidence = Math.min(98, Math.round((agreementPercent * 0.6) + (g.confidencePercent * 0.4)));
+  }
+
+  // ── [SWARM] Blend swarm score into final (configurable weight, default 15%) ──
+  if (swarmScore !== undefined && swarmScore >= 0 && swarmScore <= 100) {
+    const rawBlend = parseFloat(
+      (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SWARM_BLEND_WEIGHT : undefined) ?? '0.15'
+    );
+    const safeWeight = Math.max(0.05, Math.min(0.35, isNaN(rawBlend) ? 0.15 : rawBlend));
+    finalScore = Math.round(finalScore * (1 - safeWeight) + swarmScore * safeWeight);
+    console.log(`[Ensemble] Swarm blend: final=${finalScore} (weight=${safeWeight.toFixed(2)})`);
   }
 
   // ── Clamp: never claim 0% or 100% certainty ─────────────────────────────

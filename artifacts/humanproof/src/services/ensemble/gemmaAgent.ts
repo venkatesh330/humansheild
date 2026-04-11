@@ -29,13 +29,16 @@ export interface GemmaResult {
 export const runGemmaOSINT = async (
   companyName: string,
   industry: string,
-  roleTitle: string
+  roleTitle: string,
+  swarmContext?: string
 ): Promise<GemmaResult> => {
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   if (!apiKey) return { model: 'gemma-3-27b', success: false, signals: null, rawConfidence: 0 };
   if (!checkRateLimit('openrouter')) return { model: 'gemma-3-27b', success: false, signals: null, rawConfidence: 0 };
 
-  const prompt = `You are a corporate intelligence analyst specializing in workforce risk assessment.
+  const swarmSection = swarmContext ? `\n\n${swarmContext}\n` : '';
+
+  const prompt = `You are a corporate intelligence analyst specializing in workforce risk assessment.${swarmSection}
 
 Analyze the following company and provide a structured risk assessment:
 

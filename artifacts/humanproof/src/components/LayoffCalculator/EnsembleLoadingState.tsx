@@ -16,14 +16,16 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { key: 'engine',   label: 'Running 5-layer deterministic analysis',  detail: 'Company health · role exposure · market signals',   activeFrom: 0, doneFrom: 1 },
-  { key: 'gemma',    label: 'Gemma scanning company signals',           detail: 'OSINT · financial stress · AI adoption threat',      activeFrom: 1, doneFrom: 2 },
-  { key: 'deepseek', label: 'DeepSeek analyzing financial patterns',    detail: 'Revenue risk · sector contagion · market cycle',     activeFrom: 1, doneFrom: 2 },
-  { key: 'llama',    label: 'Llama validating role & department risk',  detail: 'Automation exposure · tenure analysis · dept cuts',  activeFrom: 1, doneFrom: 2 },
-  { key: 'gemini',   label: 'Gemini synthesizing all results',          detail: 'Outlier detection · consensus scoring · confidence', activeFrom: 2, doneFrom: 3 },
+  { key: 'swarm',    label: 'Swarm Intelligence Layer firing',           detail: '30 agents · Alpha Vantage · NewsAPI · FRED live signals',  activeFrom: 0, doneFrom: 1 },
+  { key: 'engine',   label: 'Running 5-layer deterministic analysis',    detail: 'Company health · role exposure · market signals',           activeFrom: 0, doneFrom: 1 },
+  { key: 'gemma',    label: 'Gemma scanning company signals',            detail: 'OSINT · financial stress · AI adoption threat',             activeFrom: 1, doneFrom: 2 },
+  { key: 'deepseek', label: 'DeepSeek analyzing financial patterns',     detail: 'Revenue risk · sector contagion · market cycle',            activeFrom: 1, doneFrom: 2 },
+  { key: 'llama',    label: 'Llama validating role & department risk',   detail: 'Automation exposure · tenure analysis · dept cuts',         activeFrom: 1, doneFrom: 2 },
+  { key: 'gemini',   label: 'Gemini synthesizing all results',           detail: 'Outlier detection · consensus scoring · confidence',        activeFrom: 2, doneFrom: 3 },
 ];
 
 const MODEL_COLORS: Record<string, string> = {
+  swarm:    '#10b981',
   engine:   '#00F5FF',
   gemma:    '#a78bfa',
   deepseek: '#34d399',

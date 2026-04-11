@@ -9,6 +9,7 @@ export interface LayoffRound {
 export interface CompanyData {
   name: string;
   ticker?: string;
+  stockTicker?: string;  // alias for ticker — used by swarm market agents
   isPublic: boolean;
   industry: string;
   region: 'US' | 'EU' | 'IN' | 'APAC' | 'GLOBAL';

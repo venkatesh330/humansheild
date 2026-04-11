@@ -31,6 +31,8 @@ interface HumanProofState {
   roadmapStarted: boolean;
   skillIntents: Record<string, 'protect' | 'pivot'>;
   quizAnswers: Record<number, number>;
+  initialWorkTypeKey: string | null;
+  initialIndustryKey: string | null;
 }
 
 type Action =
@@ -43,6 +45,8 @@ type Action =
   | { type: 'SET_ROADMAP_STARTED'; startDate: string }
   | { type: 'SET_SKILL_INTENTS'; intents: Record<string, 'protect' | 'pivot'> }
   | { type: 'SET_QUIZ_ANSWERS'; answers: Record<number, number> }
+  | { type: 'SET_INITIAL_ROLE'; industryKey: string; workTypeKey: string }
+  | { type: 'CLEAR_INITIAL_ROLE' }
   | { type: 'HYDRATE'; payload: Partial<HumanProofState> };
 
 const defaultState: HumanProofState = {
@@ -65,6 +69,8 @@ const defaultState: HumanProofState = {
   roadmapStarted: false,
   skillIntents: {},
   quizAnswers: {},
+  initialWorkTypeKey: null,
+  initialIndustryKey: null,
 };
 
 function reducer(state: HumanProofState, action: Action): HumanProofState {
@@ -115,6 +121,18 @@ function reducer(state: HumanProofState, action: Action): HumanProofState {
       return { ...state, skillIntents: action.intents };
     case 'SET_QUIZ_ANSWERS':
       return { ...state, quizAnswers: action.answers };
+    case 'SET_INITIAL_ROLE':
+      return { 
+        ...state, 
+        initialIndustryKey: action.industryKey, 
+        initialWorkTypeKey: action.workTypeKey 
+      };
+    case 'CLEAR_INITIAL_ROLE':
+      return {
+        ...state,
+        initialIndustryKey: null,
+        initialWorkTypeKey: null
+      };
     default:
       return state;
   }

@@ -7,6 +7,29 @@ import { supabase } from '../../utils/supabase';
 const LOCAL_TTL_MS  = 1000 * 60 * 60 * 24;      // 24 hours
 const REMOTE_TTL_MS = 1000 * 60 * 60 * 24 * 7;  // 7 days
 
+// BUG-09 FIX: strip heavy swarm visualization data before caching to prevent
+// localStorage quota overflow (~80KB → ~5KB per entry)
+const slimForCache = (value: any): any => {
+  if (!value) return value;
+  const slim = { ...value };
+  if (slim.swarmReport) {
+    slim.swarmReport = {
+      swarmRiskScore:    slim.swarmReport.swarmRiskScore,
+      swarmConfidence:   slim.swarmReport.swarmConfidence,
+      categoryBreakdown: slim.swarmReport.categoryBreakdown,
+      liveAgentsUsed:    slim.swarmReport.liveAgentsUsed,
+      totalAgentsRun:    slim.swarmReport.totalAgentsRun,
+      generatedAt:       slim.swarmReport.generatedAt,
+      anomalies:         slim.swarmReport.anomalies?.slice(0, 3) ?? [],
+      dominantSignals:   slim.swarmReport.dominantSignals?.slice(0, 3).map((s: any) => ({
+        agentId: s.agentId, signal: s.signal, category: s.category,
+      })) ?? [],
+      // Omit visualizationGraph (nodes array) and full agent metadata
+    };
+  }
+  return slim;
+};
+
 export const getCachedAnalysis = async (key: string): Promise<any | null> => {
   // ── Layer 1: localStorage (instant, per-device) ──
   try {
@@ -50,11 +73,13 @@ export const getCachedAnalysis = async (key: string): Promise<any | null> => {
 };
 
 export const setCachedAnalysis = async (key: string, value: any): Promise<void> => {
+  const slim = slimForCache(value); // BUG-09 FIX: strip heavy data before storing
+
   // Save to localStorage immediately (synchronous)
   try {
     localStorage.setItem(
       `hp_ensemble_${key}`,
-      JSON.stringify({ data: value, timestamp: Date.now() })
+      JSON.stringify({ data: slim, timestamp: Date.now() })
     );
   } catch {
     // localStorage full — skip silently
@@ -63,7 +88,7 @@ export const setCachedAnalysis = async (key: string, value: any): Promise<void> 
   // Save to Supabase async — don't block the UI
   supabase
     .from('layoff_analysis_cache')
-    .upsert({ key, data: value, created_at: new Date().toISOString() }, { onConflict: 'key' })
+    .upsert({ key, data: slim, created_at: new Date().toISOString() }, { onConflict: 'key' })
     .then(({ error }) => {
       if (error) console.warn('[Cache] Supabase upsert failed:', error.message);
       else console.log('[Cache] Saved to Supabase:', key);

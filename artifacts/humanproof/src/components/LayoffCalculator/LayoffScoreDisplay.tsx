@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { ScoreResult, ScoreBreakdown } from '../../services/layoffScoreEngine';
-import { EnsembleResult } from '../../services/ensemble/ensembleOrchestrator';
-import { LayoffActionPlan } from './LayoffActionPlan';
-import { layoffNewsCache } from '../../data/layoffNewsCache';
+import React, { useState, useEffect } from "react";
+import { ScoreResult, ScoreBreakdown } from "../../services/layoffScoreEngine";
+import { EnsembleResult } from "../../services/ensemble/ensembleOrchestrator";
+import { LayoffActionPlan } from "./LayoffActionPlan";
+import { layoffNewsCache } from "../../data/layoffNewsCache";
+import { AgentNetworkDisplay } from "./AgentNetworkDisplay";
+import {
+  AgentBreakdownPanel,
+  transformSignalsForDisplay,
+} from "./AgentBreakdownPanel";
 
 interface Props {
   result: ScoreResult | EnsembleResult;
@@ -16,36 +21,341 @@ interface Props {
 }
 
 // ── Type guard ───────────────────────────────────────────────────
-const isEnsemble = (r: any): r is EnsembleResult => 'ensembleScore' in r;
+const isEnsemble = (r: any): r is EnsembleResult => "ensembleScore" in r;
+
+// ── Classification Badge (Spy-Themed) ─────────────────────────────────
+const ClassificationBadge: React.FC<{
+  score: number;
+  companyName: string;
+  roleTitle: string;
+  timestamp: string;
+}> = ({ score, companyName, roleTitle, timestamp }) => {
+  // Determine classification based on score
+  const getClassification = (s: number): { level: string; color: string } => {
+    if (s >= 75) return { level: "TOP SECRET", color: "#ef4444" };
+    if (s >= 55) return { level: "CONFIDENTIAL", color: "#f97316" };
+    if (s >= 35) return { level: "RESTRICTED", color: "#f59e0b" };
+    return { level: "UNCLASSIFIED", color: "#10b981" };
+  };
+
+  const classification = getClassification(score);
+
+  return (
+    <div
+      style={{
+        background: "rgba(10, 15, 25, 0.95)",
+        border: `1px solid ${classification.color}40`,
+        borderRadius: "8px",
+        padding: "16px 20px",
+        marginBottom: "24px",
+        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+      }}
+    >
+      {/* Classification Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "12px",
+          paddingBottom: "12px",
+          borderBottom: `1px solid ${classification.color}20`,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <span
+            style={{
+              width: "10px",
+              height: "10px",
+              borderRadius: "2px",
+              background: classification.color,
+              boxShadow: `0 0 10px ${classification.color}`,
+            }}
+          />
+          <span
+            style={{
+              color: classification.color,
+              fontSize: "0.75rem",
+              fontWeight: 700,
+              letterSpacing: "2px",
+            }}
+          >
+            {classification.level}
+          </span>
+        </div>
+        <span
+          style={{
+            color: "rgba(255,255,255,0.4)",
+            fontSize: "0.65rem",
+            letterSpacing: "1px",
+          }}
+        >
+          HP-NETWORK SECURITY
+        </span>
+      </div>
+
+      {/* Target Designation */}
+      <div style={{ marginBottom: "12px" }}>
+        <div
+          style={{
+            color: "rgba(255,255,255,0.5)",
+            fontSize: "0.65rem",
+            letterSpacing: "1px",
+            marginBottom: "4px",
+          }}
+        >
+          /// TARGET DESIGNATION ///
+        </div>
+        <div
+          style={{
+            color: "#fff",
+            fontSize: "1.1rem",
+            fontWeight: 700,
+            letterSpacing: "1px",
+          }}
+        >
+          {companyName.toUpperCase()}
+        </div>
+        <div
+          style={{
+            color: "rgba(255,255,255,0.6)",
+            fontSize: "0.8rem",
+            marginTop: "2px",
+          }}
+        >
+          ROLE: {roleTitle.toUpperCase()}
+        </div>
+      </div>
+
+      {/* Intel Timestamp */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontSize: "0.7rem",
+          color: "rgba(255,255,255,0.4)",
+        }}
+      >
+        <span>INTEL TIMESTAMP</span>
+        <span style={{ fontFamily: "monospace", color: "#00F5FF" }}>
+          {timestamp}
+        </span>
+      </div>
+    </div>
+  );
+};
 
 // ── Accuracy Badge ────────────────────────────────────────────────
 const AccuracyBadge: React.FC<{
-  accuracyLabel: EnsembleResult['accuracyLabel'];
+  accuracyLabel: EnsembleResult["accuracyLabel"];
   confidencePercent: number;
   modelsUsed: string[];
 }> = ({ accuracyLabel, confidencePercent, modelsUsed }) => {
-  const colorMap: Record<string, string> = { teal: '#14b8a6', green: '#10b981', amber: '#f59e0b', gray: '#6b7280' };
-  const c = colorMap[accuracyLabel.color] || '#6b7280';
+  const colorMap: Record<string, string> = {
+    teal: "#14b8a6",
+    green: "#10b981",
+    amber: "#f59e0b",
+    gray: "#6b7280",
+  };
+  const c = colorMap[accuracyLabel.color] || "#6b7280";
   return (
-    <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-      <div style={{
-        display: 'inline-flex', alignItems: 'center', gap: '8px',
-        background: `${c}15`, border: `1px solid ${c}40`,
-        borderRadius: '24px', padding: '8px 18px', marginBottom: '8px',
-      }}>
-        <span style={{ width: '8px', height: '8px', background: c, borderRadius: '50%', animation: 'pulse 1.4s ease-in-out infinite' }} />
-        <span style={{ color: c, fontWeight: 600, fontSize: '0.85rem' }}>{accuracyLabel.label}</span>
-        <span style={{ color: '#9ba5b4', fontSize: '0.8rem' }}>·</span>
-        <span style={{ color: '#9ba5b4', fontSize: '0.8rem' }}>{confidencePercent}% confidence</span>
+    <div style={{ marginBottom: "20px", textAlign: "center" }}>
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "8px",
+          background: `${c}15`,
+          border: `1px solid ${c}40`,
+          borderRadius: "24px",
+          padding: "8px 18px",
+          marginBottom: "8px",
+        }}
+      >
+        <span
+          style={{
+            width: "8px",
+            height: "8px",
+            background: c,
+            borderRadius: "50%",
+            animation: "pulse 1.4s ease-in-out infinite",
+          }}
+        />
+        <span style={{ color: c, fontWeight: 600, fontSize: "0.85rem" }}>
+          {accuracyLabel.label}
+        </span>
+        <span style={{ color: "#9ba5b4", fontSize: "0.8rem" }}>·</span>
+        <span style={{ color: "#9ba5b4", fontSize: "0.8rem" }}>
+          {confidencePercent}% confidence
+        </span>
       </div>
-      <p style={{ margin: 0, color: '#6b7280', fontSize: '0.8rem' }}>{accuracyLabel.detail}</p>
-      <p style={{ margin: '4px 0 0', color: '#4b5563', fontSize: '0.75rem' }}>
-        Models: {modelsUsed.map(m => ({
-          engine: 'Engine', 'gemma-3-27b': 'Gemma', 'deepseek-v3': 'DeepSeek',
-          'llama-3.3-70b': 'Llama', 'gemini-2.0-flash': 'Gemini',
-        }[m] || m)).join(' · ')}
+      <p style={{ margin: 0, color: "#6b7280", fontSize: "0.8rem" }}>
+        {accuracyLabel.detail}
+      </p>
+      <p style={{ margin: "4px 0 0", color: "#4b5563", fontSize: "0.75rem" }}>
+        Models:{" "}
+        {modelsUsed
+          .map(
+            (m) =>
+              ({
+                engine: "Engine",
+                "gemma-3-27b": "Gemma",
+                "deepseek-v3": "DeepSeek",
+                "llama-3.3-70b": "Llama",
+                "gemini-2.0-flash": "Gemini",
+              })[m] || m,
+          )
+          .join(" · ")}
       </p>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }`}</style>
+    </div>
+  );
+};
+
+// ── Swarm Intelligence Badge ──────────────────────────────────────────
+const SwarmBadge: React.FC<{
+  swarmScore: number;
+  swarmConfidence: number;
+  liveAgentsUsed: number;
+  totalAgentsRun: number;
+  categoryBreakdown: {
+    market: number;
+    company: number;
+    ai: number;
+    external: number;
+  };
+}> = ({
+  swarmScore,
+  swarmConfidence,
+  liveAgentsUsed,
+  totalAgentsRun,
+  categoryBreakdown,
+}) => {
+  const isLive = liveAgentsUsed > 0;
+  const accent = isLive ? "#10b981" : "#6b7280";
+  const categories = [
+    { label: "Market", val: categoryBreakdown.market },
+    { label: "Company", val: categoryBreakdown.company },
+    { label: "AI Risk", val: categoryBreakdown.ai },
+    { label: "Macro", val: categoryBreakdown.external },
+  ];
+  return (
+    <div
+      style={{
+        background: `${accent}10`,
+        border: `1px solid ${accent}30`,
+        borderRadius: "12px",
+        padding: "16px 20px",
+        marginBottom: "20px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "12px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span
+            style={{
+              width: "8px",
+              height: "8px",
+              background: accent,
+              borderRadius: "50%",
+              animation: isLive ? "pulse 1.4s ease-in-out infinite" : "none",
+            }}
+          />
+          <span
+            style={{
+              color: accent,
+              fontWeight: 700,
+              fontSize: "0.82rem",
+              letterSpacing: "0.5px",
+              textTransform: "uppercase",
+            }}
+          >
+            Swarm Intelligence · {totalAgentsRun}/30 agents
+          </span>
+        </div>
+        <span style={{ color: "#9ba5b4", fontSize: "0.8rem" }}>
+          {isLive ? `⚡ ${liveAgentsUsed} live APIs` : "heuristic mode"}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          flexWrap: "wrap",
+          marginBottom: "10px",
+        }}
+      >
+        {categories.map((c) => (
+          <div
+            key={c.label}
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              borderRadius: "8px",
+              padding: "6px 12px",
+              textAlign: "center",
+              flex: "1 1 60px",
+            }}
+          >
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: "0.68rem",
+                marginBottom: "2px",
+              }}
+            >
+              {c.label}
+            </div>
+            <div
+              style={{
+                color:
+                  c.val >= 60 ? "#ef4444" : c.val >= 40 ? "#f59e0b" : "#10b981",
+                fontWeight: 700,
+                fontFamily: "monospace",
+              }}
+            >
+              {c.val}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: "0.78rem",
+          color: "#6b7280",
+        }}
+      >
+        <span>
+          Swarm risk score:{" "}
+          <strong
+            style={{
+              color:
+                swarmScore >= 65
+                  ? "#ef4444"
+                  : swarmScore >= 40
+                    ? "#f59e0b"
+                    : "#10b981",
+            }}
+          >
+            {swarmScore}/100
+          </strong>
+        </span>
+        <span>Confidence: {swarmConfidence}%</span>
+      </div>
     </div>
   );
 };
@@ -53,44 +363,121 @@ const AccuracyBadge: React.FC<{
 // ── Model Agreement Meter ─────────────────────────────────────────
 const ModelAgreementMeter: React.FC<{
   modelAgreement: number;
-  individualScores: EnsembleResult['individualScores'];
+  individualScores: EnsembleResult["individualScores"];
   hasOutlier: boolean;
   outlierModels: string[];
 }> = ({ modelAgreement, individualScores, hasOutlier, outlierModels }) => {
-  const modelShortName = (m: string) => ({
-    engine: 'Engine', 'gemma-3-27b': 'Gemma', 'deepseek-v3': 'DeepSeek',
-    'llama-3.3-70b': 'Llama', 'gemini-2.0-flash': 'Gemini',
-  }[m] || m);
-  const scoreColor = (s: number) => s >= 65 ? '#ef4444' : s >= 40 ? '#f59e0b' : '#10b981';
-  const barColor = modelAgreement >= 80 ? '#14b8a6' : modelAgreement >= 60 ? '#f59e0b' : '#ef4444';
+  const modelShortName = (m: string) =>
+    ({
+      engine: "Engine",
+      "gemma-3-27b": "Gemma",
+      "deepseek-v3": "DeepSeek",
+      "llama-3.3-70b": "Llama",
+      "gemini-2.0-flash": "Gemini",
+    })[m] || m;
+  const scoreColor = (s: number) =>
+    s >= 65 ? "#ef4444" : s >= 40 ? "#f59e0b" : "#10b981";
+  const barColor =
+    modelAgreement >= 80
+      ? "#14b8a6"
+      : modelAgreement >= 60
+        ? "#f59e0b"
+        : "#ef4444";
 
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
-      borderRadius: '12px', padding: '16px 20px', marginBottom: '20px',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <span style={{ color: '#9ba5b4', fontSize: '0.85rem' }}>AI model consensus</span>
-        <span style={{ color: '#fff', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.95rem' }}>{modelAgreement}%</span>
+    <div
+      style={{
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        borderRadius: "12px",
+        padding: "16px 20px",
+        marginBottom: "20px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "10px",
+        }}
+      >
+        <span style={{ color: "#9ba5b4", fontSize: "0.85rem" }}>
+          AI model consensus
+        </span>
+        <span
+          style={{
+            color: "#fff",
+            fontWeight: 700,
+            fontFamily: "monospace",
+            fontSize: "0.95rem",
+          }}
+        >
+          {modelAgreement}%
+        </span>
       </div>
-      <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden', marginBottom: '14px' }}>
-        <div style={{ height: '100%', width: `${modelAgreement}%`, background: barColor, borderRadius: '3px', transition: 'width 1s ease' }} />
+      <div
+        style={{
+          height: "6px",
+          background: "rgba(255,255,255,0.08)",
+          borderRadius: "3px",
+          overflow: "hidden",
+          marginBottom: "14px",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${modelAgreement}%`,
+            background: barColor,
+            borderRadius: "3px",
+            transition: "width 1s ease",
+          }}
+        />
       </div>
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {individualScores.map(s => (
-          <div key={s.model} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            background: 'rgba(255,255,255,0.04)', border: `1px solid ${scoreColor(s.score)}30`,
-            borderRadius: '8px', padding: '8px 12px', minWidth: '72px',
-          }}>
-            <span style={{ color: '#9ba5b4', fontSize: '0.7rem', marginBottom: '4px' }}>{modelShortName(s.model)}</span>
-            <span style={{ color: scoreColor(s.score), fontWeight: 700, fontFamily: 'monospace', fontSize: '1rem' }}>{Math.round(s.score)}%</span>
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        {individualScores.map((s) => (
+          <div
+            key={s.model}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              background: "rgba(255,255,255,0.04)",
+              border: `1px solid ${scoreColor(s.score)}30`,
+              borderRadius: "8px",
+              padding: "8px 12px",
+              minWidth: "72px",
+            }}
+          >
+            <span
+              style={{
+                color: "#9ba5b4",
+                fontSize: "0.7rem",
+                marginBottom: "4px",
+              }}
+            >
+              {modelShortName(s.model)}
+            </span>
+            <span
+              style={{
+                color: scoreColor(s.score),
+                fontWeight: 700,
+                fontFamily: "monospace",
+                fontSize: "1rem",
+              }}
+            >
+              {Math.round(s.score)}%
+            </span>
           </div>
         ))}
       </div>
       {hasOutlier && (
-        <p style={{ margin: '12px 0 0', color: '#f59e0b', fontSize: '0.78rem' }}>
-          ⚡ {outlierModels.map(m => modelShortName(m)).join(', ')} flagged a different signal — Gemini synthesis applied to resolve.
+        <p
+          style={{ margin: "12px 0 0", color: "#f59e0b", fontSize: "0.78rem" }}
+        >
+          ⚡ {outlierModels.map((m) => modelShortName(m)).join(", ")} flagged a
+          different signal — Gemini synthesis applied to resolve.
         </p>
       )}
     </div>
@@ -105,42 +492,116 @@ const AIInsightCards: React.FC<{
   verificationNote: string | null;
   engineScore: number;
   ensembleScore: number;
-}> = ({ dominantRisk, keyProtection, timeHorizon, verificationNote, engineScore, ensembleScore }) => {
-  const formatTimeHorizon = (h: string) => ({
-    '3months': 'Next 3 months', '6months': 'Next 6 months',
-    '12months': 'Within a year', 'beyond12months': 'Beyond 12 months',
-  }[h] || h);
+}> = ({
+  dominantRisk,
+  keyProtection,
+  timeHorizon,
+  verificationNote,
+  engineScore,
+  ensembleScore,
+}) => {
+  const formatTimeHorizon = (h: string) =>
+    ({
+      "3months": "Next 3 months",
+      "6months": "Next 6 months",
+      "12months": "Within a year",
+      beyond12months: "Beyond 12 months",
+    })[h] || h;
   const adjustment = ensembleScore - engineScore;
 
   const cards = [
-    dominantRisk    && { id: 'risk',    emoji: '⚠', label: 'Dominant risk',       value: dominantRisk,            borderColor: '#ef444440' },
-    keyProtection   && { id: 'protect', emoji: '🛡', label: 'Strongest protection', value: keyProtection,           borderColor: '#10b98140' },
-    timeHorizon     && { id: 'time',    emoji: '⏱', label: 'Risk window',          value: formatTimeHorizon(timeHorizon), borderColor: '#a78bfa40' },
-    verificationNote && { id: 'ai',     emoji: '◎', label: 'AI synthesis',         value: verificationNote,        borderColor: '#60a5fa40' },
-    Math.abs(adjustment) >= 3 && {
-      id: 'adj', emoji: adjustment > 0 ? '↑' : '↓',
-      label: 'Score adjustment vs engine',
-      value: `${adjustment > 0 ? '+' : ''}${adjustment} points (AI consensus ${adjustment > 0 ? 'higher' : 'lower'} than deterministic engine)`,
-      borderColor: '#f59e0b40',
+    dominantRisk && {
+      id: "risk",
+      emoji: "⚠",
+      label: "Dominant risk",
+      value: dominantRisk,
+      borderColor: "#ef444440",
     },
-  ].filter(Boolean) as { id: string; emoji: string; label: string; value: string; borderColor: string }[];
+    keyProtection && {
+      id: "protect",
+      emoji: "🛡",
+      label: "Strongest protection",
+      value: keyProtection,
+      borderColor: "#10b98140",
+    },
+    timeHorizon && {
+      id: "time",
+      emoji: "⏱",
+      label: "Risk window",
+      value: formatTimeHorizon(timeHorizon),
+      borderColor: "#a78bfa40",
+    },
+    verificationNote && {
+      id: "ai",
+      emoji: "◎",
+      label: "AI synthesis",
+      value: verificationNote,
+      borderColor: "#60a5fa40",
+    },
+    Math.abs(adjustment) >= 3 && {
+      id: "adj",
+      emoji: adjustment > 0 ? "↑" : "↓",
+      label: "Score adjustment vs engine",
+      value: `${adjustment > 0 ? "+" : ""}${adjustment} points (AI consensus ${adjustment > 0 ? "higher" : "lower"} than deterministic engine)`,
+      borderColor: "#f59e0b40",
+    },
+  ].filter(Boolean) as {
+    id: string;
+    emoji: string;
+    label: string;
+    value: string;
+    borderColor: string;
+  }[];
 
   if (!cards.length) return null;
 
   return (
-    <div style={{ marginBottom: '24px' }}>
-      <h4 style={{ color: '#9ba5b4', fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '12px' }}>AI Insights</h4>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
-        {cards.map(card => (
-          <div key={card.id} style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: `1px solid ${card.borderColor}`,
-            borderRadius: '10px', padding: '14px 16px',
-          }}>
-            <div style={{ color: '#6b7280', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+    <div style={{ marginBottom: "24px" }}>
+      <h4
+        style={{
+          color: "#9ba5b4",
+          fontSize: "0.8rem",
+          fontWeight: 600,
+          letterSpacing: "0.5px",
+          textTransform: "uppercase",
+          marginBottom: "12px",
+        }}
+      >
+        AI Insights
+      </h4>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+          gap: "10px",
+        }}
+      >
+        {cards.map((card) => (
+          <div
+            key={card.id}
+            style={{
+              background: "rgba(255,255,255,0.03)",
+              border: `1px solid ${card.borderColor}`,
+              borderRadius: "10px",
+              padding: "14px 16px",
+            }}
+          >
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: "0.72rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                marginBottom: "6px",
+              }}
+            >
               {card.emoji} {card.label}
             </div>
-            <div style={{ color: '#e5e7eb', fontSize: '0.9rem', lineHeight: 1.4 }}>{card.value}</div>
+            <div
+              style={{ color: "#e5e7eb", fontSize: "0.9rem", lineHeight: 1.4 }}
+            >
+              {card.value}
+            </div>
           </div>
         ))}
       </div>
@@ -149,7 +610,11 @@ const AIInsightCards: React.FC<{
 };
 
 // Animated counter for score reveal
-const AnimatedScore: React.FC<{ target: number; color: string; size: number }> = ({ target, color, size }) => {
+const AnimatedScore: React.FC<{
+  target: number;
+  color: string;
+  size: number;
+}> = ({ target, color, size }) => {
   const [current, setCurrent] = useState(0);
   const strokeWidth = 12;
   const radius = (size - strokeWidth) / 2;
@@ -173,50 +638,142 @@ const AnimatedScore: React.FC<{ target: number; color: string; size: number }> =
   }, [target]);
 
   const getTierHex = (c: string) => {
-    const map: Record<string, string> = { red: '#ef4444', orange: '#f97316', amber: '#f59e0b', green: '#10b981', teal: '#14b8a6' };
-    return map[c] || '#14b8a6';
+    const map: Record<string, string> = {
+      red: "#ef4444",
+      orange: "#f97316",
+      amber: "#f59e0b",
+      green: "#10b981",
+      teal: "#14b8a6",
+    };
+    return map[c] || "#14b8a6";
   };
   const hex = getTierHex(color);
 
   return (
-    <div style={{ position: 'relative', width: size, height: size, margin: '0 auto' }} role="img" aria-label={`Layoff risk score: ${target} percent`}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.1)" strokeWidth={strokeWidth} fill="none" />
+    <div
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        margin: "0 auto",
+      }}
+      role="img"
+      aria-label={`Layoff risk score: ${target} percent`}
+    >
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
         <circle
-          cx={size / 2} cy={size / 2} r={radius}
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(255,255,255,0.1)"
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
           stroke={hex}
           strokeWidth={strokeWidth}
           fill="none"
           strokeLinecap="round"
-          style={{ strokeDasharray: circumference, strokeDashoffset: dashoffset, transition: 'stroke 0.3s' }}
+          style={{
+            strokeDasharray: circumference,
+            strokeDashoffset: dashoffset,
+            transition: "stroke 0.3s",
+          }}
         />
       </svg>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: '3.5rem', fontWeight: 800, color: '#fff', lineHeight: 1 }}>{current}%</span>
-        <span style={{ fontSize: '0.85rem', color: '#9ba5b4', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '4px' }}>layoff risk</span>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <span
+          style={{
+            fontSize: "3.5rem",
+            fontWeight: 800,
+            color: "#fff",
+            lineHeight: 1,
+          }}
+        >
+          {current}%
+        </span>
+        <span
+          style={{
+            fontSize: "0.85rem",
+            color: "#9ba5b4",
+            textTransform: "uppercase",
+            letterSpacing: "1px",
+            marginTop: "4px",
+          }}
+        >
+          layoff risk
+        </span>
       </div>
     </div>
   );
 };
 
-const LayerBar: React.FC<{ label: string; value: number; weight: string }> = ({ label, value, weight }) => {
+const LayerBar: React.FC<{ label: string; value: number; weight: string }> = ({
+  label,
+  value,
+  weight,
+}) => {
   const percentage = Math.round(value * 100);
   const getTierHex = (p: number) => {
-    if (p > 70) return '#ef4444';
-    if (p > 50) return '#f97316';
-    if (p > 30) return '#f59e0b';
-    return '#14b8a6';
+    if (p > 70) return "#ef4444";
+    if (p > 50) return "#f97316";
+    if (p > 30) return "#f59e0b";
+    return "#14b8a6";
   };
   const barColor = getTierHex(percentage);
 
   return (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.9rem' }}>
-        <span style={{ color: '#d1d5db' }}>{label} <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>({weight})</span></span>
-        <span style={{ color: '#fff', fontFamily: 'monospace' }}>{percentage}/100</span>
+    <div style={{ marginBottom: "16px" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: "6px",
+          fontSize: "0.9rem",
+        }}
+      >
+        <span style={{ color: "#d1d5db" }}>
+          {label}{" "}
+          <span style={{ color: "#6b7280", fontSize: "0.8rem" }}>
+            ({weight})
+          </span>
+        </span>
+        <span style={{ color: "#fff", fontFamily: "monospace" }}>
+          {percentage}/100
+        </span>
       </div>
-      <div style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${percentage}%`, background: barColor, borderRadius: '4px', transition: 'width 1s ease-out' }} />
+      <div
+        style={{
+          height: "8px",
+          background: "rgba(255,255,255,0.1)",
+          borderRadius: "4px",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${percentage}%`,
+            background: barColor,
+            borderRadius: "4px",
+            transition: "width 1s ease-out",
+          }}
+        />
       </div>
     </div>
   );
@@ -225,36 +782,67 @@ const LayerBar: React.FC<{ label: string; value: number; weight: string }> = ({ 
 const ProUpsellTrigger: React.FC<{ score: number }> = ({ score }) => {
   if (score < 55) return null;
   return (
-    <div style={{
-      marginTop: '32px',
-      background: 'linear-gradient(135deg, rgba(124,58,255,0.15), rgba(0,245,255,0.1))',
-      border: '1px solid rgba(124,58,255,0.3)',
-      borderRadius: '12px',
-      padding: '24px',
-      textAlign: 'center',
-    }}>
-      <h3 style={{ margin: '0 0 16px', color: '#fff' }}>Your risk is elevated. Get your full protection plan.</h3>
-      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', textAlign: 'left', color: '#d1d5db', fontSize: '0.95rem' }}>
-        <li style={{ marginBottom: '8px' }}>✨ Real-time alerts when your score changes</li>
-        <li style={{ marginBottom: '8px' }}>✨ Personalised 90-day job security plan</li>
-        <li style={{ marginBottom: '8px' }}>✨ Monthly score recalculations</li>
-        <li style={{ marginBottom: '8px' }}>✨ PDF export — "My Layoff Risk Report"</li>
+    <div
+      style={{
+        marginTop: "32px",
+        background:
+          "linear-gradient(135deg, rgba(124,58,255,0.15), rgba(0,245,255,0.1))",
+        border: "1px solid rgba(124,58,255,0.3)",
+        borderRadius: "12px",
+        padding: "24px",
+        textAlign: "center",
+      }}
+    >
+      <h3 style={{ margin: "0 0 16px", color: "#fff" }}>
+        Your risk is elevated. Get your full protection plan.
+      </h3>
+      <ul
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: "0 0 24px",
+          textAlign: "left",
+          color: "#d1d5db",
+          fontSize: "0.95rem",
+        }}
+      >
+        <li style={{ marginBottom: "8px" }}>
+          ✨ Real-time alerts when your score changes
+        </li>
+        <li style={{ marginBottom: "8px" }}>
+          ✨ Personalised 90-day job security plan
+        </li>
+        <li style={{ marginBottom: "8px" }}>✨ Monthly score recalculations</li>
+        <li style={{ marginBottom: "8px" }}>
+          ✨ PDF export — "My Layoff Risk Report"
+        </li>
         <li>✨ Compare your score to 1,000s in your industry</li>
       </ul>
-      <button style={{
-        background: 'var(--violet, #7C3AFF)',
-        color: '#fff',
-        border: 'none',
-        padding: '12px 24px',
-        borderRadius: '8px',
-        fontSize: '1rem',
-        fontWeight: 600,
-        cursor: 'pointer',
-        width: '100%',
-      }}>
+      <button
+        style={{
+          background: "var(--violet, #7C3AFF)",
+          color: "#fff",
+          border: "none",
+          padding: "12px 24px",
+          borderRadius: "8px",
+          fontSize: "1rem",
+          fontWeight: 600,
+          cursor: "pointer",
+          width: "100%",
+        }}
+      >
         Start Pro — $9/month →
       </button>
-      <p style={{ marginTop: '12px', marginBottom: 0, fontSize: '0.8rem', color: '#9ba5b4' }}>Cancel anytime. No commitments.</p>
+      <p
+        style={{
+          marginTop: "12px",
+          marginBottom: 0,
+          fontSize: "0.8rem",
+          color: "#9ba5b4",
+        }}
+      >
+        Cancel anytime. No commitments.
+      </p>
     </div>
   );
 };
@@ -262,65 +850,145 @@ const ProUpsellTrigger: React.FC<{ score: number }> = ({ score }) => {
 // BUG-04 FIX: Show action plan for any elevated tier (amber=35+, orange=55+, red=75+)
 // Tied to tier.color, not a raw score gate, so all amber/orange/red users get actions.
 const shouldShowActionPlan = (tierColor: string): boolean => {
-  return ['red', 'orange', 'amber'].includes(tierColor);
+  return ["red", "orange", "amber"].includes(tierColor);
 };
 
-export const LayoffScoreDisplay: React.FC<Props> = ({ result, roleTitle, companyName, dataUpdatedDate, onSave, onShare, onRetake, onSwitchTab }) => {
+export const LayoffScoreDisplay: React.FC<Props> = ({
+  result,
+  roleTitle,
+  companyName,
+  dataUpdatedDate,
+  onSave,
+  onShare,
+  onRetake,
+  onSwitchTab,
+}) => {
   const { score, tier, breakdown, disclaimer } = result;
   const ensembleData = isEnsemble(result) ? result : null;
 
   const relevantNews = React.useMemo(() => {
-    return layoffNewsCache.find(n => n.companyName.toLowerCase() === companyName.toLowerCase());
+    return layoffNewsCache.find(
+      (n) => n.companyName.toLowerCase() === companyName.toLowerCase(),
+    );
   }, [companyName]);
 
   const daysSinceUpdate = dataUpdatedDate
-    ? Math.round((Date.now() - new Date(dataUpdatedDate).getTime()) / (1000 * 60 * 60 * 24))
+    ? Math.round(
+        (Date.now() - new Date(dataUpdatedDate).getTime()) /
+          (1000 * 60 * 60 * 24),
+      )
     : 0;
   const isStale = daysSinceUpdate > 7;
 
   const getTierHex = (c: string) => {
-    const map: Record<string, string> = { red: '#ef4444', orange: '#f97316', amber: '#f59e0b', green: '#10b981', teal: '#14b8a6' };
-    return map[c] || '#14b8a6';
+    const map: Record<string, string> = {
+      red: "#ef4444",
+      orange: "#f97316",
+      amber: "#f59e0b",
+      green: "#10b981",
+      teal: "#14b8a6",
+    };
+    return map[c] || "#14b8a6";
   };
   const tierHex = getTierHex(tier.color);
 
+  // Format timestamp for intel display
+  const intelTimestamp =
+    new Date().toISOString().replace("T", " ").slice(0, 19) + "Z";
+
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', animation: 'fadeIn 0.5s ease-in' }}>
+    <div
+      style={{
+        maxWidth: "600px",
+        margin: "0 auto",
+        animation: "fadeIn 0.5s ease-in",
+      }}
+    >
+      {/* Classification Badge (Spy-Themed) */}
+      <ClassificationBadge
+        score={score}
+        companyName={companyName}
+        roleTitle={roleTitle}
+        timestamp={intelTimestamp}
+      />
 
       {relevantNews && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
-          <h4 style={{ color: '#ef4444', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div
+          style={{
+            background: "rgba(239,68,68,0.1)",
+            border: "1px solid #ef4444",
+            borderRadius: "8px",
+            padding: "16px",
+            marginBottom: "24px",
+          }}
+        >
+          <h4
+            style={{
+              color: "#ef4444",
+              margin: "0 0 8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
             <span>⚠</span> Recent Layoff News Detected
           </h4>
-          <p style={{ color: '#fff', margin: '0 0 8px', fontSize: '0.95rem' }}>{relevantNews.headline}</p>
-          <div style={{ fontSize: '0.8rem', color: '#9ba5b4' }}>{new Date(relevantNews.date).toLocaleDateString()} · {relevantNews.source}</div>
+          <p style={{ color: "#fff", margin: "0 0 8px", fontSize: "0.95rem" }}>
+            {relevantNews.headline}
+          </p>
+          <div style={{ fontSize: "0.8rem", color: "#9ba5b4" }}>
+            {new Date(relevantNews.date).toLocaleDateString()} ·{" "}
+            {relevantNews.source}
+          </div>
         </div>
       )}
 
       {isStale && (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 16px', marginBottom: '24px', fontSize: '0.85rem', color: '#f59e0b' }}>
-          ℹ Data was last refreshed {daysSinceUpdate} days ago. Signals may be slightly delayed.
+        <div
+          style={{
+            background: "rgba(245,158,11,0.1)",
+            border: "1px solid #f59e0b",
+            borderRadius: "8px",
+            padding: "12px 16px",
+            marginBottom: "24px",
+            fontSize: "0.85rem",
+            color: "#f59e0b",
+          }}
+        >
+          ℹ Data was last refreshed {daysSinceUpdate} days ago. Signals may be
+          slightly delayed.
         </div>
       )}
 
-      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+      <div style={{ textAlign: "center", marginBottom: "32px" }}>
         <AnimatedScore target={score} color={tier.color} size={220} />
       </div>
 
-      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-        <div style={{
-          display: 'inline-block',
-          padding: '6px 16px',
-          borderRadius: '20px',
-          background: `${tierHex}18`,
-          color: tierHex,
-          border: `1px solid ${tierHex}`,
-          fontWeight: 600,
-          marginBottom: '16px',
-        }}>
+      <div style={{ textAlign: "center", marginBottom: "32px" }}>
+        <div
+          style={{
+            display: "inline-block",
+            padding: "6px 16px",
+            borderRadius: "20px",
+            background: `${tierHex}18`,
+            color: tierHex,
+            border: `1px solid ${tierHex}`,
+            fontWeight: 600,
+            marginBottom: "16px",
+          }}
+        >
           {tier.label}
         </div>
-        <p style={{ margin: 0, color: '#d1d5db', fontSize: '1.05rem', lineHeight: 1.5 }}>{tier.advice}</p>
+        <p
+          style={{
+            margin: 0,
+            color: "#d1d5db",
+            fontSize: "1.05rem",
+            lineHeight: 1.5,
+          }}
+        >
+          {tier.advice}
+        </p>
       </div>
 
       {/* ── Ensemble accuracy badge (only shown when AI ensemble ran) ── */}
@@ -330,6 +998,34 @@ export const LayoffScoreDisplay: React.FC<Props> = ({ result, roleTitle, company
           confidencePercent={ensembleData.confidencePercent}
           modelsUsed={ensembleData.modelsUsed}
         />
+      )}
+
+      {/* ── Swarm Intelligence Badge (live when API keys active) ── */}
+      {ensembleData?.swarmReport && (
+        <>
+          <AgentNetworkDisplay
+            activeAgents={ensembleData.swarmReport.totalAgentsRun}
+            signalsIntercepted={ensembleData.swarmReport.totalAgentsRun * 3}
+            categoryBreakdown={ensembleData.swarmReport.categoryBreakdown}
+            dominantSignals={ensembleData.swarmReport.dominantSignals?.map(
+              (s) => ({
+                agentId: s.agentId,
+                signal: s.signal,
+                category: s.category,
+              }),
+            )}
+          />
+          <AgentBreakdownPanel
+            signals={transformSignalsForDisplay(
+              ensembleData.swarmReport.visualizationGraph?.nodes ||
+                ensembleData.swarmReport.dominantSignals ||
+                [],
+              ensembleData.swarmReport.categoryBreakdown,
+            )}
+            swarmScore={ensembleData.swarmReport.swarmRiskScore}
+            categoryBreakdown={ensembleData.swarmReport.categoryBreakdown}
+          />
+        </>
       )}
 
       {/* ── Model agreement meter ── */}
@@ -348,44 +1044,90 @@ export const LayoffScoreDisplay: React.FC<Props> = ({ result, roleTitle, company
           dominantRisk={ensembleData.dominantRisk}
           keyProtection={ensembleData.keyProtection}
           timeHorizon={ensembleData.timeHorizon}
-          verificationNote={ensembleData.geminiSynthesis?.verificationNote ?? null}
+          verificationNote={
+            ensembleData.geminiSynthesis?.verificationNote ?? null
+          }
           engineScore={ensembleData.engineScore}
           ensembleScore={ensembleData.ensembleScore}
         />
       )}
 
       {/* ── Data source row (fallback / legacy) ── */}
-      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px 16px', borderRadius: '8px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: '#9ba5b4', fontSize: '0.85rem' }}>Data source:</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {ensembleData
-            ? <span style={{ background: 'rgba(0,245,255,0.15)', color: '#00F5FF', padding: '2px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>4-AI ENSEMBLE</span>
-            : <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>LIVE OSINT</span>
-          }
-          <strong style={{ color: '#fff' }}>{result.confidence}</strong>
-          <span title="Based on AI ensemble analysis of public signals from 4 independent models." style={{ cursor: 'help', color: '#6b7280' }}>ⓘ</span>
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          padding: "12px 16px",
+          borderRadius: "8px",
+          marginBottom: "32px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <span style={{ color: "#9ba5b4", fontSize: "0.85rem" }}>
+          Data source:
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {ensembleData ? (
+            <span
+              style={{
+                background: "rgba(0,245,255,0.15)",
+                color: "#00F5FF",
+                padding: "2px 10px",
+                borderRadius: "4px",
+                fontSize: "0.75rem",
+                fontWeight: "bold",
+              }}
+            >
+              4-AI ENSEMBLE
+            </span>
+          ) : (
+            <span
+              style={{
+                background: "rgba(16, 185, 129, 0.2)",
+                color: "#10b981",
+                padding: "2px 8px",
+                borderRadius: "4px",
+                fontSize: "0.75rem",
+                fontWeight: "bold",
+              }}
+            >
+              LIVE OSINT
+            </span>
+          )}
+          <strong style={{ color: "#fff" }}>{result.confidence}</strong>
+          <span
+            title="Based on AI ensemble analysis of public signals from 4 independent models."
+            style={{ cursor: "help", color: "#6b7280" }}
+          >
+            ⓘ
+          </span>
         </div>
       </div>
 
-      <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ color: '#fff', marginBottom: '24px' }}>What's driving your score</h3>
-        <LayerBar label="Company health"    value={breakdown.L1} weight="30%" />
-        <LayerBar label="Layoff history"    value={breakdown.L2} weight="25%" />
-        <LayerBar label="Role exposure"     value={breakdown.L3} weight="25%" />
+      <div style={{ marginBottom: "32px" }}>
+        <h3 style={{ color: "#fff", marginBottom: "24px" }}>
+          What's driving your score
+        </h3>
+        <LayerBar label="Company health" value={breakdown.L1} weight="30%" />
+        <LayerBar label="Layoff history" value={breakdown.L2} weight="25%" />
+        <LayerBar label="Role exposure" value={breakdown.L3} weight="25%" />
         <LayerBar label="Market conditions" value={breakdown.L4} weight="12%" />
-        <LayerBar label="Your profile"      value={breakdown.L5} weight="8%"  />
+        <LayerBar label="Your profile" value={breakdown.L5} weight="8%" />
       </div>
 
-      <p style={{
-        fontSize: '0.8rem',
-        color: '#6b7280',
-        fontStyle: 'italic',
-        textAlign: 'center',
-        padding: '16px',
-        borderTop: '1px solid rgba(255,255,255,0.1)',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
-        marginBottom: '32px',
-      }}>
+      <p
+        style={{
+          fontSize: "0.8rem",
+          color: "#6b7280",
+          fontStyle: "italic",
+          textAlign: "center",
+          padding: "16px",
+          borderTop: "1px solid rgba(255,255,255,0.1)",
+          borderBottom: "1px solid rgba(255,255,255,0.1)",
+          marginBottom: "32px",
+        }}
+      >
         {disclaimer}
       </p>
 
@@ -401,16 +1143,61 @@ export const LayoffScoreDisplay: React.FC<Props> = ({ result, roleTitle, company
 
       <ProUpsellTrigger score={score} />
 
-      <div style={{ display: 'flex', gap: '12px', marginTop: '32px', flexWrap: 'wrap' }}>
-        <button onClick={onSave} aria-label="Save score to history" style={{ flex: 1, padding: '12px', background: 'rgba(0,245,255,0.1)', color: 'var(--cyan, #00F5FF)', border: '1px solid rgba(0,245,255,0.3)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          marginTop: "32px",
+          flexWrap: "wrap",
+        }}
+      >
+        <button
+          onClick={onSave}
+          aria-label="Save score to history"
+          style={{
+            flex: 1,
+            padding: "12px",
+            background: "rgba(0,245,255,0.1)",
+            color: "var(--cyan, #00F5FF)",
+            border: "1px solid rgba(0,245,255,0.3)",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontSize: "0.95rem",
+          }}
+        >
           Save to history
         </button>
-        <button onClick={onShare} aria-label="Share score" style={{ flex: 1, padding: '12px', background: 'var(--cyan, #00F5FF)', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', fontSize: '0.95rem' }}>
+        <button
+          onClick={onShare}
+          aria-label="Share score"
+          style={{
+            flex: 1,
+            padding: "12px",
+            background: "var(--cyan, #00F5FF)",
+            color: "#000",
+            border: "none",
+            borderRadius: "8px",
+            fontWeight: 600,
+            cursor: "pointer",
+            fontSize: "0.95rem",
+          }}
+        >
           Share my score
         </button>
       </div>
-      <div style={{ textAlign: 'center', marginTop: '16px' }}>
-        <button onClick={onRetake} aria-label="Recalculate with different inputs" style={{ background: 'none', border: 'none', color: '#9ba5b4', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.9rem' }}>
+      <div style={{ textAlign: "center", marginTop: "16px" }}>
+        <button
+          onClick={onRetake}
+          aria-label="Recalculate with different inputs"
+          style={{
+            background: "none",
+            border: "none",
+            color: "#9ba5b4",
+            textDecoration: "underline",
+            cursor: "pointer",
+            fontSize: "0.9rem",
+          }}
+        >
           Recalculate with different inputs
         </button>
       </div>

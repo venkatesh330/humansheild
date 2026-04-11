@@ -77,13 +77,23 @@ export const clearLayoffScoreHistory = (): void => {
   localStorage.removeItem(STORAGE_KEY);
 };
 
-export const detectScoreDrift = (): DriftResult | null => {
+// BUG-08 FIX: accept companyName + roleTitle so we only compare same job/company
+export const detectScoreDrift = (companyName?: string, roleTitle?: string): DriftResult | null => {
   const history = getLayoffScoreHistory();
-  if (history.length < 2) return null;
 
-  const latest = history[history.length - 1];
-  const previous = history[history.length - 2];
-  const drift = latest.score - previous.score;
+  // Filter to the same company+role when context is provided
+  const relevant = companyName && roleTitle
+    ? history.filter(e =>
+        e.companyName.toLowerCase() === companyName.toLowerCase() &&
+        e.roleTitle.toLowerCase() === roleTitle.toLowerCase()
+      )
+    : history;
+
+  if (relevant.length < 2) return null;
+
+  const latest   = relevant[relevant.length - 1];
+  const previous = relevant[relevant.length - 2];
+  const drift    = latest.score - previous.score;
 
   if (Math.abs(drift) < 5) return null;
 

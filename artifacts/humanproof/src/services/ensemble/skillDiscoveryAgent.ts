@@ -2,21 +2,28 @@
 // Agent used to instantly analyze displacement risk for any skill not in the database.
 // This enables a "Google-like" search experience for any skill globally.
 
-import { checkRateLimit } from '../rateLimit/apiRateLimiter';
-import { Skill, SkillInsight, RiskFactors, SubSkill } from '../../types/skillRisk';
+import { checkRateLimit } from "../rateLimit/apiRateLimiter";
+import {
+  Skill,
+  SkillInsight,
+  RiskFactors,
+  SubSkill,
+} from "../../types/skillRisk";
 
-const OPENROUTER_BASE = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'google/gemma-3-27b-it:free';
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL = "google/gemma-3-27b-it:free";
 
 export interface DynamicSkillResult {
   skill: Skill;
   insight: SkillInsight;
 }
 
-export const discoverSkillRisk = async (skillName: string): Promise<DynamicSkillResult | null> => {
+export const discoverSkillRisk = async (
+  skillName: string,
+): Promise<DynamicSkillResult | null> => {
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   if (!apiKey) return null;
-  if (!checkRateLimit('openrouter')) return null;
+  if (!checkRateLimit("openrouter")) return null;
 
   const prompt = `Perform a deep Decision Intelligence analysis for the displacement risk of this skill: "${skillName}".
 
@@ -57,33 +64,47 @@ QUALITY RULES:
 
   try {
     const response = await fetch(OPENROUTER_BASE, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://humanproof.app',
-        'X-Title': 'HumanProof Skill Discovery',
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://humanproof.app",
+        "X-Title": "HumanProof Skill Discovery",
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 400,
-        response_format: { type: 'json_object' },
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!response.ok) throw new Error(`OpenRouter HTTP ${response.status}`);
     const data = await response.json();
-    const raw: string = data.choices?.[0]?.message?.content ?? '';
-    const parsed: DynamicSkillResult = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    const raw: string = data.choices?.[0]?.message?.content ?? "";
+
+    // FIX: Validate JSON before parsing
+    let parsed: DynamicSkillResult;
+    try {
+      parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+    } catch (parseError) {
+      console.warn("[SkillDiscovery] Invalid JSON response:", raw);
+      return null;
+    }
+
+    // Validate required fields
+    if (!parsed.skill?.name || typeof parsed.skill.riskScore !== "number") {
+      console.warn("[SkillDiscovery] Invalid skill data structure");
+      return null;
+    }
 
     // Generate a unique ID for this dynamic skill instance
     parsed.skill.id = Date.now();
 
     return parsed;
   } catch (error: any) {
-    console.warn('[SkillDiscovery] Failed:', error.message);
+    console.warn("[SkillDiscovery] Failed:", error.message);
     return null;
   }
 };
