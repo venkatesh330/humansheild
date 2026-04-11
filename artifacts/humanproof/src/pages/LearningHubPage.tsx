@@ -577,7 +577,7 @@ interface Resource {
   provider: string;
   level: "beginner" | "intermediate" | "advanced";
   durationHours?: number;
-  isFree: "yes" | "audit" | "scholarship";
+  isFree: "yes" | "audit" | "scholarship" | "no";
   language: string;
   languageLabel?: string;
   targetDimension?: string;
