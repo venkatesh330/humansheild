@@ -7,8 +7,44 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-    // 2b. Fetch Modular Career Intelligence for deep grounding
-    const { data: modularIntel } = await supabase
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    );
+
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiKey) throw new Error("Missing GEMINI_API_KEY environment variable");
+
+    const { roleKey, industry, experience = '5-10', country = 'usa' } = await req.json();
+    if (!roleKey) throw new Error("roleKey is required");
+
+    // 1. Fetch grounded market data from database
+    const { data: groundedData } = await supabase
+      .from('grounded_market_data')
+      .select('*')
+      .eq('role_key', roleKey)
+      .single();
+
+    let groundedContext = "";
+    if (groundedData) {
+      groundedContext = `
+Baseline Risk Consensus for ${roleKey}:
+- Industry: ${groundedData.industry_sector}
+- Automatability Score: ${groundedData.automatability_score}
+- AI Tool Maturity: ${groundedData.ai_tool_maturity}
+- Human Augmentation Potential: ${groundedData.human_augmentation_score}
+- Safe Role Reference: ${groundedData.safe_alternative_role}
+
+This baseline should inform your risk calculation.`;
+    }
+      const { data: modularIntel } = await supabase
       .from('career_intelligence')
       .select('skills, career_paths, summary, inaction_scenario')
       .eq('role_key', roleKey)
@@ -16,8 +52,8 @@ const corsHeaders = {
 
     let seededCareerContext = "";
     if (modularIntel) {
-      const skills = modularIntel.skills as any;
-      const paths = modularIntel.career_paths as any[];
+      const skills = modularIntel.skills || {};
+      const paths = modularIntel.career_paths || [];
       
       seededCareerContext = `
 Pre-Validated Career Intelligence for ${roleKey} (Authoritative Baseline):
@@ -36,27 +72,64 @@ INACTION SCENARIO: ${modularIntel.inaction_scenario}
 INSTRUCTION: Use the above as your authoritative baseline. Personalize the reasoning for the user's specific industry, experience, and country. Do NOT contradict these validated data points.
 `;
     }
+    
+    // --- 2. MULTIPLICATIVE SERVER-SIDE MATH ---
+    // (Bypasses LLM hallucinations for the numerical values)
+    const {
+      TASK_AUTO, DISRUPTION_VELOCITY, AUGMENTATION, NETWORK_MOAT, EXP_SENSITIVITY, EXP_RISK_BASE, COUNTRY_DATA, INDUSTRY_KEY_MULT, D3_CURVE_EXPONENT
+    } = await import('./riskData.ts');
+
+    const induMult = INDUSTRY_KEY_MULT[industry] || 1.0;
+    const d1_raw = TASK_AUTO[industry]?.[roleKey] || TASK_AUTO['default']?.[roleKey] || 50;
+    const calcD1 = Math.round(Math.min(d1_raw * (induMult > 1 ? 1.1 : 0.9), 100));
+    
+    const calcD2 = DISRUPTION_VELOCITY[roleKey] ?? 50;
+    const d_core = (calcD1 + calcD2) / 2;
+
+    const rawAug = AUGMENTATION[roleKey] ?? 50;
+    const calcD3 = Math.round(100 * (1 - Math.pow(rawAug / 100, D3_CURVE_EXPONENT)));
+    
+    const sensFactor = EXP_SENSITIVITY[roleKey] ?? 0.42;
+    const baseRisk = EXP_RISK_BASE[experience] ?? 50;
+    const calcD4 = Math.round(baseRisk * (1 - sensFactor));
+    
+    const countryKey = country.toLowerCase().replace(/\s+/g, '_');
+    const [adoption, regulation] = COUNTRY_DATA[countryKey] ?? COUNTRY_DATA['other'] ?? [55, 40];
+    const calcD5 = Math.round((adoption - regulation * 0.6) / 1.4);
+    
+    const calcD6 = NETWORK_MOAT[roleKey] ?? 50;
+
+    // Multiplicative Engine: Defense dampens Core risk
+    const d_shield_avg = (calcD3 + calcD4 + calcD5 + calcD6) / 4;
+    const calcTotal = Math.round(d_core * (d_shield_avg / 100));
 
     const prompt = `You are the HumanProof Grounded Risk Engine (Generator Agent).
-Your task is to calculate a 90-98% accurate AI Displacement Risk Score for a user.
+Your task is to generate a personalized risk assessment based on pre-computed Multiplicative Oracle Scores.
 
 User Profile:
-- User Profile: ${roleKey} (${industry}), ${experience} in ${country}.
-- Instruction: Your analysis MUST BE GROUNDED in the pre-validated career intelligence provided below.
+- Role/Industry: ${roleKey} (${industry})
+- Experience: ${experience}
+- Country: ${country}
+
+MANDATORY HARDCODED SCORES:
+You MUST use these exact numerical values in your JSON response. Do not change them.
+- "total": ${calcTotal}
+- D1 Task Automatability: ${calcD1}
+- D2 AI Tool Maturity: ${calcD2}
+- D3 Human Amplification: ${calcD3}
+- D4 Experience Shield: ${calcD4}
+- D5 Country Exposure: ${calcD5}
+- D6 Social Capital Moat: ${calcD6}
 
 ${groundedContext}
-
 ${seededCareerContext}
 
 Instructions:
-1. Conduct "Chain-of-Thought" reasoning for each of the 6 dimensions (D1-D6).
-2. Adjust the Baseline Risk Consensus based on the user's Experience (${experience}) and specific context.
-3. Provide a clear, concise justification for EACH dimension score.
-4. Be brutally honest and data-driven.
-5. For ai_risk_skills: Use ONLY the pre-validated skills provided in the matrix above. Personalize the 'reason' for each based on the user's industries and experience level.
-6. For safer_career_paths: Use ONLY the pre-validated pivots provided in the "VALIDATED CAREER PIVOTS" section above. Do not hallucinate generic alternatives.
-7. Craft a highly specific, tactical 3-phase strategic roadmap based on the user's experience level (${experience}) and risk context. 
-8. Include an "inaction_scenario" that matches the grounding data but personalized to the user's current situation.
+1. Conduct "Chain-of-Thought" reasoning for the qualitative data (reasons, roadmaps, skills). 
+2. Ensure the justification for D4 and D5 heavily references the User's inputted Experience (${experience}) and Country (${country}).
+3. For ai_risk_skills: Use ONLY the pre-validated skills provided.
+4. Craft a tactical 3-phase strategic roadmap.
+5. Provide the mandatory scores exactly as provided above.
 
 Respond ONLY with valid JSON matching this schema:
 {
@@ -156,7 +229,7 @@ Do not include markdown or preamble.`;
     };
 
     // ── Pass 1: Generation Agent ─────────────────────────────────────────────
-    const genResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
+    const genResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -193,7 +266,7 @@ Your Goal:
 Respond with the final, validated version of the JSON assessment. 
 Follow the exact same schema. Respond ONLY with JSON.`;
 
-    const criticResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
+    const criticResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

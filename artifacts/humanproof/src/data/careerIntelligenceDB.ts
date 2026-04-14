@@ -26,15 +26,35 @@ export const getCareerIntelligence = (roleKey: string): CareerIntelligence | nul
 };
 
 /**
- * Get roadmap for a role key + experience combination
+ * Get roadmap for a role key + experience combination.
+ * BUG-03 FIX: Cascades through experience levels instead of a single fallback.
+ * Priority: exact match → nearest lower → nearest higher → first available → null
  */
 export const getRoleRoadmap = (
   roleKey: string,
   experience: '0-2' | '2-5' | '5-10' | '10-20' | '20+'
 ): ExperienceRoadmap | null => {
   const intel = getModularIntelligence(roleKey);
-  if (!intel) return null;
-  return intel.roadmap[experience] ?? intel.roadmap['5-10'];
+  if (!intel?.roadmap) return null;
+
+  const rm = intel.roadmap;
+  const ORDER: Array<'0-2' | '2-5' | '5-10' | '10-20' | '20+'> = ['0-2', '2-5', '5-10', '10-20', '20+'];
+  const idx = ORDER.indexOf(experience);
+
+  // 1. Try exact match
+  if (rm[experience]) return rm[experience]!;
+
+  // 2. Try descending (lower experience levels — prefer similar context)
+  for (let i = idx - 1; i >= 0; i--) {
+    if (rm[ORDER[i]]) return rm[ORDER[i]]!;
+  }
+
+  // 3. Try ascending (higher experience levels)
+  for (let i = idx + 1; i < ORDER.length; i++) {
+    if (rm[ORDER[i]]) return rm[ORDER[i]]!;
+  }
+
+  return null;
 };
 
 /**

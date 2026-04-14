@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// types.ts — Career Intelligence Type Definitions
+// types.ts — Career Intelligence Type Definitions v2.0
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface SkillRisk {
@@ -16,7 +16,7 @@ export interface SafeSkill {
   skill: string;
   whySafe: string;
   longTermValue: number;    // 0–100
-  difficulty: 'Low' | 'Medium' | 'High' | string;
+  difficulty: 'Low' | 'Medium' | 'High' | 'Very High' | 'Extremely High' | string;
   resource?: string;
 }
 
@@ -55,6 +55,29 @@ export interface TrendPoint {
   label: string;
 }
 
+/**
+ * SeniorityProfile — multi-level risk differentiation per seniority band
+ * Enables the system to show different risk/salary/pivot advice for juniors vs seniors
+ */
+export interface SeniorityProfile {
+  level: 'entry' | 'mid' | 'senior' | 'principal' | 'executive';
+  typicalYearsExp: string;       // e.g. '0-2', '5-10', '20+'
+  riskDelta: number;             // offset from base total score (negative = more protected)
+  keySkills: string[];           // skills that matter most at this level
+  salaryBand: string;            // e.g. '$40k-$80k'
+  primaryRisk: string;           // 1-line risk summary for this level
+}
+
+/**
+ * CountryCluster — which regional cluster a country belongs to
+ * Used by countryIntelligenceModifier.ts to apply localized intelligence overlays
+ */
+export type CountryCluster = 'south_asia' | 'north_america' | 'europe' | 'gcc' | 'sea' | 'latam' | 'africa' | 'east_asia' | 'oceania';
+
+/**
+ * CareerIntelligence — the core data record for every seeded role
+ * v2.0 adds: contextTags, seniority, countryModifiers, evolutionHorizon
+ */
 export interface CareerIntelligence {
   displayRole: string;
   summary: string;
@@ -74,4 +97,16 @@ export interface CareerIntelligence {
   inactionScenario?: string;
   riskTrend?: TrendPoint[];
   confidenceScore?: number;
+  /** v2.0 additions below */
+  contextTags?: string[];          // e.g. ['high-risk', 'tech', 'creative', 'entry-sensitive']
+  seniority?: SeniorityProfile[];  // multi-level risk by experience band
+  countryModifiers?: Partial<Record<CountryCluster, { // sparse country-specific overrides
+    summaryAppend?: string;
+    inactionAppend?: string;
+    safeSkillAppend?: SafeSkill[];
+    careerPathOverride?: CareerPath[];
+    salaryContext?: string;
+    platformRecs?: string[];
+  }>>;
+  evolutionHorizon?: string;        // e.g. '2027' — when to re-assess this role's risk data
 }

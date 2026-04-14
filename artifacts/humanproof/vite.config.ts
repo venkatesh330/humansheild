@@ -25,6 +25,10 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
   },
+  // BUG-09 FIX: Inject build timestamp so DATA_LAST_UPDATED reflects real build date
+  define: {
+    'import.meta.env.VITE_BUILD_DATE': JSON.stringify(new Date().toISOString().split('T')[0]),
+  },
   server: {
     port,
     host: "0.0.0.0",

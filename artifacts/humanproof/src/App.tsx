@@ -53,6 +53,8 @@ import { useAuth } from "./context/AuthContext";
 import { AuthModal } from "./components/AuthModal";
 import { ToastProvider } from "./components/Toast";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
+import { useCloudSync } from "./hooks/useCloudSync";
+import { getScoreHistory } from "./utils/scoreStorage";
 
 // ─── Page Loader ──────────────────────────────────────────────────────────────
 function PageLoader() {
@@ -154,15 +156,7 @@ function AppNav({
 
   return (
     <header className="nav-root" style={{ zIndex: 1000 }}>
-      <nav
-        className="nav-inner"
-        style={{
-          backgroundColor: scrolled ? "rgba(3,7,18,0.92)" : "rgba(3,7,18,0.65)",
-          boxShadow: scrolled
-            ? "0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)"
-            : "none",
-        }}
-      >
+      <nav className={`nav-inner${scrolled ? ' scrolled' : ''}`}>
         <Link to="/" className="nav-logo" style={{ textDecoration: "none" }}>
           <span className="nav-logo-dot" />
           HumanShield
@@ -266,65 +260,41 @@ function AppNav({
             </button>
           )}
 
-          {/* Mobile hamburger */}
+          {/* Mobile hamburger — visible via CSS at ≤768px */}
           <button
             className="theme-toggle"
-            onClick={() => setMobileOpen((p) => !p)}
-            aria-label="Menu"
-            style={{ display: "none" }}
             id="mobile-menu-btn"
+            onClick={() => setMobileOpen((p) => !p)}
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileOpen}
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               {mobileOpen ? (
-                <>
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </>
+                <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
               ) : (
-                <>
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <line x1="3" y1="18" x2="21" y2="18" />
-                </>
+                <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>
               )}
             </svg>
           </button>
         </div>
       </nav>
 
-      {/* Mobile dropdown */}
+      {/* Mobile drawer */}
       {mobileOpen && (
-        <div
-          style={{
-            marginTop: "8px",
-            background: "rgba(3,7,18,0.97)",
-            border: "1px solid var(--border)",
-            borderRadius: "16px",
-            padding: "16px",
-            backdropFilter: "blur(24px)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-          }}
-        >
+        <div className="mobile-drawer" role="navigation" aria-label="Mobile navigation">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.to}
               to={item.to}
-              className={`nav-link ${isActive(item.to) ? "active" : ""}`}
-              style={{ textDecoration: "none", display: "block" }}
+              className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
+              style={{ textDecoration: 'none' }}
             >
               {item.label}
             </Link>
           ))}
+          {/* Auth in mobile drawer too */}
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+          </div>
         </div>
       )}
     </header>
@@ -357,11 +327,12 @@ function AppFooter() {
     <footer className="footer-root">
       <div className="container">
         <div
+          className="footer-grid"
           style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr",
-            gap: "48px",
-            marginBottom: "48px",
+            display: 'grid',
+            gridTemplateColumns: '2fr 1fr 1fr',
+            gap: '48px',
+            marginBottom: '48px',
           }}
         >
           {/* Brand */}
@@ -579,8 +550,16 @@ function AppFooter() {
 
 // ─── Main App Content ─────────────────────────────────────────────────────────
 function AppContent() {
+  const { user } = useAuth();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
+
+  // Background cloud sync for scores
+  useCloudSync({
+    userId: user?.id,
+    enabled: !!user,
+    scoreEntries: getScoreHistory(),
+  });
 
   const toggleTheme = () => {
     setIsDark((d) => {
@@ -591,17 +570,9 @@ function AppContent() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg)",
-        color: "var(--text)",
-        position: "relative",
-      }}
-    >
+    <div style={{ minHeight: '100vh', color: 'var(--text)', position: 'relative' }}>
+      {/* Background: static CSS gradient — no animation, no WebGL */}
       <LiquidAIBackground />
-      <div className="page-glow page-glow-1" />
-      <div className="page-glow page-glow-2" />
       <NavigationBridge />
 
       <AppNav

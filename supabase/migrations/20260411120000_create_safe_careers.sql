@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS public.safe_careers (
     salary_range_high INTEGER,
     job_outlook TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(role_title, industry_label)
 );
 
 -- Enable RLS

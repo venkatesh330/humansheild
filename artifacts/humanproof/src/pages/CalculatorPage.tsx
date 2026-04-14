@@ -11,10 +11,14 @@ import { useHumanProof } from '../context/HumanProofContext';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import { ScoreComparison } from '../components/ScoreComparison';
 import { PortfolioShield } from '../components/PortfolioShield';
-import { downloadAssessmentPDF, generateAssessmentSnapshot, generateShareableLink } from '../utils/assessmentExport';
+import { downloadAssessmentPDF, generateAssessmentSnapshot } from '../utils/assessmentExport';
 import { supabase } from '../utils/supabase';
 import { getCachedRisk, setCachedRisk } from '../services/cache/riskCache';
+import { recordScore, getScoreDelta, type ScoreDelta } from '../services/scoreDeltaService';
 import { PremiumSelect, SelectOption } from '../components/ui/PremiumSelect';
+import { AIRiskSkillMatrix } from '../components/AIRiskSkillMatrix';
+import { StrategicRoadmap } from '../components/StrategicRoadmap';
+import { getCareerIntelligence } from '../data/intelligence/index';
 import { 
   Briefcase, 
   Cpu, 
@@ -131,6 +135,7 @@ export default function CalculatorPage() {
   const [experience, setExperience] = useState('5-10');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [scoreDelta, setScoreDelta] = useState<ScoreDelta | null>(null);
   const [loadingText, setLoadingText] = useState('Initializing Generator Agent...');
   const resultRef = useRef<HTMLDivElement>(null);
   const hasTriggered = useRef(false);
@@ -138,21 +143,7 @@ export default function CalculatorPage() {
 
   useEffect(() => {
     if (!loading) return;
-    const phrases = [
-      'Initializing Generator Agent...',
-      'Cross-referencing D1-D6 market tables...',
-      'Generator drafting assessment...',
-      'Critic Agent reviewing draft...',
-      'Validating 6-Dimension output...',
-      'Finalizing analysis...'
-    ];
-    let idx = 0;
-    setLoadingText(phrases[0]);
-    const interval = setInterval(() => {
-      idx = (idx + 1) % phrases.length;
-      setLoadingText(phrases[idx]);
-    }, 1500);
-    return () => clearInterval(interval);
+    setLoadingText('Connecting to Edge Inference Router...');
   }, [loading]);
 
   const handleCalculate = async (ind?: string, wt?: string) => {
@@ -185,11 +176,20 @@ export default function CalculatorPage() {
       // ── Save to Cache ──────────────────────────────────────────────────────
       setCachedRisk({ roleKey: finalWt, industry: finalInd, country: countryKey, experience }, finalResult);
 
+      // ── Track Score Delta ─────────────────────────────────────────────────
+      recordScore({ roleKey: finalWt, industryKey: finalInd, countryKey, experience, score: aiResult.total, timestamp: Date.now(), isGrounded: true });
+      setScoreDelta(getScoreDelta(finalWt, aiResult.total, experience, countryKey));
+
       setResult(finalResult);
       await saveAssessment({ industry: finalInd, workType: finalWt, country: countryKey, experience, score: aiResult.total, details: finalResult });
     } catch {
       const scoreOperations = calculateScore(finalWt, finalInd, experience, countryKey);
       const fallbackResult = { ...scoreOperations, workTypeKey: finalWt, industryKey: finalInd, countryKey, experience, isGrounded: false };
+
+      // ── Track Score Delta (fallback) ──────────────────────────────────────
+      recordScore({ roleKey: finalWt, industryKey: finalInd, countryKey, experience, score: scoreOperations.total, timestamp: Date.now(), isGrounded: false });
+      setScoreDelta(getScoreDelta(finalWt, scoreOperations.total, experience, countryKey));
+
       setResult(fallbackResult);
       await saveAssessment({ industry: finalInd, workType: finalWt, country: countryKey, experience, score: scoreOperations.total, details: fallbackResult });
     } finally {
@@ -353,6 +353,23 @@ export default function CalculatorPage() {
                     </span>
                     {result.isGrounded && <span className="badge badge-cyan">AI Verified</span>}
                     {result.isSeeded && <span className="badge" style={{ background: 'rgba(168,85,247,0.1)', color: '#A855F7', border: '1px solid rgba(168,85,247,0.2)' }}>Intelligence Seeded</span>}
+                    {/* Score Delta Badge — BUG-05 context + new feature */}
+                    {scoreDelta && (
+                      <span className="badge" style={{
+                        background: scoreDelta.direction === 'down'
+                          ? 'rgba(16,185,129,0.15)'
+                          : scoreDelta.direction === 'up'
+                          ? 'rgba(239,68,68,0.15)'
+                          : 'rgba(255,255,255,0.05)',
+                        color: scoreDelta.direction === 'down' ? '#10b981'
+                          : scoreDelta.direction === 'up' ? '#ef4444'
+                          : 'var(--text-3)',
+                        border: `1px solid ${scoreDelta.direction === 'down' ? 'rgba(16,185,129,0.3)' : scoreDelta.direction === 'up' ? 'rgba(239,68,68,0.3)' : 'var(--border)'}`,
+                        fontWeight: 700,
+                      }}>
+                        {scoreDelta.direction === 'down' ? '↓' : scoreDelta.direction === 'up' ? '↑' : '—'} {scoreDelta.label}
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -368,7 +385,16 @@ export default function CalculatorPage() {
                     <button
                       className="btn btn-ghost btn-sm"
                       onClick={() => {
-                        navigator.clipboard.writeText(window.location.origin + generateShareableLink());
+                        // BUG-05 FIX: Encode all relevant state into the share link
+                        const params = new URLSearchParams({
+                          industry: result.industryKey || industryKey,
+                          role: result.workTypeKey || workTypeKey,
+                          country: result.countryKey || countryKey,
+                          exp: result.experience || experience,
+                          score: String(result.total),
+                        });
+                        const shareUrl = `${window.location.origin}/calculator?${params.toString()}`;
+                        navigator.clipboard.writeText(shareUrl);
                       }}
                     >
                       ↗ Share Link
@@ -422,126 +448,164 @@ export default function CalculatorPage() {
               </div>
             </div>
 
-            {/* Career Transformation Engine */}
-            <div className="card" style={{ padding: '32px', marginBottom: '20px', borderLeft: '4px solid var(--cyan)' }}>
-              <h2 className="label-xs" style={{ marginBottom: '24px', color: 'var(--cyan)' }}>Career Transformation Engine</h2>
-              
-              {/* Risk Trend */}
-              {result.riskTrend && result.riskTrend.length > 0 && (
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', width: '100%', marginBottom: '4px' }}>Risk Horizon Forecast</div>
-                  {result.riskTrend.map((t: any, i: number) => (
-                    <div key={i} className="badge badge-ghost" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '10px 14px', minWidth: '80px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                       <span style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginBottom: '4px' }}>{t.year}</span>
-                       <span style={{ color: getScoreColor(t.score), fontWeight: 800, fontSize: '1rem' }}>{t.score}%</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Cost of Inaction */}
-              {result.inaction_scenario && (
-                <div style={{ padding: '16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '12px', marginBottom: '24px' }}>
-                  <p style={{ color: 'var(--red)', fontSize: '0.85rem', fontWeight: 600 }}>⚠️ Cost of Inaction: {result.inaction_scenario}</p>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* AI Risk Skills Accordion */}
-                {result.ai_risk_skills && (
-                  <details style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                    <summary style={{ padding: '16px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text)', outline: 'none' }}>
-                      ▶ View AI Risk Skill Matrix
-                    </summary>
-                    <div style={{ padding: '16px', borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                      {/* Obsolete */}
-                      <div><h4 style={{ color: 'var(--red)', fontSize: '0.8rem', marginBottom: '12px', textTransform: 'uppercase' }}>❌ Obsolete Skills</h4>
-                        {result.ai_risk_skills.obsolete?.map((s:any, i:number) => (
-                          <div key={i} style={{ marginBottom: '12px' }}>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{s.skill}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{s.reason}</div>
+            {/* Career Transformation Engine — Using new premium components */}
+            {(() => {
+              // Resolve seeded intelligence for this role
+              const seededIntel = getCareerIntelligence(result.workTypeKey || workTypeKey);
+              const hasSeeded = !!seededIntel;
+              return (
+                  <>
+                  {/* ── Risk Horizon Forecast ── */}
+                  {result.riskTrend && result.riskTrend.length > 0 && (() => {
+                    const maxTrendScore = Math.max(...result.riskTrend.map((t: any) => t.score ?? t.riskScore ?? 0));
+                    return (
+                      <div className="card" style={{ padding: '24px', marginBottom: '20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: 8 }}>
+                          <div>
+                            <h3 className="label-xs" style={{ margin: 0 }}>📈 Risk Horizon Forecast</h3>
+                            <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--text-3)' }}>
+                              How your displacement risk compounds annually if no action is taken
+                            </p>
                           </div>
-                        ))}
-                      </div>
-                      {/* At Risk */}
-                      <div><h4 style={{ color: 'var(--amber)', fontSize: '0.8rem', marginBottom: '12px', textTransform: 'uppercase' }}>⚠️ At-Risk Skills</h4>
-                        {result.ai_risk_skills.at_risk?.map((s:any, i:number) => (
-                          <div key={i} style={{ marginBottom: '12px' }}>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{s.skill}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{s.reason}</div>
-                          </div>
-                        ))}
-                      </div>
-                      {/* Safe */}
-                      <div><h4 style={{ color: 'var(--emerald)', fontSize: '0.8rem', marginBottom: '12px', textTransform: 'uppercase' }}>✅ Safe Skills</h4>
-                        {result.ai_risk_skills.safe?.map((s:any, i:number) => (
-                          <div key={i} style={{ marginBottom: '12px' }}>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{s.skill}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{s.reason}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </details>
-                )}
-
-                {/* Safer Career Paths Accordion */}
-                {result.safer_career_paths && result.safer_career_paths.length > 0 && (
-                  <details style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                    <summary style={{ padding: '16px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text)', outline: 'none' }}>
-                      ▶ View Safer Career Pivot Paths
-                    </summary>
-                    <div style={{ padding: '16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {result.safer_career_paths.map((path:any, i:number) => (
-                        <div key={i} style={{ background: 'rgba(255,255,255,0.04)', padding: '16px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{path.role}</div>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                               {path.salary_delta && <div className="badge badge-amber">{path.salary_delta}</div>}
-                               {path.time_to_transition && <div className="badge badge-ghost">⏱ {path.time_to_transition}</div>}
-                               <div className="badge badge-emerald">Risk -{path.risk_reduction_pct}%</div>
-                            </div>
-                          </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginBottom: '8px' }}><span style={{ color: 'var(--text)' }}>Gap:</span> {path.skill_gap}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Difficulty: {path.transition_difficulty}</div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.04)', padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)' }}>
+                            {result.riskTrend[0]?.year} → {result.riskTrend[result.riskTrend.length - 1]?.year}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 4 }}>
+                          {result.riskTrend.map((t: any, i: number) => {
+                            const val = t.score ?? t.riskScore ?? 0;
+                            const color = getScoreColor(val);
+                            const isNow = i === 0;
+                            const pct = Math.round((val / Math.max(maxTrendScore, 1)) * 100);
+                            return (
+                              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '0 0 auto', minWidth: 72 }}>
+                                {/* Value + label */}
+                                <div style={{
+                                  background: isNow ? `${color}18` : 'rgba(255,255,255,0.04)',
+                                  border: `1px solid ${isNow ? color + '50' : 'rgba(255,255,255,0.07)'}`,
+                                  borderRadius: 10, padding: '10px 8px', width: '100%',
+                                  textAlign: 'center', position: 'relative',
+                                  boxShadow: isNow ? `0 0 14px ${color}25` : 'none',
+                                }}>
+                                  {isNow && (
+                                    <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', background: color, borderRadius: 4, padding: '1px 6px', fontSize: '0.58rem', fontWeight: 800, color: '#000', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>NOW</div>
+                                  )}
+                                  <div style={{ fontWeight: 900, fontSize: '1.1rem', color, fontFamily: 'var(--font-display)', letterSpacing: '-0.03em', lineHeight: 1 }}>{val}%</div>
+                                  <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: 5, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{t.year}</div>
+                                  <div style={{ fontSize: '0.6rem', color: isNow ? color : 'var(--text-3)', fontWeight: 600, marginTop: 2, opacity: 0.8 }}>{t.label ?? (i === 0 ? 'Now' : `+${i}yr`)}</div>
+                                  {/* Mini fill bar */}
+                                  <div style={{ marginTop: 8, height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 99, overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99, transition: 'width 0.8s ease' }} />
+                                  </div>
+                                </div>
+                                {/* Arrow connector (except last) */}
+                                {i < result.riskTrend.length - 1 && (
+                                  <div style={{ color: 'var(--text-3)', fontSize: '0.75rem', lineHeight: 1, marginTop: 'auto', alignSelf: 'center', paddingBottom: 12, opacity: 0.4 }}>›</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {/* Growth delta callout */}
+                        {result.riskTrend.length >= 2 && (() => {
+                          const start = result.riskTrend[0]?.score ?? result.riskTrend[0]?.riskScore ?? 0;
+                          const end = result.riskTrend[result.riskTrend.length - 1]?.score ?? result.riskTrend[result.riskTrend.length - 1]?.riskScore ?? 0;
+                          const delta = end - start;
+                          if (delta <= 0) return null;
+                          return (
+                            <div style={{ marginTop: 14, padding: '8px 14px', background: `${getScoreColor(end)}10`, border: `1px solid ${getScoreColor(end)}25`, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: '0.85rem' }}>⚠️</span>
+                              <span style={{ fontSize: '0.74rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
+                                Without intervention, your displacement risk will rise by <strong style={{ color: getScoreColor(end) }}>+{delta} percentage points</strong> by {result.riskTrend[result.riskTrend.length - 1]?.year}.
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })()}
 
-                {/* Roadmap Accordion */}
-                {result.roadmap && (
-                  <details open style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                    <summary style={{ padding: '16px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text)', outline: 'none' }}>
-                      ▶ View Strategic Transformation Roadmap
-                    </summary>
-                    <div style={{ padding: '16px', borderTop: '1px solid var(--border)' }}>
-                       {['phase_1', 'phase_2', 'phase_3'].map((phaseKey) => {
-                         const phase = result.roadmap[phaseKey];
-                         if (!phase) return null;
-                         return (
-                           <div key={phaseKey} style={{ marginBottom: '24px' }}>
-                             <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--cyan)', marginBottom: '12px', textTransform: 'uppercase' }}>
-                               {phaseKey.replace('_', ' ')} <span style={{ opacity: 0.5 }}>({phase.timeline})</span>
-                             </h4>
-                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                               {phase.actions?.map((act:any, idx:number) => (
-                                 <div key={idx} style={{ paddingLeft: '16px', borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
-                                   <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text)' }}>{act.action}</div>
-                                   <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginTop: '4px' }}>Why: {act.why}</div>
-                                   <div style={{ fontSize: '0.75rem', color: 'var(--emerald)', marginTop: '4px' }}>Outcome: {act.outcome}</div>
-                                 </div>
-                               ))}
-                             </div>
-                           </div>
-                         );
-                       })}
+                  {/* ── Cost of Inaction ── */}
+                  {(result.inaction_scenario || (seededIntel?.inactionScenario)) && (
+                    <div style={{ padding: '16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '12px', marginBottom: '20px' }}>
+                      <p style={{ color: 'var(--red)', fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>⚠️ {result.inaction_scenario || seededIntel?.inactionScenario}</p>
                     </div>
-                  </details>
-                )}
-              </div>
-            </div>
+                  )}
+
+                  {/* ── AI Risk Skill Matrix (Premium) ── */}
+                  <div className="card" style={{ padding: '28px', marginBottom: '20px', borderLeft: '4px solid #ef4444' }}>
+                    {hasSeeded ? (
+                      <AIRiskSkillMatrix
+                        intel={seededIntel!}
+                        scoreColor={scoreColor}
+                        roleKey={result.workTypeKey || workTypeKey}
+                      />
+                    ) : result.ai_risk_skills ? (
+                      // Fallback: render old server-side AI skill data when no seeded intel
+                      <>
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '1.1rem', letterSpacing: '-0.03em', marginBottom: 16 }}>AI Risk Skill Matrix</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+                          <div><h4 style={{ color: '#ef4444', fontSize: '0.8rem', marginBottom: 12, textTransform: 'uppercase' }}>❌ Obsolete</h4>
+                            {result.ai_risk_skills.obsolete?.map((s:any, i:number) => <div key={i} style={{ marginBottom: 10 }}><div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{s.skill}</div><div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{s.reason}</div></div>)}
+                          </div>
+                          <div><h4 style={{ color: '#f59e0b', fontSize: '0.8rem', marginBottom: 12, textTransform: 'uppercase' }}>⚠️ At-Risk</h4>
+                            {result.ai_risk_skills.at_risk?.map((s:any, i:number) => <div key={i} style={{ marginBottom: 10 }}><div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{s.skill}</div><div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{s.reason}</div></div>)}
+                          </div>
+                          <div><h4 style={{ color: '#10b981', fontSize: '0.8rem', marginBottom: 12, textTransform: 'uppercase' }}>✅ Safe</h4>
+                            {result.ai_risk_skills.safe?.map((s:any, i:number) => <div key={i} style={{ marginBottom: 10 }}><div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{s.skill}</div><div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{s.reason}</div></div>)}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-3)', fontSize: '0.85rem' }}>Skill matrix data loading...</div>
+                    )}
+                  </div>
+
+                  {/* ── Strategic Transformation Roadmap (Premium) ── */}
+                  <div className="card" style={{ padding: '28px', marginBottom: '20px', borderLeft: '4px solid var(--cyan)' }}>
+                    {hasSeeded ? (
+                      <StrategicRoadmap
+                        intel={seededIntel!}
+                        experience={experience}
+                        scoreColor={scoreColor}
+                        score={result.total}
+                      />
+                    ) : result.safer_career_paths || result.roadmap ? (
+                      // Fallback for non-seeded roles
+                      <>
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '1.1rem', letterSpacing: '-0.03em', marginBottom: 16 }}>Strategic Transformation Roadmap</h3>
+                        {result.roadmap && ['phase_1', 'phase_2', 'phase_3'].map((phaseKey) => {
+                          const phase = result.roadmap[phaseKey];
+                          if (!phase) return null;
+                          return (
+                            <div key={phaseKey} style={{ marginBottom: 20 }}>
+                              <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--cyan)', marginBottom: 10, textTransform: 'uppercase' }}>
+                                {phaseKey.replace('_', ' ')} <span style={{ opacity: 0.5 }}>({phase.timeline})</span>
+                              </h4>
+                              {phase.actions?.map((act:any, idx:number) => (
+                                <div key={idx} style={{ paddingLeft: 16, borderLeft: '2px solid rgba(255,255,255,0.1)', marginBottom: 10 }}>
+                                  <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{act.action}</div>
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginTop: 4 }}>Why: {act.why}</div>
+                                  <div style={{ fontSize: '0.75rem', color: '#10b981', marginTop: 4 }}>Outcome: {act.outcome}</div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                        {result.safer_career_paths?.map((path:any, i:number) => (
+                          <div key={i} style={{ background: 'rgba(255,255,255,0.04)', padding: 14, borderRadius: 8, marginBottom: 10 }}>
+                            <div style={{ fontWeight: 600 }}>{path.role}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 4 }}>Gap: {path.skill_gap} · {path.time_to_transition} · -{path.risk_reduction_pct}% risk</div>
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-3)', fontSize: '0.85rem' }}>Run the assessment to see your roadmap.</div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             <ScoreComparison />
             <PortfolioShield />
