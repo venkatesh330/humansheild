@@ -8,12 +8,26 @@ import {
   AgentBreakdownPanel,
   transformSignalsForDisplay,
 } from "./AgentBreakdownPanel";
+import { DisplacementTrajectoryPanel } from "./DisplacementTrajectoryPanel";
+import { OracleResult } from "../../services/DisplacementTrajectoryEngine";
+import { OracleInsightsPanel } from "./OracleInsightsPanel";
+import { CareerIntelligence } from "../../data/intelligence/types";
+import { ScoreConfidenceInterval } from "./ScoreConfidenceInterval";
+import { WhatIfSkillSimulator } from "./WhatIfSkillSimulator";
 
 interface Props {
   result: ScoreResult | EnsembleResult;
   roleTitle: string;
   companyName: string;
   dataUpdatedDate?: string;
+  // ── ENHANCEMENT: Data quality flag from LayoffCalculator ────────────────────
+  dataQuality?: 'live' | 'partial' | 'fallback';
+  // ── DISPLACEMENT TRAJECTORY props ─────────────────────────────────────
+  oracleResult?: OracleResult | null;
+  experience?: string;
+  roleKey?: string;
+  // ── ORACLE INTELLIGENCE props ──────────────────────────────────────────
+  careerIntelligence?: CareerIntelligence | null;
   onSave: () => void;
   onShare: () => void;
   onRetake: () => void;
@@ -723,12 +737,21 @@ const AnimatedScore: React.FC<{
   );
 };
 
+const layerDescriptions: Record<string, string> = {
+  "Company health": "Financial strength, stock trend, and overstaffing signals from live OSINT",
+  "Layoff history": "Recent layoffs, how many rounds, and sector-wide contagion signals",
+  "Role exposure": "How automatable your specific role is and demand trend for your job",
+  "Market conditions": "Industry-wide growth outlook and macro AI disruption pace",
+  "Your profile": "Your tenure, performance, uniqueness, and internal relationships",
+};
+
 const LayerBar: React.FC<{ label: string; value: number; weight: string }> = ({
   label,
   value,
   weight,
 }) => {
   const percentage = Math.round(value * 100);
+  const [showTip, setShowTip] = React.useState(false);
   const getTierHex = (p: number) => {
     if (p > 70) return "#ef4444";
     if (p > 50) return "#f97316";
@@ -738,7 +761,7 @@ const LayerBar: React.FC<{ label: string; value: number; weight: string }> = ({
   const barColor = getTierHex(percentage);
 
   return (
-    <div style={{ marginBottom: "16px" }}>
+    <div style={{ marginBottom: "16px", position: "relative" }}>
       <div
         style={{
           display: "flex",
@@ -747,16 +770,40 @@ const LayerBar: React.FC<{ label: string; value: number; weight: string }> = ({
           fontSize: "0.9rem",
         }}
       >
-        <span style={{ color: "#d1d5db" }}>
+        <span
+          style={{ color: "#d1d5db", cursor: "help", userSelect: "none" }}
+          onMouseEnter={() => setShowTip(true)}
+          onMouseLeave={() => setShowTip(false)}
+        >
           {label}{" "}
           <span style={{ color: "#6b7280", fontSize: "0.8rem" }}>
             ({weight})
           </span>
+          {" "}<span style={{ color: "#4b5563", fontSize: "0.72rem" }}>ⓘ</span>
         </span>
         <span style={{ color: "#fff", fontFamily: "monospace" }}>
           {percentage}/100
         </span>
       </div>
+      {showTip && layerDescriptions[label] && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          zIndex: 50,
+          background: "rgba(10,15,25,0.97)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: "8px",
+          padding: "10px 14px",
+          fontSize: "0.78rem",
+          color: "#9ba5b4",
+          maxWidth: "280px",
+          lineHeight: 1.5,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        }}>
+          {layerDescriptions[label]}
+        </div>
+      )}
       <div
         style={{
           height: "8px",
@@ -858,6 +905,11 @@ export const LayoffScoreDisplay: React.FC<Props> = ({
   roleTitle,
   companyName,
   dataUpdatedDate,
+  dataQuality = 'live',
+  oracleResult = null,
+  experience = '5-10',
+  roleKey = 'generic',
+  careerIntelligence = null,
   onSave,
   onShare,
   onRetake,
@@ -912,6 +964,49 @@ export const LayoffScoreDisplay: React.FC<Props> = ({
         timestamp={intelTimestamp}
       />
 
+      {/* ── ENHANCEMENT: Data Quality Warning Banner ───────────────────────── */}
+      {dataQuality === 'fallback' && (
+        <div
+          style={{
+            background: "rgba(245,158,11,0.1)",
+            border: "1px solid #f59e0b",
+            borderRadius: "8px",
+            padding: "12px 16px",
+            marginBottom: "20px",
+            fontSize: "0.85rem",
+            color: "#f59e0b",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "10px",
+          }}
+        >
+          <span style={{ fontSize: "1rem", flexShrink: 0 }}>⚠️</span>
+          <span>
+            <strong>Limited company data available.</strong> We could not retrieve live financial signals for "{companyName}".
+            Industry-average defaults were used — treat this score as a directional estimate, not a precise prediction.
+          </span>
+        </div>
+      )}
+      {dataQuality === 'partial' && (
+        <div
+          style={{
+            background: "rgba(96,165,250,0.08)",
+            border: "1px solid rgba(96,165,250,0.3)",
+            borderRadius: "8px",
+            padding: "10px 14px",
+            marginBottom: "20px",
+            fontSize: "0.82rem",
+            color: "#93c5fd",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <span>ℹ</span>
+          <span>Some live data signals were unavailable. Score is based on available OSINT data + industry baselines.</span>
+        </div>
+      )}
+
       {relevantNews && (
         <div
           style={{
@@ -955,13 +1050,21 @@ export const LayoffScoreDisplay: React.FC<Props> = ({
             color: "#f59e0b",
           }}
         >
-          ℹ Data was last refreshed {daysSinceUpdate} days ago. Signals may be
-          slightly delayed.
+          {/* BUG-B18 FIX: More explicit warning text for stale data */}
+          <strong>Caution: Calibrated data is stale.</strong> This assessment was last refreshed {daysSinceUpdate} days ago. 
+          Dynamic signals (layoffs, stock, growth) may no longer be accurate.
         </div>
       )}
 
-      <div style={{ textAlign: "center", marginBottom: "32px" }}>
+      <div style={{ textAlign: "center", marginBottom: "16px" }}>
         <AnimatedScore target={score} color={tier.color} size={220} />
+        {/* ENHANCEMENT: Confidence interval below ring — epistemic honesty */}
+        <ScoreConfidenceInterval
+          score={score}
+          dataQuality={dataQuality}
+          isSeeded={Boolean((result as any).isSeeded ?? true)}
+          modelsUsed={ensembleData?.modelsUsed ?? []}
+        />
       </div>
 
       <div style={{ textAlign: "center", marginBottom: "32px" }}>
@@ -1052,6 +1155,33 @@ export const LayoffScoreDisplay: React.FC<Props> = ({
         />
       )}
 
+      {/* ── ORACLE INSIGHTS PANEL ─────────────────────────────────── */}
+      {careerIntelligence && (
+        <OracleInsightsPanel
+          intelligence={careerIntelligence}
+          roleKey={roleKey}
+          experience={experience}
+        />
+      )}
+
+      {/* ENHANCEMENT: What-If Skill Simulator — shown when seeded intel has safe skills */}
+      {careerIntelligence && (
+        <WhatIfSkillSimulator
+          careerIntelligence={careerIntelligence}
+          currentScore={score}
+        />
+      )}
+
+      {/* ── DISPLACEMENT TRAJECTORY ─────────────────────────────────────── */}
+      <DisplacementTrajectoryPanel
+        currentScore={score}
+        oracleResult={oracleResult}
+        roleTitle={roleTitle}
+        roleKey={roleKey}
+        experience={experience}
+        careerIntelligence={careerIntelligence}
+      />
+
       {/* ── Data source row (fallback / legacy) ── */}
       <div
         style={{
@@ -1112,9 +1242,197 @@ export const LayoffScoreDisplay: React.FC<Props> = ({
         <LayerBar label="Company health" value={breakdown.L1} weight="30%" />
         <LayerBar label="Layoff history" value={breakdown.L2} weight="25%" />
         <LayerBar label="Role exposure" value={breakdown.L3} weight="25%" />
-        <LayerBar label="Market conditions" value={breakdown.L4} weight="12%" />
-        <LayerBar label="Your profile" value={breakdown.L5} weight="8%" />
+        <LayerBar label="Market conditions" value={breakdown.L4} weight="5%" />
+        <LayerBar label="Your profile" value={breakdown.L5} weight="15%" />
       </div>
+
+      {/* ── CONTROL SPLIT PANEL — Behavioural psychology: focus on what's changeable ── */}
+      <div
+        style={{
+          marginBottom: "32px",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: "12px",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            background: "rgba(255,255,255,0.03)",
+            padding: "12px 16px",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <span style={{ fontSize: "0.75rem", color: "#9ba5b4", letterSpacing: "1.5px", textTransform: "uppercase", fontFamily: "monospace" }}>
+            Risk Attribution Analysis
+          </span>
+          <span
+            style={{
+              marginLeft: "auto",
+              fontSize: "0.68rem",
+              color: "#6b7280",
+              fontFamily: "monospace",
+            }}
+          >
+            Focus on what you can change
+          </span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+          {/* ── Left: External / Uncontrollable ── */}
+          <div
+            style={{
+              padding: "16px",
+              borderRight: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                marginBottom: "12px",
+              }}
+            >
+              <span style={{ fontSize: "1rem" }}>🌐</span>
+              <span
+                style={{
+                  color: "#ef4444",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.5px",
+                }}
+              >
+                External Factors
+              </span>
+            </div>
+            <p
+              style={{
+                color: "#6b7280",
+                fontSize: "0.72rem",
+                margin: "0 0 12px",
+                lineHeight: 1.5,
+              }}
+            >
+              These signals reflect your company and market — outside your direct control.
+            </p>
+            {[
+              { label: "Company health", val: Math.round(breakdown.L1 * 100), wt: "30%" },
+              { label: "Layoff history", val: Math.round(breakdown.L2 * 100), wt: "25%" },
+              { label: "Market conditions", val: Math.round(breakdown.L4 * 100), wt: "5%" },
+            ].map(({ label, val, wt }) => {
+              const c = val > 70 ? "#ef4444" : val > 50 ? "#f97316" : val > 30 ? "#f59e0b" : "#10b981";
+              return (
+                <div key={label} style={{ marginBottom: "8px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: "0.78rem",
+                      marginBottom: "3px",
+                    }}
+                  >
+                    <span style={{ color: "#9ba5b4" }}>{label} <span style={{ color: "#4b5563" }}>({wt})</span></span>
+                    <span style={{ color: c, fontFamily: "monospace", fontWeight: 700 }}>{val}</span>
+                  </div>
+                  <div style={{ height: "4px", background: "rgba(255,255,255,0.06)", borderRadius: "2px" }}>
+                    <div style={{ height: "100%", width: `${val}%`, background: c, borderRadius: "2px", transition: "width 1s ease-out" }} />
+                  </div>
+                </div>
+              );
+            })}
+            <div
+              style={{
+                marginTop: "10px",
+                padding: "8px 10px",
+                background: "rgba(239,68,68,0.06)",
+                borderRadius: "6px",
+                fontSize: "0.7rem",
+                color: "#9ba5b4",
+                lineHeight: 1.4,
+              }}
+            >
+              💡 Watch for company news, earnings trends, and sector headlines — these shift your score the most.
+            </div>
+          </div>
+
+          {/* ── Right: Within Your Control ── */}
+          <div style={{ padding: "16px" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                marginBottom: "12px",
+              }}
+            >
+              <span style={{ fontSize: "1rem" }}>🧠</span>
+              <span
+                style={{
+                  color: "#10b981",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.5px",
+                }}
+              >
+                Within Your Control
+              </span>
+            </div>
+            <p
+              style={{
+                color: "#6b7280",
+                fontSize: "0.72rem",
+                margin: "0 0 12px",
+                lineHeight: 1.5,
+              }}
+            >
+              These factors respond directly to your choices. This is where to focus your energy.
+            </p>
+            {[
+              { label: "Role exposure", val: Math.round(breakdown.L3 * 100), wt: "25%", action: "Learn AI tools for your domain" },
+              { label: "Your profile", val: Math.round(breakdown.L5 * 100), wt: "15%", action: "Build relationships, seek promotion" },
+            ].map(({ label, val, wt, action }) => {
+              const c = val > 70 ? "#ef4444" : val > 50 ? "#f97316" : val > 30 ? "#f59e0b" : "#10b981";
+              return (
+                <div key={label} style={{ marginBottom: "8px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: "0.78rem",
+                      marginBottom: "3px",
+                    }}
+                  >
+                    <span style={{ color: "#9ba5b4" }}>{label} <span style={{ color: "#4b5563" }}>({wt})</span></span>
+                    <span style={{ color: c, fontFamily: "monospace", fontWeight: 700 }}>{val}</span>
+                  </div>
+                  <div style={{ height: "4px", background: "rgba(255,255,255,0.06)", borderRadius: "2px" }}>
+                    <div style={{ height: "100%", width: `${val}%`, background: c, borderRadius: "2px", transition: "width 1s ease-out" }} />
+                  </div>
+                  <div style={{ fontSize: "0.68rem", color: "#4b5563", marginTop: "3px" }}>→ {action}</div>
+                </div>
+              );
+            })}
+            <div
+              style={{
+                marginTop: "10px",
+                padding: "8px 10px",
+                background: "rgba(16,185,129,0.06)",
+                border: "1px solid rgba(16,185,129,0.15)",
+                borderRadius: "6px",
+                fontSize: "0.7rem",
+                color: "#9ba5b4",
+                lineHeight: 1.4,
+              }}
+            >
+              💡 A 20-point drop in Role Exposure can reduce your overall risk by up to 5 points. See the roadmap below.
+            </div>
+          </div>
+        </div>
+      </div>
+
 
       <p
         style={{

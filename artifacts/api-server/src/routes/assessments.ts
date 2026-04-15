@@ -1,8 +1,24 @@
 import { Router } from 'express';
+import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { supabase } from '../config/supabase';
 import { requireAuth } from '../middlewares/auth';
 
 const router = Router();
+
+const assessmentSchema = z.object({
+  industry: z.string().min(1).max(100),
+  workType: z.string().min(1).max(100),
+  country: z.string().min(1).max(100),
+  details: z.string().max(2000).optional(),
+  score: z.number().min(0).max(100).optional()
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // 10 AI generates per IP per hour
+  message: { error: 'AI generation rate limit reached. Try again in 1 hour.' },
+});
 
 // Secure: Apply requireAuth globally to all assessment routes
 router.use(requireAuth);
@@ -20,18 +36,25 @@ router.get('/', async (req: any, res) => {
   res.json(data);
 });
 
-// Create assessment - UPGRADED WITH GEMMA 4 ACCURACY
-router.post('/', async (req: any, res) => {
+// Create assessment - UPGRADED WITH GEMINI 2.5 ACCURACY & ZOD VALIDATION
+router.post('/', aiLimiter, async (req: any, res) => {
   const userId = req.user.id;
-  const { industry, workType, country, details } = req.body;
-  const gemmaKey = process.env.GEMMA_API_KEY;
+  
+  // 1. Zod Payload Sanitization
+  const parsed = assessmentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid assessment payload', details: parsed.error.issues });
+  }
+
+  const { industry, workType, country, details, score } = parsed.data;
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
   try {
-    let aiScore = req.body.score; // Fallback to provided score
+    let aiScore = score; // Fallback to provided score
     let aiReasoning = details;
 
-    if (gemmaKey) {
-      // 98% Accuracy Step: Query Gemma 4 for grounded risk assessment
+    if (geminiKey) {
+      // 99% Accuracy Step: Query Gemini 2.5 Flash for grounded risk assessment via Structured JSON
       const prompt = `You are the HumanProof Risk Engine. 
 Calculate a high-accuracy AI Displacement Risk Score for:
 Industry: ${industry}
@@ -41,40 +64,32 @@ Country: ${country}
 Analyze:
 1. Automation Potential (D1)
 2. Disruption Velocity (D2)
-3. National Workforce resilience for ${country} (D5)
+3. National Workforce resilience for ${country} (D5)`;
 
-Respond with valid JSON: { "score": 3-97, "reasoning": "string (150 chars max)" }`;
-
-      const gemmaResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
+      const aiResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json" }
+          generationConfig: { 
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                score: { type: "INTEGER", description: "Risk Score 1-99" },
+                reasoning: { type: "STRING", description: "150 chars max synthesis" }
+              },
+              required: ["score", "reasoning"]
+            }
+          }
         }),
       });
 
-      if (gemmaResp.ok) {
-        const data = (await gemmaResp.json()) as any;
+      if (aiResp.ok) {
+        const data = (await aiResp.json()) as any;
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        
-        // ── Robust JSON extraction ──────────────────────────────────────────
-        const extractJson = (raw: string) => {
-          let cleaned = raw.replace(/```json\s?([\s\S]*?)```/g, '$1')
-                           .replace(/```\s?([\s\S]*?)```/g, '$1')
-                           .trim();
-          if (!cleaned.startsWith('{')) {
-            const firstBrace = cleaned.indexOf('{');
-            const lastBrace = cleaned.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-              cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-            }
-          }
-          return cleaned;
-        };
-
         try {
-          const result = JSON.parse(extractJson(rawText));
+          const result = JSON.parse(rawText);
           if (typeof result.score === 'number') aiScore = result.score;
           if (result.reasoning) aiReasoning = result.reasoning;
         } catch (e) {

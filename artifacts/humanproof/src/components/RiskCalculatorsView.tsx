@@ -3,7 +3,7 @@
 // Contains Risk Oracle and Layoff Audit
 
 import React, { useState } from "react";
-import CalculatorPage from "../pages/CalculatorPage";
+import AuditTerminalPage from "../pages/AuditTerminalPage";
 import { LayoffCalculator } from "./LayoffCalculator/LayoffCalculator";
 
 type CalculatorType = "risk-oracle" | "layoff-audit";
@@ -26,7 +26,7 @@ export const RiskCalculatorsView: React.FC<Props> = ({ onSwitchTab }) => {
       id: "risk-oracle",
       label: "Risk Oracle",
       icon: "🎯",
-      desc: "6-dimension AI displacement risk analysis with 250+ roles, 70+ countries",
+      desc: "6-dimension AI displacement risk analysis across thousands of roles and global markets",
     },
     {
       id: "layoff-audit",
@@ -122,7 +122,7 @@ export const RiskCalculatorsView: React.FC<Props> = ({ onSwitchTab }) => {
       </div>
 
       {/* Render Active Calculator */}
-      {activeCalculator === "risk-oracle" && <CalculatorPage />}
+      {activeCalculator === "risk-oracle" && <AuditTerminalPage />}
       {activeCalculator === "layoff-audit" && (
         <LayoffCalculator onSwitchTab={onSwitchTab} />
       )}

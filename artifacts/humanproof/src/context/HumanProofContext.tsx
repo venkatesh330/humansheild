@@ -183,31 +183,71 @@ export function HumanProofProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    try {
-      const history = JSON.parse(localStorage.getItem(KEY_REGISTRY.SCORE_HISTORY) || '[]');
-      const lastJobScore    = [...history].filter((e: any) => e.source === 'job').at(-1);
-      const lastSkillScore  = [...history].filter((e: any) => e.source === 'skill').at(-1);
-      const lastHumanScore  = [...history].filter((e: any) => e.source === 'human-index').at(-1);
-      const skills          = JSON.parse(localStorage.getItem(KEY_REGISTRY.SKILL_SELECTIONS) || '[]');
-      const breakdown       = JSON.parse(localStorage.getItem(KEY_REGISTRY.SKILL_BREAKDOWN) || '[]');
-      const roadmapStart    = localStorage.getItem(KEY_REGISTRY.ROADMAP_START_DATE) || null;
+    const hydrateLocal = () => {
+      try {
+        const history = JSON.parse(localStorage.getItem(KEY_REGISTRY.SCORE_HISTORY) || '[]');
+        const lastJobScore    = [...history].filter((e: any) => e.source === 'job').at(-1);
+        const lastSkillScore  = [...history].filter((e: any) => e.source === 'skill').at(-1);
+        const lastHumanScore  = [...history].filter((e: any) => e.source === 'human-index').at(-1);
+        const skills          = JSON.parse(localStorage.getItem(KEY_REGISTRY.SKILL_SELECTIONS) || '[]');
+        const breakdown       = JSON.parse(localStorage.getItem(KEY_REGISTRY.SKILL_BREAKDOWN) || '[]');
+        const roadmapStart    = localStorage.getItem(KEY_REGISTRY.ROADMAP_START_DATE) || null;
 
-      dispatch({
-        type: 'HYDRATE',
-        payload: {
-          jobRiskScore:    lastJobScore?.score   ?? null,
-          skillRiskScore:  lastSkillScore?.score ?? null,
-          humanScore:      lastHumanScore?.score ?? null,
-          selectedSkills:  skills,
-          skillBreakdown:  breakdown,
-          roadmapStartDate: roadmapStart,
-          roadmapStarted:  !!roadmapStart,
-        },
-      });
-    } catch {
-      // Graceful degradation if localStorage is unavailable
-    }
-    setIsHydrated(true);
+        dispatch({
+          type: 'HYDRATE',
+          payload: {
+            jobRiskScore:    lastJobScore?.score   ?? null,
+            skillRiskScore:  lastSkillScore?.score ?? null,
+            humanScore:      lastHumanScore?.score ?? null,
+            selectedSkills:  skills,
+            skillBreakdown:  breakdown,
+            roadmapStartDate: roadmapStart,
+            roadmapStarted:  !!roadmapStart,
+          },
+        });
+      } catch {
+        // Graceful degradation if localStorage is unavailable
+      }
+      setIsHydrated(true);
+    };
+
+    const hydrateCloud = async () => {
+      try {
+        const cloudAssessments = await assessmentAPI.getAssessments();
+        if (cloudAssessments && cloudAssessments.length > 0) {
+          const mergedHistory = cloudAssessments.map((a: any) => ({
+             source: "job",
+             roleKey: a.work_type,
+             industryKey: a.industry,
+             countryKey: a.country || 'usa',
+             experience: a.experience || '5-10',
+             score: a.score,
+             timestamp: new Date(a.created_at).getTime(),
+             isGrounded: true
+          }));
+
+          const localStr = localStorage.getItem(KEY_REGISTRY.SCORE_HISTORY) || '[]';
+          let local = [];
+          try { local = JSON.parse(localStr); } catch {}
+          
+          const combined = [...mergedHistory, ...local];
+          
+          const uniqueMap = new Map();
+          for (const item of combined) {
+             uniqueMap.set(item.timestamp, item);
+          }
+          const finalHistory = Array.from(uniqueMap.values()).sort((a,b) => b.timestamp - a.timestamp).slice(0, 50);
+
+          localStorage.setItem(KEY_REGISTRY.SCORE_HISTORY, JSON.stringify(finalHistory));
+          hydrateLocal(); // Re-hydrate with synced data
+        }
+      } catch (err) {
+        console.warn("Cloud Drift Hydration bypassed (Network or Auth failure)", err);
+      }
+    };
+
+    hydrateLocal();
+    hydrateCloud();
   }, []);
 
   // BUG-C1 FIX: saveAssessment method — was called in CalculatorPage but missing from context

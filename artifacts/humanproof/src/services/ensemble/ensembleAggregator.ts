@@ -127,8 +127,9 @@ export const aggregateEnsembleResults = ({
   );
 
   // Models > 1.5σ from the mean are considered outliers
+  // BUG-B5 FIX: Reduced stdDev gate from 8 to 5 to catch outliers in 2-3 model scenarios.
   const threshold = 1.5 * stdDev;
-  const outliers  = scores.filter(s => Math.abs(s.score - mean) > threshold && stdDev > 8);
+  const outliers  = scores.filter(s => Math.abs(s.score - mean) > threshold && stdDev > 5);
   const hasOutlier = outliers.length > 0;
 
   // ── Model agreement ──────────────────────────────────────────────────────
@@ -157,13 +158,38 @@ export const aggregateEnsembleResults = ({
 
   // ── [SWARM] Blend swarm score into final (configurable weight, default 15%) ──
   if (swarmScore !== undefined && swarmScore >= 0 && swarmScore <= 100) {
-    const rawBlend = parseFloat(
-      (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SWARM_BLEND_WEIGHT : undefined) ?? '0.15'
-    );
+    // BUG-B19 FIX: Safe SSR check for import.meta.env to prevent crashes in non-Vite/Test/SSR envs
+    const getEnsembleWeight = () => {
+      try {
+        if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+          return (import.meta as any).env.VITE_SWARM_BLEND_WEIGHT || '0.15';
+        }
+      } catch (e) {}
+      return '0.15';
+    };
+    const rawBlend = parseFloat(getEnsembleWeight());
     const safeWeight = Math.max(0.05, Math.min(0.35, isNaN(rawBlend) ? 0.15 : rawBlend));
     finalScore = Math.round(finalScore * (1 - safeWeight) + swarmScore * safeWeight);
     console.log(`[Ensemble] Swarm blend: final=${finalScore} (weight=${safeWeight.toFixed(2)})`);
   }
+
+  // ── BUG FIX: Model-count confidence cap ──────────────────────────────────
+  // If fewer than 3 LLM models succeeded, the "agreement" metric is meaningless
+  // (you can't have agreement between 1 or 2 sources). Cap confidence to prevent
+  // inflated "High accuracy — 4 models agree" labels when only the engine ran.
+  const llmCount = scores.filter(s => s.model !== 'engine').length;
+  if (llmCount === 0) {
+    // Only deterministic engine — pure fallback
+    finalConfidence = Math.min(finalConfidence, 55);
+    console.log('[Ensemble] Confidence capped at 55% — engine-only result (all LLM agents failed)');
+  } else if (llmCount === 1) {
+    // Single LLM + engine — limited consensus
+    finalConfidence = Math.min(finalConfidence, 68);
+  } else if (llmCount === 2) {
+    // Two LLMs + engine — moderate consensus
+    finalConfidence = Math.min(finalConfidence, 82);
+  }
+  // 3+ LLMs: no cap applied — full confidence range available
 
   // ── Clamp: never claim 0% or 100% certainty ─────────────────────────────
   finalScore = Math.max(2, Math.min(97, finalScore));

@@ -71,6 +71,19 @@ export const MASTER_CAREER_INTELLIGENCE: Record<string, CareerIntelligence> = {
   ...SERVICES_RETAIL_INTELLIGENCE,   // 8 Retail, Consumer & Hospitality roles
 };
 
+// ── BUG-08 FIX: Pre-built O(1) lookup caches ──────────────────────────────────
+// Previously every call to getCareerIntelligence() did an O(n) object lookup across
+// 400+ records. These Map caches pre-build at module load time for instant reads.
+
+/** Direct key lookup: role key → CareerIntelligence */
+const _directCache = new Map<string, CareerIntelligence>(
+  Object.entries(MASTER_CAREER_INTELLIGENCE)
+);
+
+/** Alias resolution cache: original key → resolved key (populated lazily and cached) */
+const _resolvedKeyCache = new Map<string, string>();
+
+
 // ── Catalog → Intelligence Key Bridge ─────────────────────────────────────────
 // Maps every catalogData.ts WORK_TYPE key to the best-matching intelligence key.
 // This is the single fix for: (1) flat 61% scores, (2) blank skill matrix.
@@ -280,16 +293,31 @@ const CATALOG_TO_INTEL_KEY: Record<string, string> = {
 
 /**
  * Resolve a catalog WORK_TYPE key to its best-matching intelligence key.
+ * BUG-08 FIX: Results are memoized in _resolvedKeyCache (Map) so repeated calls
+ * for the same key are O(1) after the first resolution.
  * Tries: (1) direct match, (2) alias bridge, (3) prefix heuristic.
  */
 export const resolveIntelligenceKey = (roleKey: string): string => {
   if (!roleKey) return roleKey;
-  // 1. Direct match
-  if (MASTER_CAREER_INTELLIGENCE[roleKey]) return roleKey;
-  // 2. Alias bridge
+
+  // 1. Check the resolution cache first — O(1) for all previously seen keys
+  const cached = _resolvedKeyCache.get(roleKey);
+  if (cached !== undefined) return cached;
+
+  // 2. Direct match against the direct cache
+  if (_directCache.has(roleKey)) {
+    _resolvedKeyCache.set(roleKey, roleKey);
+    return roleKey;
+  }
+
+  // 3. Alias bridge
   const aliased = CATALOG_TO_INTEL_KEY[roleKey];
-  if (aliased && MASTER_CAREER_INTELLIGENCE[aliased]) return aliased;
-  // 3. Prefix heuristic for unmapped keys
+  if (aliased && _directCache.has(aliased)) {
+    _resolvedKeyCache.set(roleKey, aliased);
+    return aliased;
+  }
+
+  // 4. Prefix heuristic for unmapped keys
   const prefix = roleKey.split('_')[0];
   const prefixMap: Record<string, string> = {
     sw: 'sw_backend', ml: 'ml_engineer', sec: 'sec_pen', dev: 'sw_devops',
@@ -312,18 +340,24 @@ export const resolveIntelligenceKey = (roleKey: string): string => {
     ag: 'ag_agronomist', env: 'env_compliance', trd: 'trd_electrician_master',
   };
   const prefixKey = prefixMap[prefix];
-  if (prefixKey && MASTER_CAREER_INTELLIGENCE[prefixKey]) return prefixKey;
+  if (prefixKey && _directCache.has(prefixKey)) {
+    _resolvedKeyCache.set(roleKey, prefixKey);
+    return prefixKey;
+  }
+
+  // 5. No match — cache the miss as the original key to avoid repeated lookups
+  _resolvedKeyCache.set(roleKey, roleKey);
   return roleKey;
 };
 
 /**
  * Resolver: Fetch base career intelligence for a given role key.
- * Automatically resolves catalog WORK_TYPE keys via the alias bridge.
- * For country-aware intelligence, use getCountryAdaptedIntelligence() instead.
+ * BUG-08 FIX: Uses _directCache (Map) for O(1) lookup instead of O(n) object access.
+ * Automatically resolves catalog WORK_TYPE keys via the alias bridge + memoization.
  */
 export const getCareerIntelligence = (roleKey: string): CareerIntelligence | null => {
   const resolved = resolveIntelligenceKey(roleKey);
-  return MASTER_CAREER_INTELLIGENCE[resolved] || null;
+  return _directCache.get(resolved) || null;
 };
 
 /**

@@ -112,7 +112,13 @@ Respond with ONLY this JSON — no markdown:
     if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
     const data = await response.json();
     const raw: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    const parsed: GeminiSynthesis = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    
+    // BUG-B15 FIX: More robust JSON extraction supporting markdown blocks and non-matching prefixes
+    let jsonStr = raw.trim();
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) jsonStr = jsonMatch[0];
+    
+    const parsed: GeminiSynthesis = JSON.parse(jsonStr);
 
     return { model: 'gemini-2.0-flash', success: true, synthesis: parsed };
   } catch (error: any) {

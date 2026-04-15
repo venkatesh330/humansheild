@@ -60,7 +60,7 @@ const DIMENSIONS = [
 
 const STATS = [
   { value: "4.8B+", label: "Data Nodes", icon: Globe },
-  { value: "250+", label: "Audit Points", icon: BarChart3 },
+  { value: "10k+", label: "Audit Points", icon: BarChart3 },
   { value: "98.4%", label: "Risk Accuracy", icon: Shield },
   { value: "24H", label: "Update Cycle", icon: Zap },
 ];
@@ -69,7 +69,7 @@ const STEPS = [
   {
     num: "01",
     title: "Select Your Role",
-    desc: "Choose your industry cluster and specific role designation from our 250+ verified job taxonomy.",
+    desc: "Choose your industry cluster and specific role designation from our comprehensive universe of verified job taxonomies.",
     icon: Search,
   },
   {

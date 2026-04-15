@@ -19,7 +19,7 @@ import { PrivacyPage } from "./pages/PrivacyPage";
 import { TermsPage } from "./pages/TermsPage";
 import { BlogPage } from "./pages/BlogPage";
 import { ContactPage } from "./pages/ContactPage";
-import CalculatorPage from "./pages/CalculatorPage";
+import AuditTerminalPage from "./pages/AuditTerminalPage";
 import NotFoundPage from "./pages/not-found";
 
 // Pages — lazy-loaded
@@ -121,7 +121,7 @@ function NavigationBridge() {
 // ─── App Navigation ───────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { to: "/", label: "Research" },
-  { to: "/risk-oracle", label: "Risk Oracle" },
+  { to: "/terminal", label: "My Dashboard" },
   { to: "/safe-careers", label: "Safe List" },
   { to: "/learning-hub", label: "Upskill" },
 ];
@@ -443,8 +443,8 @@ function AppFooter() {
               }}
             >
               {[
-                { to: "/risk-oracle", label: "Risk Oracle" },
-                { to: "/calculator", label: "Audit Terminal" },
+              { to: "/terminal", label: "Risk Oracle" },
+                { to: "/terminal", label: "Audit Terminal" },
                 { to: "/learning-hub", label: "Learning Hub" },
                 { to: "/safe-careers", label: "Safe Careers" },
                 { to: "/about", label: "About" },
@@ -528,7 +528,7 @@ function AppFooter() {
           }}
         >
           <span style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>
-            © 2026 HumanShield. All rights reserved.
+            © {new Date().getFullYear()} HumanShield. All rights reserved.
           </span>
           <div className="badge badge-cyan">
             <span
@@ -586,8 +586,8 @@ function AppContent() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<HomePage />} />
-              <Route path="/risk-oracle" element={<CalculatorPage />} />
-              <Route path="/calculator" element={<ToolsPage />} />
+              <Route path="/calculator" element={<AuditTerminalPage />} />
+              <Route path="/terminal" element={<ToolsPage />} />
               <Route path="/safe-careers" element={<SafeCareersPage />} />
               <Route path="/career/:id" element={<CareerDetailPage />} />
               <Route path="/learning-hub" element={<LearningHubPage />} />
@@ -619,7 +619,9 @@ function App() {
       <AuthProvider>
         <HumanProofProvider>
           <LayoffProvider>
-            <AppContent />
+            <ToastProvider>
+              <AppContent />
+            </ToastProvider>
           </LayoffProvider>
         </HumanProofProvider>
       </AuthProvider>

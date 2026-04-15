@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Shield, Cpu, Activity, ArrowRight, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { MASTER_CAREER_INTELLIGENCE } from '../data/intelligence';
 import { useHumanProof } from '../context/HumanProofContext';
@@ -12,6 +13,7 @@ interface RoleSelectorModalProps {
 }
 
 export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
+  const navigate = useNavigate();
   const { dispatch } = useHumanProof();
   const [search, setSearch] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -80,7 +82,8 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
             setTimeout(() => {
               setIsAnalyzing(false);
               onClose();
-              window.dispatchEvent(new CustomEvent('navigate', { detail: 'risk-oracle' }));
+              dispatch({ type: 'SET_ACTIVE_TAB', tab: 'risk-calculators' });
+              navigate('/terminal');
             }, 500);
             return 100;
           }
@@ -141,7 +144,7 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
                   <input 
                     type="text" 
                     className="input" 
-                    placeholder="Search 250+ professionally verified roles..." 
+                    placeholder="Search thousands of professionally verified roles..." 
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     autoFocus

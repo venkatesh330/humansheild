@@ -15,7 +15,7 @@ const MILESTONES = [
   { year: '2024', label: 'Founded', desc: 'HumanShield born from a mission to bring data clarity to the AI displacement crisis.' },
   { year: 'Q2 \'24', label: 'First Dataset', desc: 'Partnered with McKinsey Global Institute to validate our first 50,000-role taxonomy.' },
   { year: 'Q4 \'24', label: 'Gemma Integration', desc: 'Deployed local-inference Gemma framework for real-time, privacy-first risk scoring.' },
-  { year: 'Q1 \'26', label: 'Global Launch', desc: 'Expanded to 72+ countries covering 250+ role types across all major industry sectors.' },
+  { year: 'Q1 \'26', label: 'Global Launch', desc: 'Expanded globally, covering thousands of role types across all major industry sectors.' },
 ];
 
 export const AboutPage: React.FC = () => {

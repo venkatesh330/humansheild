@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useLayoff } from "../../context/LayoffContext";
 import { LayoffInputForm } from "./LayoffInputForm";
 import { LayoffScoreDisplay } from "./LayoffScoreDisplay";
@@ -9,6 +9,7 @@ import {
   ScenarioOverrides,
 } from "../../services/layoffScoreEngine";
 import { runFullEnsembleAnalysis } from "../../services/ensemble/ensembleOrchestrator";
+import { OracleResult } from "../../services/DisplacementTrajectoryEngine";
 import { getCompanyByName, CompanyData } from "../../data/companyDatabase";
 import { industryRiskData, IndustryRisk } from "../../data/industryRiskData";
 import { RoleExposure } from "../../data/roleExposureData";
@@ -21,11 +22,24 @@ import { RecommendationPanel } from "./RecommendationPanel";
 import { MissionBriefing, recommendationsToMissions } from "./MissionBriefing";
 import { SpyLoadingState } from "./SpyLoadingState";
 import { supabase } from "../../utils/supabase";
+import { getCareerIntelligence, CareerIntelligence } from "../../data/intelligence/index";
+import { getAutoDeducedDepartment } from "../../data/oracleRoleIndex";
+import { countryCodeToD5Key } from "../../data/companyDatabase";
+import { injectLayoffEvent } from "../../data/layoffNewsCache";
 
 interface Props {
   /** Optional: passed from ToolsPage so action plan links can switch tabs */
   onSwitchTab?: (tabId: string) => void;
 }
+
+// ── Helper: derive experience bracket from tenure years ───────────────────────
+const deriveExperience = (tenureYears: number): string => {
+  if (tenureYears < 2)  return '0-2';
+  if (tenureYears < 5)  return '2-5';
+  if (tenureYears < 10) return '5-10';
+  if (tenureYears < 15) return '10-15';
+  return '15+';
+};
 
 // Toast notification — replaces alert()
 const Toast: React.FC<{
@@ -64,15 +78,89 @@ const Toast: React.FC<{
 export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
   const { state, dispatch } = useLayoff();
   const [showShareCard, setShowShareCard] = useState(false);
-  const [lastScoreInputs, setLastScoreInputs] = useState<ScoreInputs | null>(
-    null,
-  );
+  const [lastScoreInputs, setLastScoreInputs] = useState<ScoreInputs | null>(null);
   // 0=idle, 1=engine+agents running, 2=gemini synthesizing, 3=done
   const [ensembleStage, setEnsembleStage] = useState(0);
+  // Data quality flag: 'live' | 'partial' | 'fallback'
+  const [dataQuality, setDataQuality] = useState<'live' | 'partial' | 'fallback'>('live');
+  // ── [TRAJECTORY] Oracle result for Displacement Trajectory panel ──────────
+  const [oracleResult, setOracleResult] = useState<OracleResult | null>(null);
+  // ── [INTEL] Local CareerIntelligence for OracleInsightsPanel ─────────────
+  const [careerIntelligence, setCareerIntelligence] = useState<CareerIntelligence | null>(null);
+
+  // ── BUG FIX: Double-submit guard ─────────────────────────────────────────
+  const isSubmitting = useRef(false);
+
+  // ── ARCHITECTURE: Session result cache ────────────────────────────────────
+  // Key = companyName + roleKey + experience + country hash (10-min TTL)
+  const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  const buildCacheKey = (company: string, roleKey: string, exp: string, country: string) =>
+    `hp_score_cache__${company.toLowerCase()}_${roleKey}_${exp}_${country}`;
+
+  // Restore last cached result on mount (so page refresh re-surfaces last session)
+  React.useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('hp_last_score_session');
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      if (!cached?.result || !cached?.ts) return;
+      if (Date.now() - cached.ts > CACHE_TTL_MS) return;
+      // Only restore if calculator is idle and has no result yet
+      if (!state.hasCompletedAssessment && !state.isCalculating) {
+        dispatch({ type: 'SET_SCORE_RESULT', payload: cached.result });
+        // SET_INPUTS accepts a partial payload for companyName and roleTitle
+        dispatch({ type: 'SET_INPUTS', payload: {
+          companyName: cached.companyName ?? null,
+          roleTitle: cached.roleTitle ?? null,
+        }});
+        if (cached.dataQuality) setDataQuality(cached.dataQuality);
+        if (cached.oracleResult) setOracleResult(cached.oracleResult);
+        if (cached.careerIntel) setCareerIntelligence(cached.careerIntel);
+      }
+    } catch { /* sessionStorage unavailable — ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── ARCHITECTURE: Circuit breaker for Oracle fetch ─────────────────────────
+  // Retries up to 2 times with 500ms backoff before returning null (silent fallback).
+  const fetchOracleWithRetry = async (url: string, body: object, retries = 2): Promise<Response | null> => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(8000), // 8s timeout per attempt
+        });
+        if (res.ok) return res;
+        if (res.status >= 400 && res.status < 500) return null; // Client error — don't retry
+        throw new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 500 * (attempt + 1))); // 500ms, 1000ms
+          continue;
+        }
+        console.warn(`[Oracle] All ${retries + 1} attempts failed — using fallback`, err);
+        return null;
+      }
+    }
+    return null;
+  };
 
   const handleCalculate = async () => {
+    // ── BUG FIX: Prevent concurrent submissions ────────────────────────────
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
+
     dispatch({ type: "SET_CALCULATING", payload: true });
     setEnsembleStage(0);
+    setDataQuality('live');
+    setOracleResult(null);
+    setCareerIntelligence(null);
+
+    // BUG-C4 FIX: Track data quality locally through each OSINT branch then
+    // refine after ensemble resolves — avoids stale React async state closure.
+    let computedQuality: 'live' | 'partial' | 'fallback' = 'fallback';
 
     try {
       let companyData: CompanyData | null = null;
@@ -89,20 +177,16 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
 
         const { data, error } = await supabase.functions.invoke(
           "fetch-company-data",
-          {
-            body: reqBody,
-          },
+          { body: reqBody }
         );
 
         if (data && !error && data.data) {
           const osintData = data.data;
 
-          // ── BUG-04 FIX: handle boolean OR string 'true' from OSINT ──
           const resolvedIsPublic = Boolean(
-            osintData.is_public === true || osintData.is_public === "true",
+            osintData.is_public === true || osintData.is_public === "true"
           );
 
-          // ── BUG-02 FIX: map real layoff history, not hardcoded 2% ──
           const resolvedLayoffs: { date: string; percentCut: number }[] =
             Array.isArray(osintData.recent_layoffs)
               ? osintData.recent_layoffs.map((l: any) => ({
@@ -119,29 +203,23 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
                   ]
                 : [];
 
-          // ── BUG-01 FIX: layoffRounds must be a number, not a boolean ──
           const resolvedLayoffRounds =
             typeof osintData.layoff_rounds === "number"
               ? osintData.layoff_rounds
               : resolvedLayoffs.length;
 
-          // ── BUG-03 FIX: compute real revenuePerEmployee from OSINT or derive it ──
           const resolvedRevPerEmp: number =
             typeof osintData.revenue_per_employee === "number"
               ? osintData.revenue_per_employee
               : osintData.annual_revenue && osintData.employee_count
-                ? Math.round(
-                    osintData.annual_revenue / osintData.employee_count,
-                  )
-                : 150_000; // industry-average fallback only when truly unknown
+                ? Math.round(osintData.annual_revenue / osintData.employee_count)
+                : 150_000;
 
           companyData = {
             name: osintData.company_name,
-            // ── BUG-05 FIX: map stockTicker so Alpha Vantage calls use correct symbol ──
             ticker: osintData.ticker ?? osintData.stock_ticker,
             isPublic: resolvedIsPublic,
             industry: osintData.industry || "Technology",
-            // ── BUG-10 FIX: use real region from OSINT, not always 'GLOBAL' ──
             region: osintData.region ?? osintData.country_code ?? "GLOBAL",
             employeeCount: osintData.employee_count || 500,
             revenueGrowthYoY: osintData.revenue_yoy ?? null,
@@ -150,14 +228,35 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
             layoffRounds: resolvedLayoffRounds,
             lastLayoffPercent:
               osintData.last_layoff_percent ??
-              (resolvedLayoffs.length > 0
-                ? resolvedLayoffs[0].percentCut
-                : null),
+              (resolvedLayoffs.length > 0 ? resolvedLayoffs[0].percentCut : null),
             revenuePerEmployee: resolvedRevPerEmp,
             aiInvestmentSignal: osintData.ai_investment_signal ?? "medium",
             source: data.source || "Live OSINT Database",
             lastUpdated: osintData.last_updated ?? new Date().toISOString(),
           };
+
+          // ── BUG-C3 FIX: Inject live layoff news from OSINT into runtime cache ──
+          // This makes `newsRisk` (L2) active for any company the OSINT layer returns
+          // layoff data for, not just the 3 companies seeded in layoffNewsCache.
+          if (companyData.layoffsLast24Months && companyData.layoffsLast24Months.length > 0) {
+            const latestLayoff = companyData.layoffsLast24Months[0];
+            injectLayoffEvent({
+              companyName:         companyData.name,
+              date:                latestLayoff.date,
+              headline:            `${companyData.name} reduced headcount by ${latestLayoff.percentCut}% — live OSINT signal`,
+              percentCut:          latestLayoff.percentCut,
+              source:              companyData.source || 'Live OSINT',
+              url:                 '',
+              affectedDepartments: ['All Departments'],
+            });
+          }
+
+          // ── BUG-C4 FIX: Track data quality as local var — will be refined after ensemble ──
+          const hasRichData =
+            companyData.revenueGrowthYoY !== null ||
+            companyData.layoffsLast24Months.length > 0;
+          computedQuality = hasRichData ? 'live' : 'partial';
+          setDataQuality(computedQuality);
 
           dispatch({
             type: "SHOW_TOAST",
@@ -170,6 +269,8 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
           console.warn("Fallback: Failed to fetch live data", error);
           companyData =
             companyFallback || getCompanyByName(state.companyName || "");
+          // ── BUG FIX: Make fallback visible to user ─────────────────────────
+          setDataQuality('fallback');
         }
       }
 
@@ -190,6 +291,8 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
           source: "Fallback",
           lastUpdated: new Date().toISOString(),
         };
+        computedQuality = 'fallback';
+        setDataQuality('fallback');
       }
 
       let fetchedIndustryData: IndustryRisk | undefined;
@@ -231,7 +334,6 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
       const industryData: IndustryRisk | undefined =
         fetchedIndustryData || industryRiskData[companyData.industry];
 
-      // ── Keep ScoreInputs for scenario simulation (uses deterministic engine) ──
       const inputs: ScoreInputs = {
         companyData,
         industryData,
@@ -248,11 +350,82 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
       };
       setLastScoreInputs(inputs);
 
-      // ── Stage 1: Swarm + Engine firing ──
+      // ── [INTELLIGENCE] Resolve oracle role key: prefer context key set by form,
+      //    fall back to experience-based derivation for manual text input.
+      const oracleRoleKey = state.oracleKey || 'generic';
+
+      // ── BUG-C1 FIX: Use total career experience (careerYears) for D4/Oracle
+      //    bracket, NOT company tenure. A 15-yr veteran who joined 1yr ago should
+      //    NOT be classified as junior ("0-2" bracket).
+      const careerExp = inputs.userFactors?.careerYears ?? inputs.userFactors.tenureYears;
+      const oracleExp = deriveExperience(careerExp);
+
+      // ── BUG-M1 FIX: Normalise region/country to COUNTRY_RISK_PROFILES key
+      //    OSINT populates companyData.region with codes like "IN", "US", "EU".
+      //    countryCodeToD5Key() maps them to "india", "usa", "germany" etc.
+      //    which match the keys used in COUNTRY_RISK_PROFILES for D5 scoring.
+      const rawRegion = companyData.region || 'GLOBAL';
+      const d5CountryKey = countryCodeToD5Key(rawRegion);
+
+
+      // ── [INTELLIGENCE] Load CareerIntelligence from local DB immediately ──
+      const localIntel = getCareerIntelligence(oracleRoleKey);
+      if (localIntel) setCareerIntelligence(localIntel);
+
+      // ── [INTELLIGENCE] Auto-derive department if not already set ─────────
+      if (!inputs.department && oracleRoleKey !== 'generic') {
+        inputs.department = getAutoDeducedDepartment(oracleRoleKey);
+      }
+
+      // ── BUG FIX: Stage 1 — Swarm + engine firing ─────────────────────────
       setEnsembleStage(1);
 
-      // ── BUG-06 FIX: Stage transitions driven by real orchestrator progress ──
-      // We run the full analysis and update stages as it progresses
+      // ── [TRAJECTORY] Fire Oracle + Ensemble in PARALLEL ──────────────────
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+      const oracleBody = {
+        roleKey:    oracleRoleKey,
+        industry:   companyData.industry,
+        experience: oracleExp,
+        // BUG-M1 FIX: Send the normalised D5 country key (e.g. 'india', 'uk')
+        // not the raw region string ('IN', 'EU') which doesn't match COUNTRY_RISK_PROFILES
+        country:    d5CountryKey,
+      };
+
+      // ── ARCHITECTURE: Check session cache before firing API ──────────────────
+      const cacheKey = buildCacheKey(
+        companyData.name, oracleRoleKey, oracleExp, d5CountryKey
+      );
+      let cachedOracleResult: OracleResult | null = null;
+      try {
+        const rawCache = sessionStorage.getItem(cacheKey);
+        if (rawCache) {
+          const { value, ts } = JSON.parse(rawCache);
+          if (Date.now() - ts < CACHE_TTL_MS) cachedOracleResult = value;
+        }
+      } catch { /* ignore */ }
+
+      const oraclePromise = cachedOracleResult
+        ? Promise.resolve(cachedOracleResult)
+        : fetchOracleWithRetry(`${apiBase}/api/v1/grounded-risk`, oracleBody)
+            .then(res => res ? res.json() : null)
+            .then(data => {
+              if (data && Array.isArray(data.dimensions)) {
+                // Store in session cache for this input combination
+                try {
+                  sessionStorage.setItem(cacheKey, JSON.stringify({ value: data, ts: Date.now() }));
+                } catch { /* quota exceeded — ignore */ }
+                setOracleResult(data as OracleResult);
+                return data as OracleResult;
+              }
+              return null;
+            }).catch(err => {
+              console.warn('[Trajectory] Oracle circuit breaker exhausted — using fallback:', err);
+              return null;
+            });
+
+      // ── BUG FIX: Stage transitions driven by orchestrator callbacks ─────────
+      // We start the analysis and trigger stage 2 based on swarm completion
+      let swarmDone = false;
       const analysisPromise = runFullEnsembleAnalysis({
         companyName: companyData.name,
         companyData,
@@ -266,18 +439,68 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
         hasRecentPromotion: inputs.userFactors.hasRecentPromotion,
         hasKeyRelationships: inputs.userFactors.hasKeyRelationships,
         roleExposureOverride: fetchedRoleExposure,
+        onSwarmComplete: () => {
+          // Swarm done → advance to Gemini synthesis stage
+          swarmDone = true;
+          setEnsembleStage(2);
+        },
       });
 
-      // Show stage 2 (AI agents) after a real delay timed to typical model latency
-      const stage2Timer = setTimeout(() => setEnsembleStage(2), 3000);
+      // Fallback stage advance after 4s if swarm completes very quickly (no callback yet)
+      const stageTimer = setTimeout(() => {
+        // BUG-B2 FIX: Use functional update to avoid stale closure of ensembleStage
+        if (!swarmDone) {
+          setEnsembleStage(prev => (prev < 2 ? 2 : prev));
+        }
+      }, 4000);
 
-      const ensembleResult = await analysisPromise;
-      clearTimeout(stage2Timer);
+      // Await both in parallel — ensemble drives the main result, oracle enriches it
+      let ensembleResult: any;
+      let resolvedOracle: any;
+      
+      try {
+        [ensembleResult, resolvedOracle] = await Promise.all([analysisPromise, oraclePromise]);
+      } catch (err) {
+        console.warn('[Ensemble] Critical failure, falling back to deterministic engine:', err);
+        // BUG-E4 FIX: Manual fallback to deterministic engine if ensemble crashes
+        const engineOnly = calculateLayoffScore(inputs);
+        ensembleResult = {
+          score: engineOnly.score,
+          confidence: 45,
+          confidencePercent: 45,
+          tier: engineOnly.tier,
+          breakdown: engineOnly.breakdown,
+          recommendations: engineOnly.recommendations,
+          modelsUsed: [],
+          isFallback: true, // Flag for UI to show "Limited Mode"
+        };
+        resolvedOracle = null;
+      }
+
+      clearTimeout(stageTimer);
 
       // Stage 3: Done — result is ready
       setEnsembleStage(3);
 
-      dispatch({ type: "SET_SCORE_RESULT", payload: ensembleResult });
+      // ── BUG-C4 FIX: Refine dataQuality AFTER both promises resolve ─────────
+      // Previously dataQuality was set during OSINT (before ensemble ran).
+      // Now we upgrade it based on actual ensemble quality: if Oracle succeeded
+      // AND 3+ models responded, we have genuine live data. Otherwise downgrade.
+      const finalQuality: 'live' | 'partial' | 'fallback' =
+        resolvedOracle && (ensembleResult.modelsUsed?.length ?? 0) >= 3 ? 'live'
+        : (ensembleResult.modelsUsed?.length ?? 0) >= 2                ? (computedQuality === 'fallback' ? 'fallback' : 'partial')
+        : computedQuality;
+      setDataQuality(finalQuality);
+
+      // ── ENHANCEMENT: Enhance result with dataQuality + oracle + career intel ─
+      const enrichedResult = {
+        ...ensembleResult,
+        dataQuality: finalQuality,
+        oracleResult: resolvedOracle ?? undefined,
+        careerIntelligence: localIntel ?? undefined,
+      };
+
+      dispatch({ type: "SET_SCORE_RESULT", payload: enrichedResult });
 
       const modelCount = ensembleResult.modelsUsed?.length || 1;
       const liveAgents = ensembleResult.swarmReport?.liveAgentsUsed ?? 0;
@@ -292,10 +515,54 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
           type: "success",
         },
       });
+
+      // ── ENHANCEMENT: Server-side score sync for authenticated users ──────────
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id && state.companyName && state.roleTitle) {
+          // BUG-05 FIX: Use finalQuality (local const) not dataQuality state —
+          // React state is async; dataQuality may be stale at this point in the closure.
+          await supabase.from("layoff_scores").insert({
+            user_id: session.user.id,
+            company_name: state.companyName,
+            role_title: state.roleTitle,
+            department: state.department || "",
+            score: ensembleResult.score,
+            tier: ensembleResult.tier.label,
+            tier_color: ensembleResult.tier.color,
+            confidence: ensembleResult.confidence,
+            breakdown: ensembleResult.breakdown,
+            models_used: ensembleResult.modelsUsed,
+            data_quality: finalQuality,   // ← local const, not stale state
+            calculated_at: new Date().toISOString(),
+          });
+        }
+      } catch (syncError) {
+        console.warn("[Layoff] Server score sync failed:", syncError);
+      }
+
+      // ── ARCHITECTURE: Persist result to sessionStorage for page-refresh recovery
+      try {
+        sessionStorage.setItem('hp_last_score_session', JSON.stringify({
+          result: enrichedResult,
+          companyName: state.companyName,
+          roleTitle: state.roleTitle,
+          dataQuality: finalQuality,
+          oracleResult: resolvedOracle ?? null,
+          careerIntel: localIntel ?? null,
+          ts: Date.now(),
+        }));
+      } catch { /* quota exceeded — ignore */ }
     } catch (e) {
       console.error(e);
+      dispatch({
+        type: "SHOW_TOAST",
+        payload: { message: "Analysis failed — please try again.", type: "error" },
+      });
+    } finally {
+      // ── BUG FIX: ALWAYS reset isCalculating, success or failure ──────────
       dispatch({ type: "SET_CALCULATING", payload: false });
-      setEnsembleStage(0);
+      isSubmitting.current = false;
     }
   };
 
@@ -322,6 +589,7 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
   const handleRetake = () => {
     dispatch({ type: "RESET" });
     setLastScoreInputs(null);
+    isSubmitting.current = false;
   };
 
   const handleScenarioSimulate = (overrides: ScenarioOverrides) => {
@@ -381,6 +649,17 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
               dataUpdatedDate={
                 state.companyData?.lastUpdated || new Date().toISOString()
               }
+              dataQuality={dataQuality}
+              oracleResult={oracleResult}
+              experience={deriveExperience(
+                // BUG-01 FIX: Use total career experience (careerYears) for the
+                // experience bracket displayed on the score card and detail panels.
+                // Previously, tenureYears (current company) was used, meaning a
+                // 15-year veteran who joined 1 year ago would show as '0-2' bracket.
+                state.userFactors?.careerYears ?? state.userFactors?.tenureYears ?? 3
+              )}
+              roleKey={state.oracleKey || 'generic'}
+              careerIntelligence={careerIntelligence}
               onSave={handleSave}
               onShare={handleShare}
               onRetake={handleRetake}

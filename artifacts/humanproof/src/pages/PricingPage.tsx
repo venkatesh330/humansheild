@@ -13,7 +13,7 @@ const plans = [
     action: 'free',
     features: [
       'Full AI Displacement Audit',
-      '250+ job types, 72+ countries',
+      'Thousands of job types worldwide',
       '6-dimension risk calibration',
       'At-risk task decomposition',
       '3 audit runs per month',

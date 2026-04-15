@@ -758,30 +758,30 @@ export const LearningHubPage: React.FC = () => {
     <div className="page-wrap" style={{ background: "var(--bg)" }}>
       <div className="container" style={{ maxWidth: 1280 }}>
         {/* Premium Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start gap-12 mb-16 px-2">
-          <div className="space-y-4">
-            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">
+        <div className="section-hero reveal" style={{ marginBottom: '48px', textAlign: 'left', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '32px' }}>
+          <div>
+            <div className="badge badge-cyan" style={{ marginBottom: '16px' }}>
               Resilience Node
-            </span>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tighter leading-[0.9]">
+            </div>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(3rem, 8vw, 4.5rem)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 0.95, marginBottom: '16px' }}>
               ADAPTATION <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-500 italic">
+              <span className="gradient-text-cyan" style={{ fontStyle: 'italic' }}>
                 REPOSITORY
               </span>
             </h1>
-            <p className="text-slate-500 font-medium max-w-md">
+            <p style={{ color: 'var(--text-2)', fontWeight: 500, maxWidth: 480, lineHeight: 1.6 }}>
               Curated intelligence for high-density human skills — leadership,
               empathy, and strategic synthesis.
             </p>
           </div>
 
           {user && (
-            <div className="flex gap-6 lg:gap-10">
-              <div className="space-y-1">
-                <div className="text-[10px] text-slate-600 font-black uppercase tracking-widest">
+            <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
+              <div>
+                <div className="label-xs" style={{ marginBottom: '8px', color: 'var(--text-3)' }}>
                   Absorbed
                 </div>
-                <div className="text-3xl font-black tracking-tighter">
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.5rem', fontWeight: 900, lineHeight: 1 }}>
                   {
                     Object.values(progress).filter(
                       (p) => p.status === "completed",
@@ -789,12 +789,12 @@ export const LearningHubPage: React.FC = () => {
                   }
                 </div>
               </div>
-              <div className="w-px h-12 bg-white/5" />
-              <div className="space-y-1">
-                <div className="text-[10px] text-slate-600 font-black uppercase tracking-widest">
+              <div style={{ width: 1, height: 48, background: 'var(--border)' }} />
+              <div>
+                <div className="label-xs" style={{ marginBottom: '8px', color: 'var(--text-3)' }}>
                   Bookmarked
                 </div>
-                <div className="text-3xl font-black tracking-tighter text-cyan-400">
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.5rem', fontWeight: 900, lineHeight: 1, color: 'var(--cyan)' }}>
                   {Object.values(progress).filter((p) => p.isBookmarked).length}
                 </div>
               </div>
@@ -803,7 +803,7 @@ export const LearningHubPage: React.FC = () => {
         </div>
 
         {/* Cyber Tabs */}
-        <div className="flex overflow-x-auto gap-2 p-1.5 bg-white/[0.03] border border-white/5 rounded-full mb-12 w-fit no-scrollbar">
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '48px', overflowX: 'auto', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
           {[
             { key: "all", icon: BookOpen, label: "DATABASE" },
             { key: "generate", icon: Sparkles, label: "AI PATH" },
@@ -812,41 +812,50 @@ export const LearningHubPage: React.FC = () => {
             <button
               key={key}
               onClick={() => setActiveTab(key as any)}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
-                activeTab === key
-                  ? "bg-white text-black shadow-xl"
-                  : "text-slate-500 hover:text-slate-300"
-              }`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '12px 24px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === key ? '2px solid var(--cyan)' : '2px solid transparent',
+                color: activeTab === key ? 'var(--text)' : 'var(--text-2)',
+                fontSize: '0.85rem',
+                fontWeight: activeTab === key ? 800 : 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+                marginBottom: '-1px'
+              }}
             >
-              <Icon className="w-3 h-3" /> {label}
+              <Icon size={16} /> {label}
             </button>
           ))}
         </div>
 
         {/* ── SEARCH & FILTERS ── */}
         {activeTab === "all" && (
-          <div className="space-y-8 mb-16">
-            <div className="relative group">
-              <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-cyan-400" />
+          <div style={{ marginBottom: '40px' }}>
+            <div className="input-wrap reveal" style={{ marginBottom: '24px' }}>
+              <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
               <input
                 type="text"
-                placeholder="SCAN://LEADERSHIP_EMPATHY_STRATEGY_SYNTHESIS"
-                className="w-full bg-white/[0.02] border border-white/5 rounded-full py-5 pl-16 pr-6 focus:outline-none focus:border-cyan-500/30 text-xs font-black tracking-widest text-white placeholder-slate-700 transition-all"
+                placeholder="SCAN://LEADERSHIP_EMPATHY_STRATEGY..."
+                className="input"
+                style={{ paddingLeft: '48px', fontFamily: 'var(--font-mono)' }}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
 
-            <div className="flex gap-2 flex-wrap">
+            <div className="reveal" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
               {DIM_FILTERS.map((f) => (
                 <button
                   key={f.key}
                   onClick={() => setDimFilter(dimFilter === f.key ? "" : f.key)}
-                  className={`px-4 py-2 rounded-full text-[10px] font-black border transition-all ${
-                    dimFilter === f.key
-                      ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400"
-                      : "bg-white/[0.02] border-white/5 text-slate-500 hover:text-slate-300"
-                  }`}
+                  className={`badge ${dimFilter === f.key ? 'badge-cyan' : 'badge-ghost'}`}
+                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
                 >
                   {f.label}
                 </button>
@@ -858,77 +867,73 @@ export const LearningHubPage: React.FC = () => {
         {/* ── RESOURCE GRID ── */}
         {activeTab === "all" &&
           (loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid-3">
               {[1, 2, 3, 4, 5, 6].map((n) => (
                 <div
                   key={n}
-                  className="h-64 bg-white/[0.02] border border-white/5 rounded-3xl animate-pulse"
+                  className="skeleton"
+                  style={{ height: 280, borderRadius: 'var(--radius-lg)' }}
                 />
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid-3">
               {resources.map((resource) => (
                 <div
                   key={resource.id}
-                  className="card group reveal flex flex-col"
+                  className="card card-hover reveal flex flex-col"
+                  style={{ display: 'flex', flexDirection: 'column', padding: '32px' }}
                 >
-                  <div className="flex justify-between items-start mb-6">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
                     <span
-                      className={`px-2 py-0.5 rounded border text-[9px] font-black uppercase tracking-widest ${LEVEL_COLOR[resource.level]}`}
+                      className={`badge ${resource.level === 'beginner' ? 'badge-emerald' : resource.level === 'intermediate' ? 'badge-amber' : 'badge-red'}`}
                     >
                       {resource.level}
                     </span>
-                    <div className="flex gap-3">
+                    <div style={{ display: 'flex', gap: '12px' }}>
                       <button
                         onClick={() => handleBookmark(resource.id)}
-                        className={`transition-colors ${progress[resource.id]?.isBookmarked ? "text-amber-400" : "text-slate-700 hover:text-slate-400"}`}
+                        className="btn-icon"
+                        style={{ color: progress[resource.id]?.isBookmarked ? 'var(--amber)' : 'var(--text-3)' }}
                       >
-                        <Star
-                          className="w-4 h-4"
-                          fill={
-                            progress[resource.id]?.isBookmarked
-                              ? "currentColor"
-                              : "none"
-                          }
-                        />
+                        <Star size={18} fill={progress[resource.id]?.isBookmarked ? "currentColor" : "none"} />
                       </button>
                       {user && (
                         <button
                           onClick={() => handleMarkComplete(resource.id)}
-                          className={`transition-colors ${progress[resource.id]?.status === "completed" ? "text-emerald-400" : "text-slate-700 hover:text-emerald-400"}`}
+                          className="btn-icon"
+                          style={{ color: progress[resource.id]?.status === "completed" ? 'var(--emerald)' : 'var(--text-3)' }}
                         >
-                          <CheckCircle2 className="w-4 h-4" />
+                          <CheckCircle2 size={18} />
                         </button>
                       )}
                     </div>
                   </div>
 
-                  <h3 className="text-xl font-black text-white mb-2 leading-tight group-hover:text-cyan-400 transition-colors uppercase tracking-tight">
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 900, marginBottom: '8px', lineHeight: 1.25 }}>
                     {resource.title}
                   </h3>
-                  <p className="text-slate-600 text-[10px] mb-8 font-black uppercase tracking-widest">
+                  <p className="label-xs" style={{ color: 'var(--text-3)', marginBottom: '32px' }}>
                     {resource.provider}
                   </p>
 
-                  <div className="mt-auto flex items-center justify-between pt-6 border-t border-white/5">
-                    <div className="flex gap-4 text-[10px] font-black text-slate-700 uppercase tracking-widest">
+                  <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', gap: '16px', color: 'var(--text-2)' }}>
                       {resource.durationHours && (
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {resource.durationHours}
-                          H
+                        <span className="label-xs" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} /> {resource.durationHours}H
                         </span>
                       )}
-                      <span className="flex items-center gap-1">
-                        <Globe className="w-3 h-3" />{" "}
-                        {resource.language.toUpperCase()}
+                      <span className="label-xs" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Globe size={12} /> {resource.language.toUpperCase()}
                       </span>
                     </div>
                     <a
                       href={resource.url || "#"}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] font-black text-cyan-400 uppercase tracking-widest flex items-center gap-1 hover:gap-2 transition-all"
+                      className="label-xs"
+                      style={{ color: 'var(--cyan)', fontWeight: 800, textDecoration: 'none' }}
                     >
                       ACCESS →
                     </a>
@@ -940,42 +945,44 @@ export const LearningHubPage: React.FC = () => {
 
         {/* ── AI PATH GENERATOR ── */}
         {activeTab === "generate" && (
-          <div className="max-w-3xl mx-auto reveal">
-            <div className="card !p-12 mb-12">
-              <div className="flex items-center gap-4 mb-8">
-                <Sparkles className="w-6 h-6 text-cyan-400" />
-                <h2 className="text-2xl font-black uppercase tracking-tighter">
+          <div className="reveal" style={{ maxWidth: 800, margin: '0 auto' }}>
+            <div className="card" style={{ padding: '48px', marginBottom: '40px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+                <Sparkles size={24} style={{ color: 'var(--cyan)' }} />
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 900 }}>
                   AI AGENTIC PATHWAY
                 </h2>
               </div>
-              <div className="space-y-6">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 block mb-3">
-                    Target Occupational Key
-                  </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div className="input-wrap">
+                  <label className="input-label">Target Occupational Key</label>
                   <input
                     type="text"
                     value={roleKeyInput || urlRoleKey}
                     onChange={(e) => setRoleKeyInput(e.target.value)}
-                    className="w-full bg-white/[0.02] border border-white/10 rounded-2xl px-5 py-4 text-sm font-bold text-white focus:outline-none focus:border-cyan-500 transition-all placeholder-slate-800"
+                    className="input"
                     placeholder="ROLE://SOFTWARE_ARCHITECT"
+                    style={{ fontFamily: 'var(--font-mono)' }}
                   />
                 </div>
                 {generateError && (
-                  <div className="text-xs font-bold text-rose-500 bg-rose-500/5 p-4 rounded-xl border border-rose-500/10">
+                  <div style={{ padding: '16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 'var(--radius)', color: 'var(--red)', fontSize: '0.85rem', fontWeight: 600 }}>
                     ERROR: {generateError}
                   </div>
                 )}
                 <button
                   onClick={handleGeneratePath}
                   disabled={generating}
-                  className="btn-primary w-full py-5 disabled:opacity-50"
+                  className="btn btn-primary btn-full btn-lg"
                 >
                   {generating ? (
-                    <>INITIALIZING SYTHESIS...</>
+                    <>
+                      <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                      INITIALIZING SYNTHESIS...
+                    </>
                   ) : (
                     <>
-                      <Zap className="w-4 h-4" /> GENERATE PATHWAY
+                      <Zap size={16} /> GENERATE PATHWAY
                     </>
                   )}
                 </button>
@@ -983,32 +990,34 @@ export const LearningHubPage: React.FC = () => {
             </div>
 
             {generatedPath && (
-              <div className="card reveal !bg-cyan-500/[0.02] !border-cyan-500/10 h-max">
-                <div className="flex items-center gap-4 mb-8">
-                  <Target className="w-6 h-6 text-cyan-400" />
-                  <h3 className="text-xl font-black">{generatedPath.title}</h3>
+              <div className="card reveal" style={{ padding: '40px', background: 'rgba(0,240,255,0.02)', border: '1px solid rgba(0,240,255,0.1)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+                  <Target size={24} style={{ color: 'var(--cyan)' }} />
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 900 }}>{generatedPath.title}</h3>
                 </div>
-                <div className="space-y-3">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {generatedPath.resources.map((item, i) => (
                     <div
                       key={i}
-                      className="flex items-center gap-4 p-5 bg-black/40 rounded-2xl border border-white/5 group"
+                      className="card"
+                      style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '24px', background: 'var(--bg-raised)' }}
                     >
-                      <span className="w-6 h-6 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-[10px] font-black">
+                      <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,240,255,0.1)', color: 'var(--cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 900 }}>
                         {i + 1}
                       </span>
-                      <div className="flex-1">
-                        <div className="text-xs font-black text-white uppercase tracking-wider">
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '6px' }}>
                           {item.resource.title}
                         </div>
-                        <div className="text-[9px] text-slate-700 font-bold uppercase tracking-widest">
+                        <div className="label-xs" style={{ color: 'var(--text-3)' }}>
                           {item.resource.provider} · {item.resource.level}
                         </div>
                       </div>
                       <a
                         href={item.resource.url}
                         target="_blank"
-                        className="text-[10px] font-black text-cyan-500 opacity-50 group-hover:opacity-100 transition-opacity"
+                        rel="noreferrer"
+                        className="btn btn-ghost btn-sm"
                       >
                         ACCESS
                       </a>

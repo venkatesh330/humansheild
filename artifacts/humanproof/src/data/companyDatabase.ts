@@ -391,3 +391,79 @@ export const getPPPMultiplier = (region: CompanyData['region']): number => {
   };
   return multipliers[region] || 1.0;
 };
+
+/**
+ * normalizeRegion — Maps raw ISO country codes / strings from OSINT to the
+ * CompanyData region union type used across the scoring engine.
+ *
+ * Examples:
+ *   "US"  → "US"
+ *   "GB"  → "EU"
+ *   "IN"  → "IN"
+ *   "SG"  → "APAC"
+ *   "BR"  → "GLOBAL"
+ */
+export const normalizeRegion = (raw: string | undefined | null): CompanyData['region'] => {
+  if (!raw) return 'GLOBAL';
+  const code = raw.toUpperCase().trim();
+
+  if (code === 'US' || code === 'USA' || code === 'UNITED STATES') return 'US';
+  if (code === 'IN' || code === 'IND' || code === 'INDIA') return 'IN';
+
+  const euCodes = new Set([
+    'GB','UK','DE','FR','NL','SE','IT','ES','AT','BE','CH',
+    'IE','PL','DK','FI','NO','PT','CZ','RO','HU','EE','LV',
+    'LT','SK','SI','HR','BG','GR','CY','MT','LU',
+    // Already-mapped value
+    'EU',
+  ]);
+  if (euCodes.has(code)) return 'EU';
+
+  const apacCodes = new Set([
+    'SG','AU','NZ','JP','KR','TW','HK','CN','MY','ID','TH',
+    'VN','PH','MM','KH','LK','BD','NP','PK',
+    'APAC','ASIA','AUSTRALIA',
+  ]);
+  if (apacCodes.has(code)) return 'APAC';
+
+  return 'GLOBAL';
+};
+
+/**
+ * countryCodeToD5Key — Maps ISO-2 country codes to the keys used in
+ * COUNTRY_RISK_PROFILES (countryRiskProfile.ts) for D5 scoring.
+ * Returns 'other' for unmapped codes so D5 falls back to 50 (neutral).
+ */
+export const countryCodeToD5Key = (raw: string | undefined | null): string => {
+  if (!raw) return 'other';
+  const code = raw.toLowerCase().trim();
+
+  const directMap: Record<string, string> = {
+    us: 'usa', usa: 'usa', 'united states': 'usa',
+    gb: 'uk', uk: 'uk', 'united kingdom': 'uk',
+    de: 'germany', fr: 'france', nl: 'netherlands',
+    se: 'sweden', no: 'norway', dk: 'denmark', fi: 'finland',
+    it: 'italy', es: 'spain', at: 'austria', be: 'belgium',
+    ch: 'switzerland', ie: 'ireland', pt: 'portugal',
+    pl: 'poland', cz: 'czechia', ro: 'romania', hu: 'hungary',
+    ee: 'estonia', lv: 'latvia', tr: 'turkey', ru: 'russia',
+    in: 'india', ind: 'india', india: 'india',
+    pk: 'pakistan', bd: 'bangladesh', lk: 'srilanka', np: 'nepal',
+    sg: 'singapore', au: 'australia', nz: 'nz',
+    jp: 'japan', kr: 'south_korea', tw: 'taiwan',
+    hk: 'hong_kong', cn: 'china', my: 'malaysia',
+    id: 'indonesia', th: 'thailand', ph: 'philippines',
+    vn: 'vietnam', mm: 'myanmar', kh: 'cambodia', il: 'israel',
+    ae: 'uae', sa: 'saudi', qa: 'qatar', kw: 'kuwait',
+    bh: 'bahrain', om: 'oman', eg: 'egypt', jo: 'jordan',
+    za: 'south_africa', ng: 'nigeria', ke: 'kenya',
+    gh: 'ghana', et: 'ethiopia', ma: 'morocco',
+    ca: 'canada', mx: 'mexico', co: 'colombia',
+    ar: 'argentina', br: 'brazil', cl: 'chile', pe: 'peru',
+    // Region strings from CompanyData.region
+    global: 'other', eu: 'germany', apac: 'singapore',
+  };
+
+  return directMap[code] ?? 'other';
+};
+

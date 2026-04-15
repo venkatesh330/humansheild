@@ -14,16 +14,23 @@ interface Props {
 }
 
 // ── Horizon label → estimated months ─────────────────────────────────────────
+// BUG-06 FIX: Added 'immediate', '<1yr', 'now' horizon cases that appeared
+// in some seeded role data but were silently falling through to the 24-month default.
 const horizonToMonths = (horizon: string): number => {
-  if (horizon.includes('1yr') || horizon === '1-2yr') return 12;
-  if (horizon === '2yr' || horizon === '1-3yr') return 18;
-  if (horizon === '3yr' || horizon === '3-5yr') return 36;
-  if (horizon === '5yr+') return 60;
+  const h = horizon.toLowerCase().trim();
+  if (h === 'immediate' || h === 'now' || h === 'active') return 3;
+  if (h === '<1yr' || h === '0-1yr' || h === '<12mo') return 9;
+  if (h.includes('1yr') || h === '1-2yr') return 12;
+  if (h === '2yr' || h === '1-3yr') return 18;
+  if (h === '3yr' || h === '3-5yr') return 36;
+  if (h === '5yr+') return 60;
   return 24;
 };
 
 const horizonLabel = (horizon: string): string => {
   const months = horizonToMonths(horizon);
+  if (months <= 3)  return 'Immediate threat';
+  if (months <= 9)  return '< 12 months';
   if (months <= 12) return '< 12 months';
   if (months <= 18) return '12–18 months';
   if (months <= 36) return '1–3 years';
@@ -87,6 +94,19 @@ const UrgencyClock = ({ horizon }: { horizon: string }) => {
 // ── Skill Row: Obsolete ───────────────────────────────────────────────────────
 const ObsoleteSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => {
   const [expanded, setExpanded] = useState(idx === 0);
+
+  // ENHANCEMENT: Personalize adaptation advice using the skill's specific aiTool and riskType.
+  // Previously this was identical boilerplate for every skill across all users.
+  const buildObsoleteAdvice = (s: SkillRisk): string => {
+    const toolText = s.aiTool
+      ? `Tools like ${s.aiTool.split(',').slice(0,2).join(' and ')} are already handling this at scale.`
+      : 'Mature AI platforms already handle this function at scale.';
+    const actionText = s.aiReplacement === 'Full'
+      ? `Stop investing time deepening this skill. Instead, learn to configure, prompt, and QA the AI tools that perform it — that is the durable, high-leverage skill.`
+      : `Reduce time on manual execution of this skill. Shift focus to directing and validating AI-generated outputs within this domain.`;
+    return `${toolText} ${actionText}`;
+  };
+
   return (
     <div style={{
       background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',
@@ -138,7 +158,7 @@ const ObsoleteSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => 
           }}>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
               <strong style={{ color: '#ef4444' }}>Adaptation Strategy:</strong>{' '}
-              Stop investing time in mastering this skill. Instead, learn how to <em>evaluate, prompt, and validate</em> the AI tools that perform it — that is the durable skill.
+              {buildObsoleteAdvice(skill)}
             </p>
           </div>
         </div>
@@ -150,6 +170,15 @@ const ObsoleteSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => 
 // ── Skill Row: At-Risk ────────────────────────────────────────────────────────
 const AtRiskSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => {
   const [expanded, setExpanded] = useState(idx === 0);
+
+  // ENHANCEMENT: Personalize adaptation advice based on the skill's riskType and reason.
+  const buildAtRiskAdvice = (s: SkillRisk): string => {
+    if (s.riskType === 'Augmented' || s.aiReplacement === 'Partial') {
+      return `AI is taking over the execution layer of ${s.skill}, but the judgment, quality standards, and stakeholder context layer remains human-led. Shift from doing to directing and validating — that's where the durable value lives.`;
+    }
+    return `The routine components of ${s.skill} are being automated, but complex, novel, or high-stakes instances still require human judgment. Invest in the edge cases and strategic applications — these are the AI-resistant sub-skills within this domain.`;
+  };
+
   return (
     <div style={{
       background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)',
@@ -196,8 +225,7 @@ const AtRiskSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => {
               <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#f59e0b' }}>HOW TO ADAPT</span>
             </div>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
-              Shift from <em>executing</em> this skill to <em>directing, validating, and contextualising</em> AI outputs within it.
-              The value is moving from the doing layer to the judgment layer — invest accordingly.
+              {buildAtRiskAdvice(skill)}
             </p>
           </div>
         </div>

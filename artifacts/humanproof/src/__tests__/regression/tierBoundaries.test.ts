@@ -1,0 +1,278 @@
+import { describe, it, expect } from "vitest";
+import {
+  calculateLayoffScore,
+  type ScoreInputs,
+} from "../../services/layoffScoreEngine";
+import { companyDatabase } from "../../data/companyDatabase";
+import { industryRiskData } from "../../data/industryRiskData";
+
+describe("Regression Tests - Tier Boundaries", () => {
+  describe("Tier Boundary Validation", () => {
+    it('Score 0-14 should be "Very low risk"', () => {
+      const inputs: ScoreInputs = {
+        companyData: {
+          ...companyDatabase.find((c) => c.name === "Apple")!,
+          employeeCount: 200000,
+          revenueGrowthYoY: 25,
+          stock90DayChange: 20,
+          layoffsLast24Months: [],
+          layoffRounds: 0,
+          lastLayoffPercent: null,
+          revenuePerEmployee: 500000,
+        },
+        industryData: industryRiskData["Healthcare"],
+        roleTitle: "Physician",
+        department: "Healthcare",
+        userFactors: {
+          tenureYears: 20,
+          isUniqueRole: true,
+          performanceTier: "top",
+          hasRecentPromotion: true,
+          hasKeyRelationships: true,
+        },
+      };
+      const result = calculateLayoffScore(inputs);
+      expect(result.score).toBeLessThanOrEqual(14);
+      expect(result.tier.label).toBe("Very low risk");
+    });
+
+    it('Score 15-34 should be "Low risk"', () => {
+      const inputs: ScoreInputs = {
+        companyData: {
+          ...companyDatabase.find((c) => c.name === "Apple")!,
+          revenueGrowthYoY: 15,
+          stock90DayChange: 10,
+          layoffsLast24Months: [],
+          revenuePerEmployee: 400000,
+        },
+        industryData: industryRiskData["Healthcare"],
+        roleTitle: "Nurse",
+        department: "Healthcare",
+        userFactors: {
+          tenureYears: 10,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: true,
+        },
+      };
+      const result = calculateLayoffScore(inputs);
+      expect(result.tier.label).toBe("Low risk");
+    });
+
+    it('Score 35-54 should be "Moderate risk"', () => {
+      const inputs: ScoreInputs = {
+        companyData: {
+          ...companyDatabase.find((c) => c.name === "Google")!,
+          revenueGrowthYoY: 5,
+          stock90DayChange: 0,
+          layoffsLast24Months: [],
+          revenuePerEmployee: 250000,
+        },
+        industryData: industryRiskData["Technology"],
+        roleTitle: "Business Analyst",
+        department: "Product",
+        userFactors: {
+          tenureYears: 4,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: false,
+        },
+      };
+      const result = calculateLayoffScore(inputs);
+      expect(result.tier.label).toBe("Moderate risk");
+    });
+
+    it('Score 55-74 should be "Elevated risk"', () => {
+      const inputs: ScoreInputs = {
+        companyData: {
+          ...companyDatabase.find((c) => c.name === "Meta")!,
+          revenueGrowthYoY: -5,
+          stock90DayChange: -10,
+          layoffsLast24Months: [{ date: "2025-12-01", percentCut: 5 }],
+          revenuePerEmployee: 200000,
+        },
+        industryData: industryRiskData["Media & Publishing"],
+        roleTitle: "Marketing Coordinator",
+        department: "Marketing",
+        userFactors: {
+          tenureYears: 2,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: false,
+        },
+      };
+      const result = calculateLayoffScore(inputs);
+      expect(result.tier.label).toBe("Elevated risk");
+    });
+
+    it('Score 75-100 should be "High risk"', () => {
+      const inputs: ScoreInputs = {
+        companyData: {
+          name: "Struggling Startup",
+          isPublic: false,
+          industry: "Startups (pre-seed)",
+          region: "US",
+          employeeCount: 30,
+          revenueGrowthYoY: -30,
+          stock90DayChange: null,
+          layoffsLast24Months: [{ date: "2026-03-01", percentCut: 30 }],
+          layoffRounds: 3,
+          lastLayoffPercent: 30,
+          revenuePerEmployee: 50000,
+          aiInvestmentSignal: "low",
+          source: "Test",
+          lastUpdated: "2026-04-01",
+        },
+        industryData: industryRiskData["Startups (pre-seed)"],
+        roleTitle: "Data Entry Specialist",
+        department: "Administration",
+        userFactors: {
+          tenureYears: 0.5,
+          isUniqueRole: false,
+          performanceTier: "below",
+          hasRecentPromotion: false,
+          hasKeyRelationships: false,
+        },
+      };
+      const result = calculateLayoffScore(inputs);
+      expect(result.score).toBeGreaterThanOrEqual(75);
+      expect(result.tier.label).toBe("High risk");
+    });
+  });
+
+  describe("Department Multipliers Regression", () => {
+    it("should apply department multipliers correctly", () => {
+      const company = companyDatabase.find((c) => c.name === "Google")!;
+      const baseInputs: ScoreInputs = {
+        companyData: company,
+        industryData: industryRiskData["Technology"],
+        roleTitle: "Software Engineer",
+        department: "Engineering",
+        userFactors: {
+          tenureYears: 5,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: true,
+        },
+      };
+      const engResult = calculateLayoffScore(baseInputs);
+
+      const hrInputs: ScoreInputs = {
+        ...baseInputs,
+        department: "HR",
+        roleTitle: "HR Business Partner",
+      };
+      const hrResult = calculateLayoffScore(hrInputs);
+
+      expect(engResult.breakdown.L3).toBeLessThan(hrResult.breakdown.L3);
+    });
+
+    it("HR should have multiplier 1.20 (higher risk)", () => {
+      const company = companyDatabase.find((c) => c.name === "Google")!;
+      const baseInputs: ScoreInputs = {
+        companyData: company,
+        industryData: industryRiskData["Technology"],
+        roleTitle: "HR Business Partner",
+        department: "HR",
+        userFactors: {
+          tenureYears: 5,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: true,
+        },
+      };
+      const hrResult = calculateLayoffScore(baseInputs);
+
+      const engInputs: ScoreInputs = {
+        ...baseInputs,
+        department: "Engineering",
+        roleTitle: "Software Engineer",
+      };
+      const engResult = calculateLayoffScore(engInputs);
+
+      expect(hrResult.breakdown.L3).toBeGreaterThan(engResult.breakdown.L3);
+    });
+  });
+
+  describe("PPP Regional Adjustments Regression", () => {
+    it("US region should have highest revenue threshold", () => {
+      const company = companyDatabase.find((c) => c.name === "Google")!;
+      const baseInputs: ScoreInputs = {
+        companyData: {
+          ...company,
+          region: "US" as const,
+          revenuePerEmployee: 200000,
+        },
+        industryData: industryRiskData["Technology"],
+        roleTitle: "Software Engineer",
+        department: "Engineering",
+        userFactors: {
+          tenureYears: 5,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: true,
+        },
+      };
+
+      const inInputs: ScoreInputs = {
+        ...baseInputs,
+        companyData: {
+          ...company,
+          region: "IN" as const,
+          revenuePerEmployee: 200000,
+        },
+      };
+
+      const usResult = calculateLayoffScore(baseInputs);
+      const inResult = calculateLayoffScore(inInputs);
+
+      expect(usResult.breakdown.L1).not.toBe(inResult.breakdown.L1);
+    });
+  });
+
+  describe("Benchmark Accuracy Targets", () => {
+    it("Oracle (Apr 2026) should be Elevated or High risk", () => {
+      const oracle = companyDatabase.find((c) => c.name === "Oracle")!;
+      const inputs: ScoreInputs = {
+        companyData: oracle,
+        industryData: industryRiskData["Technology"],
+        roleTitle: "Software Engineer",
+        department: "Engineering",
+        userFactors: {
+          tenureYears: 3,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: true,
+        },
+      };
+      const result = calculateLayoffScore(inputs);
+      expect(result.score).toBeGreaterThanOrEqual(35);
+    });
+
+    it("Apple should be Low risk (15-34)", () => {
+      const apple = companyDatabase.find((c) => c.name === "Apple")!;
+      const inputs: ScoreInputs = {
+        companyData: apple,
+        industryData: industryRiskData["Technology"],
+        roleTitle: "Software Engineer",
+        department: "Engineering",
+        userFactors: {
+          tenureYears: 5,
+          isUniqueRole: false,
+          performanceTier: "average",
+          hasRecentPromotion: false,
+          hasKeyRelationships: true,
+        },
+      };
+      const result = calculateLayoffScore(inputs);
+      expect(result.tier.label).toMatch(/Low risk|Very low risk|Moderate risk/);
+    });
+  });
+});

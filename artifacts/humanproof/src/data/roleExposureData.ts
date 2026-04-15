@@ -1,6 +1,8 @@
 // roleExposureData.ts
 // Pre-seeded risk scores per role category — expanded to 50+ roles
 
+import { MASTER_CAREER_INTELLIGENCE } from './intelligence/index';
+
 export interface RoleExposure {
   aiRisk: number;
   layoffRisk: number;
@@ -111,6 +113,19 @@ export const inferRoleRisk = (roleTitle: string): RoleExposure => {
 
 // Get all role names for autocomplete
 export const getAllRoleTitles = (): string[] => Object.keys(roleExposureData);
+
+// New export — maps displayRole → oracle key
+export const getOracleRoleMap = (): { title: string; oracleKey: string }[] => {
+  return Object.entries(MASTER_CAREER_INTELLIGENCE).map(([oracleKey, intel]) => ({
+    title: intel.displayRole,
+    oracleKey
+  }));
+};
+
+// Returns display names from MASTER_CAREER_INTELLIGENCE
+export const getAllOracleRoleTitles = (): string[] => {
+  return getOracleRoleMap().map(role => role.title);
+};
 
 export const calculateRoleExposureScore = (roleTitle: string, department: string, override?: RoleExposure): number => {
   const roleData = override || roleExposureData[roleTitle] || inferRoleRisk(roleTitle);

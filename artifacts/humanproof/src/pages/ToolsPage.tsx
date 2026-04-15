@@ -7,7 +7,7 @@ import {
   Component,
 } from "react";
 import type { ReactNode, ErrorInfo } from "react";
-import CalculatorPage from "./CalculatorPage";
+
 import SkillRiskCalculator from "../components/SkillRiskCalculator";
 import HumanIrreplacibilityIndex from "../components/HumanIrreplacibilityIndex";
 import UpskillingRoadmap from "../components/UpskillingRoadmap";
@@ -17,7 +17,7 @@ import ScoreDriftTracker, {
   PlotScoreInversionBanner,
 } from "../components/ScoreDriftTracker";
 import DisplacementForecast from "../components/DisplacementForecast";
-import DigestSignup from "../components/DigestSignup";
+
 import ResilienceBadge from "../components/ResilienceBadge";
 import DailyChallenge from "../components/DailyChallenge";
 import { LayoffCalculator } from "../components/LayoffCalculator/LayoffCalculator";
@@ -76,13 +76,13 @@ class TabErrorBoundary extends Component<
 }
 
 const TABS = [
-  { id: "risk-calculators", label: "Risk Calculators", icon: "🎯" },
-  { id: "skill-matrix", label: "Skills", icon: "🧠" },
-  { id: "hii", label: "Human", icon: "✨" },
-  { id: "protocol", label: "Protocol", icon: "🗺️" },
-  { id: "edge-log", label: "Edge", icon: "📓" },
-  { id: "drift", label: "Drift", icon: "📈" },
-  { id: "forecast", label: "Forecast", icon: "📡" },
+  { id: "risk-calculators", label: "Test My Risk", icon: "🎯" },
+  { id: "skill-matrix", label: "Skill Health", icon: "🧠" },
+  { id: "hii", label: "Human Value", icon: "✨" },
+  { id: "protocol", label: "Action Plan", icon: "🗺️" },
+  { id: "edge-log", label: "Daily Journal", icon: "📓" },
+  { id: "drift", label: "Progress Tracker", icon: "📈" },
+  { id: "forecast", label: "Future Forecast", icon: "📡" },
 ];
 
 const STALE_DAYS = 90;
@@ -97,14 +97,14 @@ export default function ToolsPage() {
     new Set([state.activeToolTab || "risk-calculators"]),
   );
   const [showDriftBannerState, setShowDriftBannerState] = useState(false);
-  const [showDigest, setShowDigest] = useState(false);
+
   const [showStalenessBanner, setShowStalenessBanner] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [jobSkillMismatch, setJobSkillMismatch] = useState(false);
   const [showLegacyVersionBanner, setShowLegacyVersionBanner] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
-  const digestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   useEffect(() => {
     const isStale = () => {
@@ -130,23 +130,7 @@ export default function ToolsPage() {
     if (hasLegacyVersionEntries()) setShowLegacyVersionBanner(true);
   }, []);
 
-  useEffect(() => {
-    const subscribed = JSON.parse(
-      localStorage.getItem("hp_digest_subscribed") || "false",
-    );
-    if (subscribed) return;
-    const allThreeComplete =
-      state.jobRiskScore !== null &&
-      state.skillRiskScore !== null &&
-      state.humanScore !== null;
-    digestTimerRef.current = setTimeout(
-      () => setShowDigest(true),
-      allThreeComplete ? 2000 : 180000,
-    );
-    return () => {
-      if (digestTimerRef.current) clearTimeout(digestTimerRef.current);
-    };
-  }, [state.jobRiskScore, state.skillRiskScore, state.humanScore]);
+
 
   const switchTab = useCallback(
     (tabId: string) => {
@@ -226,7 +210,7 @@ export default function ToolsPage() {
             </span>
             <div className="flex items-center gap-4">
               <h1 className="text-4xl font-black tracking-tighter">
-                AUDIT TERMINAL
+                MY DASHBOARD
               </h1>
               <div className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full">
                 <div
@@ -360,19 +344,9 @@ export default function ToolsPage() {
         </div>
       </div>
 
-      <DailyChallenge onNavigateJournal={() => switchTab("journal")} />
+      <DailyChallenge onNavigateJournal={() => switchTab("edge-log")} />
 
-      {showDigest && (
-        <div className="fixed bottom-32 right-8 z-[999] w-80 p-8 glass-card border-cyan-500/20 animate-fade-in-up">
-          <button
-            onClick={() => setShowDigest(false)}
-            className="absolute top-4 right-4 text-slate-500"
-          >
-            ×
-          </button>
-          <DigestSignup embedded onClose={() => setShowDigest(false)} />
-        </div>
-      )}
+
 
       {toastMsg && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[10000] px-6 py-3 bg-white text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-full shadow-2xl">

@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const resources = [
-  { tag: 'free',     tagLabel: 'Free',     title: 'AI Risk Score Calculator',             desc: '6-dimension calculator. 250+ roles, 70+ countries, Q1 2026 data. No signup required.',           emoji: '🧮' },
+  { tag: 'free',     tagLabel: 'Free',     title: 'AI Risk Score Calculator',             desc: '6-dimension calculator spanning thousands of roles and global markets. No signup required.',           emoji: '🧮' },
   { tag: 'guide',    tagLabel: 'Guide',    title: 'The 2026 AI-Resistance Playbook',       desc: 'A 40-page guide on building AI-resistant skills, personal moats, and career pivots. Based on 8 research reports.',                     emoji: '📖' },
   { tag: 'report',   tagLabel: 'Report',   title: 'State of AI Displacement: Q1 2026',    desc: 'Our quarterly data report tracking displacement velocity across 40+ industries with commentary from our research team.',                 emoji: '📊' },
   { tag: 'template', tagLabel: 'Template', title: 'Personal AI Risk Audit Template',      desc: 'A Notion template to assess your own role, document AI-resistant skills, and plan your transition timeline.',                           emoji: '📋' },
   { tag: 'guide',    tagLabel: 'Guide',    title: 'AI Tool Masterclass for Professionals', desc: 'Learn to use AI tools to 10× your productivity — so AI augments you instead of replacing you. Role-specific editions.',               emoji: '⚡' },
-  { tag: 'report',   tagLabel: 'Report',   title: 'Country Risk Index 2026',              desc: 'Deep-dive on 70+ countries: AI adoption rates, regulatory protection, and net displacement exposure scores.',                          emoji: '🌍' },
+  { tag: 'report',   tagLabel: 'Report',   title: 'Global Risk Index 2026',               desc: 'Deep-dive on global markets: AI adoption rates, regulatory protection, and net displacement exposure scores.',                          emoji: '🌍' },
   { tag: 'template', tagLabel: 'Template', title: 'Career Pivot Roadmap Template',        desc: 'A 90-day career pivot plan for professionals transitioning to AI-resistant roles. Includes skills gap analysis.',                       emoji: '🗺️' },
   { tag: 'guide',    tagLabel: 'Guide',    title: 'The AI-Resistant Skills Bible',        desc: 'A comprehensive catalogue of the skills AI cannot replicate in 2026 — with evidence from Stanford HAI and MIT.',                       emoji: '🛡️' },
   { tag: 'report',   tagLabel: 'Report',   title: "Healthcare & AI: What's Safe",         desc: 'Deep analysis of 40+ healthcare roles — from surgeons to medical coders — with detailed task-level breakdown.',                        emoji: '🏥' },

@@ -1,5 +1,5 @@
 // LayoffContext.tsx
-// State management for the Layoff Calculator — v2.0 (no window globals)
+// State management for the Layoff Calculator — v2.1 (+ oracleKey)
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import { ScoreResult, UserFactors, ScoreInputs } from '../services/layoffScoreEngine';
 import { ScoreHistoryEntry } from '../services/scoreStorageService';
@@ -10,6 +10,8 @@ export interface LayoffState {
   companyData: CompanyData | null;          // ← replaces window.__lastSelectedCompany
   roleTitle: string | null;
   department: string | null;
+  /** Resolved oracle key from MASTER_CAREER_INTELLIGENCE, e.g. "sw_backend" */
+  oracleKey: string | null;
   userFactors: UserFactors | null;
   scoreResult: ScoreResult | null;
   scoreHistory: ScoreHistoryEntry[];
@@ -23,6 +25,7 @@ export interface LayoffState {
 type LayoffAction =
   | { type: 'SET_INPUTS'; payload: Partial<LayoffState> }
   | { type: 'SET_COMPANY_DATA'; payload: CompanyData | null }
+  | { type: 'SET_ORACLE_KEY'; payload: string }
   | { type: 'SET_CALCULATING'; payload: boolean }
   | { type: 'SET_SCORE_RESULT'; payload: ScoreResult }
   | { type: 'SET_HISTORY'; payload: ScoreHistoryEntry[] }
@@ -37,6 +40,7 @@ const initialState: LayoffState = {
   companyData: null,
   roleTitle: null,
   department: null,
+  oracleKey: null,
   userFactors: null,
   scoreResult: null,
   scoreHistory: [],
@@ -58,6 +62,8 @@ const layoffReducer = (state: LayoffState, action: LayoffAction): LayoffState =>
       return { ...state, ...action.payload };
     case 'SET_COMPANY_DATA':
       return { ...state, companyData: action.payload, companyName: action.payload?.name || '' };
+    case 'SET_ORACLE_KEY':
+      return { ...state, oracleKey: action.payload };
     case 'SET_CALCULATING':
       return { ...state, isCalculating: action.payload };
     case 'SET_SCORE_RESULT':

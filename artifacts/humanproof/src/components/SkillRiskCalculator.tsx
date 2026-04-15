@@ -176,11 +176,17 @@ function scoreCustomSkill(skillName: string, industry?: string | null): number {
   const humanHits = HUMAN_KEYWORDS.filter((k) => name.includes(k)).length;
   const techHits = TECH_KEYWORDS.filter((k) => name.includes(k)).length;
   const total = humanHits + techHits;
-  // Use 10-82 base range (not 10-86) to avoid overestimating pure tech skill risk
-  let base =
-    total === 0
-      ? 50
-      : Math.round((techHits / total) * 82 + (humanHits / total) * 10);
+  let base = 50;
+  if (total === 0) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = ((hash << 5) - hash) + name.charCodeAt(i);
+      hash |= 0;
+    }
+    base = 35 + (Math.abs(hash) % 31);
+  } else {
+    base = Math.round((techHits / total) * 82 + (humanHits / total) * 10);
+  }
 
   // Layer 4: Industry context modifier
   const INDUSTRY_RISK_MODIFIERS: Record<string, number> = {
@@ -383,18 +389,15 @@ export default function SkillRiskCalculator({
       setSelectedSkills((prev) => [...prev, { ...result.skill, weight: 1 }]);
       setSearch("");
     } else {
-      // Basic fallback with default insight
+      // Improved dynamic fallback for missing API connections
       const fallbackScore = scoreCustomSkill(skillName, state.industry);
       const defaultInsight = {
-        threat: `This skill shows moderate automation risk. Python programming has significant exposure to AI code generation tools, though complex system architecture and domain-specific debugging remain human-dominated.`,
-        pivot:
-          "Focus on specialized domains like ML engineering, security, or embedded systems where AI assistance is limited.",
-        why_protected:
-          "Complex debugging, system integration, and domain-specific logic require human judgment that current AI cannot replicate.",
-        action:
-          "Complete a certification in a specialized Python domain (security, ML, data engineering)",
-        aiTools: ["GitHub Copilot", "Claude Code", "Amazon CodeWhisperer"],
-        source: "WEF Future of Jobs 2025",
+        threat: `This skill shows automation exposure. While certain repetitive components of ${skillName} can be accelerated by AI, complex domain-specific tasks remain human-dominated.`,
+        pivot: "Focus on combining this capability with emerging human-centric domains where AI assistance is limited.",
+        why_protected: "Complex integration, strategic edge cases, and domain-specific logic require human judgment that current models cannot replicate.",
+        action: `Identify and certify in a niche, high-value domain of ${skillName}`,
+        aiTools: ["Enterprise AI Assistants"],
+        source: "Standard Analysis",
       };
       setDynamicInsights((prev) => ({
         ...prev,
@@ -405,20 +408,20 @@ export default function SkillRiskCalculator({
         {
           id: Date.now(),
           name: skillName,
-          category: "Technical",
+          category: "Custom Skill",
           riskScore: fallbackScore,
           trend: "stable",
           weight: 1,
           factors: {
-            automation: 65,
-            judgment: 45,
+            automation: fallbackScore > 60 ? 75 : 40,
+            judgment: fallbackScore < 50 ? 75 : 40,
             physical: 10,
-            creativity: 40,
+            creativity: fallbackScore < 50 ? 60 : 30,
           },
           subSkills: [
-            { name: "Code writing", riskScore: 75 },
-            { name: "Debugging", riskScore: 35 },
-            { name: "System design", riskScore: 25 },
+            { name: "Core execution", riskScore: Math.min(fallbackScore + 10, 95) },
+            { name: "Strategy & Planning", riskScore: Math.max(fallbackScore - 20, 15) },
+            { name: "Complex problem solving", riskScore: Math.max(fallbackScore - 30, 10) },
           ],
         },
       ]);
@@ -428,7 +431,7 @@ export default function SkillRiskCalculator({
 
   const hydrateSkills = async () => {
     const unhydrated = selectedSkills.filter(
-      (s) => !s.factors && !dynamicInsights[s.name],
+      (s) => !s.factors || (!dynamicInsights[s.name] && !(SKILL_INSIGHTS_2026 as any)[s.name]),
     );
     if (unhydrated.length === 0) {
       setShowResults(true);
@@ -454,15 +457,12 @@ export default function SkillRiskCalculator({
       } else {
         // Fallback when API fails during hydration
         const fallbackInsight = {
-          threat: `This skill shows moderate exposure to AI automation. While some tasks can be assisted by AI, complex domain-specific requirements typically need human expertise.`,
-          pivot:
-            "Focus on combining this skill with complementary human-centric capabilities.",
-          why_protected:
-            "Complex real-world application requires human judgment, creativity, and ethical consideration.",
-          action:
-            "Document your unique value proposition combining this skill with human insight",
-          aiTools: ["Basic AI assistants"],
-          source: "WEF Future of Jobs 2025",
+          threat: `This skill shows exposure to AI automation. While some tasks can be assisted by AI, complex domain-specific requirements typically need human expertise.`,
+          pivot: "Focus on combining this skill with complementary human-centric capabilities.",
+          why_protected: "Complex real-world application requires human judgment, creativity, and ethical consideration.",
+          action: "Document your unique value proposition combining this skill with human insight",
+          aiTools: ["Enterprise AI Tools"],
+          source: "Standard Analysis",
         };
         setDynamicInsights((prev) => ({
           ...prev,
@@ -473,17 +473,16 @@ export default function SkillRiskCalculator({
             s.name === skill.name
               ? {
                   ...s,
-                  category: "Technical",
-                  factors: {
-                    automation: 50,
-                    judgment: 50,
+                  factors: s.factors || {
+                    automation: s.riskScore > 60 ? 75 : 50,
+                    judgment: s.riskScore < 50 ? 75 : 50,
                     physical: 10,
-                    creativity: 30,
+                    creativity: s.riskScore < 50 ? 60 : 30,
                   },
-                  subSkills: [
-                    { name: "Core tasks", riskScore: 55 },
-                    { name: "Advanced tasks", riskScore: 35 },
-                    { name: "Strategy", riskScore: 25 },
+                  subSkills: s.subSkills || [
+                    { name: "Core execution", riskScore: Math.min(s.riskScore + 10, 95) },
+                    { name: "Strategy", riskScore: Math.max(s.riskScore - 20, 25) },
+                    { name: "Complex problem solving", riskScore: Math.max(s.riskScore - 30, 25) },
                   ],
                 }
               : s,

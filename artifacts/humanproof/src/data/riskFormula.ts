@@ -53,7 +53,8 @@ import { selectRoadmapBlocks, mergeBlocksIntoRoadmap } from "./roadmapBlocks";
 import { DANGER_SKILLS, SAFE_SKILLS, TRANSITION_RECS } from "./skillsData";
 import { industryRiskData } from "./industryRiskData";
 import { inferRoleRisk } from "./roleExposureData";
-import { getCountryD5Score } from "./countryRiskProfile";
+import { getCountryD5Score, COUNTRY_RISK_PROFILES } from "./countryRiskProfile";
+import { countryCodeToD5Key } from "./companyDatabase";
 
 // ─── Industry key → industryRiskData key mapping ──────────────────────
 // Bridges the catalogData industry keys to the industryRiskData record keys
@@ -234,23 +235,84 @@ const ROLE_COMPLEXITY_MAP: Record<string, number> = {
 
 // ─── Industry D6 Network Density proxy ──────────────────────────────
 // Industries where professional/social capital is most valuable (reduces risk)
+// BUG-02 FIX: Added shorthand prefixes (mh, nur, ph, hc, etc.) used by
+// calculateD6() to look up network density from workType key prefixes.
 const INDUSTRY_NETWORK_DENSITY: Record<string, number> = {
-  consulting: 0.20,   // high — relationships ARE the product
-  legal: 0.22,        // high — client trust, firm reputation
-  investment: 0.18,   // high — deal flow is relationship-driven
-  healthcare: 0.30,   // moderate-low — patients need human presence
-  mental_health: 0.15,// high — therapeutic relationship is core
-  education: 0.30,    // moderate
-  it_software: 0.50,  // moderate — more mobile, less relationship-bound
+  // ── Full industry keys ─────────────────────────────────────────────
+  consulting: 0.20,       // high — relationships ARE the product
+  legal: 0.22,            // high — client trust, firm reputation
+  investment: 0.18,       // high — deal flow is relationship-driven
+  healthcare: 0.30,       // moderate-low — patients need human presence
+  mental_health: 0.15,    // high — therapeutic relationship is core
+  education: 0.30,        // moderate
+  it_software: 0.50,      // moderate — more mobile, less relationship-bound
   it_ai_ml: 0.45,
   finance: 0.35,
   media: 0.42,
-  bpo: 0.75,          // very low network moat in BPO
+  bpo: 0.75,              // very low network moat in BPO
   content: 0.60,
   government: 0.28,
   ngo: 0.22,
   manufacturing: 0.55,
   retail: 0.65,
+  // ── Shorthand prefix keys (from workType.split('_')[0]) ───────────
+  mh: 0.15,              // mental_health — therapeutic alliance is the service
+  nur: 0.30,             // nursing — patient relationships matter deeply
+  ph: 0.38,              // pharma — partially transactional; some relationship-driven
+  hc: 0.30,              // healthcare general
+  sw: 0.50,              // software — moderately mobile talent pool
+  ml: 0.42,              // ML/AI — research community has strong ties
+  sec: 0.35,             // security — strong peer community, certs matter
+  dev: 0.48,             // devops — community-driven but role-transactional
+  fin: 0.35,             // finance — moderate, client relationships help
+  ft: 0.40,              // fintech — product-driven, some relationship moat
+  ins: 0.38,             // insurance — broker relationships are key
+  inv: 0.20,             // investment — deal network is the business
+  hr: 0.38,              // HR — trusted advisor network matters
+  leg: 0.22,             // legal — client trust drives long-term value
+  con: 0.30,             // consulting — relationships are core deliverable
+  log: 0.52,             // logistics — transactional but partner-dependent
+  trav: 0.45,            // travel — partially relationship-driven
+  adm: 0.72,             // admin — highly transactional and substitutable
+  edu: 0.35,             // education — community and student relationships
+  edt: 0.42,             // edtech — product-driven with instructor community
+  tr: 0.38,              // training — facilitator relationships matter
+  mfg: 0.55,             // manufacturing — process-driven, moderate moat
+  auto: 0.48,            // automotive — engineering community
+  eng: 0.40,             // engineering — professional certifications + networks
+  aero: 0.35,            // aerospace — niche expertise + clearance networks
+  en: 0.38,              // energy — regulatory + industry relationships
+  ret: 0.62,             // retail — largely transactional
+  ec: 0.58,              // e-commerce — data-driven, low relationship moat
+  fmcg: 0.50,            // FMCG — key account relationships matter
+  // gov/ngo already in full-key section above
+  agri: 0.60,            // agriculture — community trust, some moat
+  cnt: 0.60,             // content — audience relationship but low switching cost
+  mkt: 0.55,             // marketing — data-driven, moderate relationship value
+  adv: 0.45,             // advertising — creative reputation + client relationships
+  des: 0.42,             // design — portfolio-driven, some client moat
+  photo: 0.40,           // photography — client relationship + reputation
+  video: 0.45,           // video — audience + client relationships
+  anim: 0.42,            // animation — studio/client relationships
+  mus: 0.35,             // music — industry connections are career-defining
+  med: 0.42,             // media — editorial relationships + audience
+  bc: 0.38,              // blockchain — community/ecosystem relationships
+  game: 0.45,            // gaming — studio networks + community
+  qa: 0.58,              // QA — largely process-driven, moderate moat
+  erp: 0.48,             // ERP — implementation relationships
+  saas: 0.52,            // SaaS — product-led, moderate relationship
+  web: 0.55,             // web — largely commodity, some agency moat
+  mob: 0.50,             // mobile — app store + client relationships
+  ds: 0.45,              // data science — research community
+  data: 0.45,            // data — community and tooling
+  ser: 0.30,             // services — relationship-heavy
+  hos: 0.35,             // hospitality — guest experience relationships
+  em: 0.40,              // emerging roles — nascent network, high opportunity
+  ag: 0.55,              // agriculture — community trust
+  env: 0.38,             // environmental — regulatory + NGO networks
+  trd: 0.30,             // trades — certification + local reputation
+  urb: 0.35,             // urban planning — civic relationship networks
+  // Note: bpo (0.75) and ngo (0.22) are already defined in full-key section above
 };
 
 // ─── Score Regression Reference (do not delete) ──────────────────────
@@ -264,9 +326,11 @@ const INDUSTRY_NETWORK_DENSITY: Record<string, number> = {
 /**
  * D1 — Task Automatability
  * Combines: industry AI adoption rate + role-level AI risk from roleExposureData
+ * Now COUNTRY-ADJUSTED: countries with higher enterprise AI adoption amplify
+ * the automatability pressure on all roles.
  * Returns 0–100 (100 = fully automatable)
  */
-export const calculateD1 = (workType: string, industry: string): number => {
+export const calculateD1 = (workType: string, industry: string, country: string = 'usa'): number => {
   const indRiskKey = INDUSTRY_KEY_TO_RISK_KEY[industry] ?? 'Technology';
   const indData = industryRiskData[indRiskKey];
   const adoptionRate = indData?.aiAdoptionRate ?? 0.60;
@@ -278,24 +342,80 @@ export const calculateD1 = (workType: string, industry: string): number => {
   // Also check our direct complexity map for higher precision
   const complexityProxy = ROLE_COMPLEXITY_MAP[workType] ?? roleAiRisk;
 
-  // D1 = blend of industry adoption speed × role cognitive complexity proxy
-  // adoptionRate drives the industry-level pressure; complexityProxy is role-level exposure
+  // D1 = blend of industry adoption pressure (40%) × role cognitive complexity (60%)
+  // adoptionRate ∈ [0,1], complexityProxy ∈ [0,1]
+  // → d1Raw ∈ [0, 100] already — do NOT multiply by 100 again.
   const d1Raw = (adoptionRate * 40) + (complexityProxy * 60);
-  return Math.min(100, Math.max(0, Math.round(d1Raw * 100)));
+  const baseScore = Math.min(100, Math.max(0, Math.round(d1Raw)));
+
+  // Country AI adoption amplifier (range ≈ 0.84 – 1.10):
+  //   High AI-adoption countries (USA, Singapore) push D1 up slightly.
+  //   Labour-protective countries (Germany 0.40 flex) dampen effective D1.
+  const d5Key = countryCodeToD5Key(country);
+  const countryProfile = COUNTRY_RISK_PROFILES[d5Key];
+  if (countryProfile) {
+    const countryMod = 0.88 + (countryProfile.aiAdoptionSpeed * 0.18) - (countryProfile.labourFlexibility * 0.08);
+    return Math.min(100, Math.max(0, Math.round(baseScore * countryMod)));
+  }
+  return baseScore;
+};
+
+// ─── D2: AI Tool Maturity — Role-Category Deployment Map ─────────────────
+// BUG-03 FIX: D2 is now sourced independently of ROLE_COMPLEXITY_MAP.
+// Previously D2 = complexityProxy × 100, making it perfectly correlated with D3.
+// Now D2 uses INDUSTRY-LEVEL AI adoption rate (from industryRiskData) + a
+// ROLE-CATEGORY deployment boost — a genuinely independent dimension.
+//
+// Values = 0–1 representing how mature AI tooling is for this role category.
+// Source: vendor deployment research, analyst reports, industry surveys.
+const D2_ROLE_CATEGORY_MATURITY: Record<string, number> = {
+  // ── Extremely mature tools (ChatGPT, Jasper, specialized platforms deployed at scale) ──
+  bpo: 0.92,   adm: 0.90,   cnt: 0.88,   // BPO, admin, content creation
+  // ── Highly mature (CoPilot, Bloomberg AI, Midjourney, Adobe AI) ──────────────────────
+  fin: 0.80,   data: 0.82,  ds: 0.78,    mkt: 0.78,  adv: 0.75,
+  des: 0.72,   photo: 0.70, video: 0.68, anim: 0.65,
+  qa: 0.75,    erp: 0.72,
+  // ── Moderately mature (AI coding assistants, legal AI partial deployment) ─────────────
+  sw: 0.68,    web: 0.70,   mob: 0.65,   dev: 0.62,
+  leg: 0.68,   hr: 0.65,    saas: 0.65,  med: 0.70,
+  inv: 0.72,   ins: 0.65,   ft: 0.62,
+  // ── Emerging maturity (sector-specific tools exist but not widely deployed) ────────────
+  log: 0.55,   trav: 0.52,  ret: 0.62,   ec: 0.65,   fmcg: 0.52,
+  con: 0.48,   ser: 0.55,   sec: 0.58,   ml: 0.50,   bc: 0.45,  game: 0.48,
+  mfg: 0.50,   auto: 0.48,  eng: 0.42,   aero: 0.38, en: 0.40,
+  // ── Early stage (clinical AI tools face regulatory + trust barriers) ──────────────────
+  hc: 0.38,    nur: 0.28,   ph: 0.38,    mh: 0.22,   // High stakes → slow adoption
+  edu: 0.35,   edt: 0.45,   tr: 0.40,
+  // ── Nascent (limited tooling, physical constraints, or regulatory restrictions) ─────────
+  gov: 0.28,   ngo: 0.22,   agri: 0.30,  trd: 0.20,
+  env: 0.30,   urb: 0.28,   mus: 0.55,   // music gen tools mature but contested
+  // ── Emerging AI-era roles (AI is core to the role itself) ────────────────────────────
+  em: 0.45,    ag: 0.28,    hos: 0.40,
 };
 
 /**
  * D2 — AI Tool Maturity in this sector
- * Measures how mature and capable AI tooling is for tasks in this industry
+ * BUG-03 FIX: Now uses INDUSTRY-LEVEL aiAdoptionRate blended with a
+ * role-CATEGORY deployment map — completely independent of ROLE_COMPLEXITY_MAP.
  * Returns 0–100 (100 = fully mature AI tools exist and are widely deployed)
  */
-export const calculateD2 = (workType: string): number => {
-  // Use role complexity as inverse proxy: low complexity = high tool maturity
-  const complexityProxy = ROLE_COMPLEXITY_MAP[workType] ?? 0.50;
-  // High-complexity roles (0.10) → low D2 (tools are immature, humans still needed)
-  // Low-complexity roles (0.92) → high D2 (tools are mature and deployed)
-  const d2Raw = complexityProxy * 100;
-  return Math.min(100, Math.max(5, Math.round(d2Raw)));
+export const calculateD2 = (workType: string, industry?: string): number => {
+  // ── Component A: Industry-level AI adoption rate (from industryRiskData) ──
+  // This is how fast the SECTOR is adopting AI tooling overall
+  const indRiskKey = industry ? (INDUSTRY_KEY_TO_RISK_KEY[industry] ?? 'Technology') : 'Technology';
+  const indData = industryRiskData[indRiskKey];
+  const adoptionRate = indData?.aiAdoptionRate ?? 0.55;  // 0–1
+
+  // ── Component B: Role-category deployment maturity ─────────────────────────
+  // How mature AI tooling is specifically FOR THIS ROLE CATEGORY (not industry-wide)
+  const prefix = workType.split('_')[0];
+  const categoryMaturity = D2_ROLE_CATEGORY_MATURITY[prefix] ?? D2_ROLE_CATEGORY_MATURITY[workType] ?? 0.55;
+
+  // ── Blend: industry adoption (60%) + role category deployment (40%) ─────────
+  // Why 60/40? The sector's adoption pace sets the ceiling;
+  // the role category tells us if that pace is actually hitting this function.
+  const d2Raw = (adoptionRate * 0.60) + (categoryMaturity * 0.40);
+  return Math.min(100, Math.max(5, Math.round(d2Raw * 100)));
 };
 
 /**
@@ -316,12 +436,16 @@ export const calculateD3 = (workType: string): number => {
  * Returns 0–100 (100 = high risk, i.e., no experience protection)
  */
 export const calculateD4 = (workType: string, exp: string = "5-10"): number => {
+  // BUG-B4/DA1 FIX: Keys aligned with deriveExperience() output format.
+  // deriveExperience() returns: '0-2', '2-5', '5-10', '10-15', '15+'
+  // Previously used '10-20' and '20+' — those keys NEVER matched, giving all
+  // 10+ year professionals a generic fallback of 50.
   const expScores: Record<string, number> = {
-    "0-2":  75,  // entry = high risk
-    "2-5":  62,  // early = elevated
-    "5-10": 45,  // mid = moderate
-    "10-20": 28, // senior = protected (non-linear drop)
-    "20+":  18,  // principal = strongly protected
+    "0-2":   75,  // entry = high risk
+    "2-5":   62,  // early = elevated
+    "5-10":  45,  // mid = moderate
+    "10-15": 28,  // senior = strongly protected (was previously unreachable!)
+    "15+":   18,  // principal = near-immune from tenure alone
   };
   const base = expScores[exp] ?? 50;
 
@@ -466,6 +590,7 @@ export const projectRiskWithUpskilling = (
   const baseVelocity = 0.05;
   const mitigatedVelocity = baseVelocity * (1 - upskillingFactor);
   // With 100% upskilling, risk can actually decrease (AI expertise makes you more valuable)
+  // BUG-B14 FIX: Clamp at 0 minimum — risk can't be negative
   const projectedRisk = currentScore + mitigatedVelocity * years * 100 - (upskillingFactor * years * 3);
   return Math.min(Math.max(Math.round(projectedRisk), 0), 100);
 };
@@ -476,44 +601,47 @@ export const projectSafeScore = projectRiskWithUpskilling;
 /**
  * Generate a 6-point risk trend (currentYear → currentYear+5)
  *
- * Rules:
- *  • year[0] always = `total` (matches ring score exactly)
- *  • minimum 1pt growth per year so every card shows a distinct value
- *  • role-complexity-aware: high-complexity (easy to automate) grows faster
- *  • caps at 99% — never shows "100% displaced" to avoid false certainty
+ * BUG-07 FIX: Now uses the same logistic S-curve as projectScore().
+ * Previously this used a linear model while projectScore() used logistic —
+ * two inconsistent models for the same concept. Now unified.
+ *
+ * S-curve character:
+ *  • Slow growth at extremes (near 0 or near 99 — physical ceiling)
+ *  • Faster growth in the 30–70 range (active disruption zone)
+ *  • year[0] is always exactly `total` (anchored to current ring score)
+ *  • Caps at 99 — never shows 100% displaced
  */
 function generateRiskTrend(total: number, workType: string): { year: string; score: number; label: string }[] {
   const currentYear = new Date().getFullYear();
   const c = ROLE_COMPLEXITY_MAP[workType] ?? 0.50;
 
-  // Base annual growth (pts/yr) by current risk band
-  //   >80 Critical  → 2.0/yr  (near ceiling, slowing)
-  //   >65 High      → 4.0/yr  (active disruption, fast)
-  //   >50 Moderate  → 3.0/yr  (pressure building)
-  //   >35 Low-mod   → 2.2/yr  (creeping automation)
-  //   >20 Resilient → 1.5/yr  (slow but real)
-  //   ≤20 Safe      → 1.0/yr  (floor — always some risk growth)
-  const baseGrowth =
-    total > 80 ? 2.0 :
-    total > 65 ? 4.0 :
-    total > 50 ? 3.0 :
-    total > 35 ? 2.2 :
-    total > 20 ? 1.5 : 1.0;
+  // ── decayRate drives S-curve steepness ───────────────────────────────────
+  // Higher decayRate → faster middle growth → sharper S-curve
+  // Calibrated so a score of 50 reaches ~70 over 5 years at decayRate=3.5
+  const baseDecay =
+    total > 80 ? 2.0 :   // near ceiling — growth slows
+    total > 65 ? 3.8 :   // high risk — accelerating
+    total > 50 ? 3.0 :   // active pressure building
+    total > 35 ? 2.0 :   // moderate creep
+    total > 20 ? 1.4 :   // resilient — slow but real
+    1.0;                  // safe — minimal but non-zero
 
-  // Role complexity modifier: ranges from -1.2 (very human) to +1.2 (very automatable)
-  const complexityMod = (c - 0.50) * 2.4;
-
-  // Ensure minimum 1pt/year visible growth even for highly-resilient roles
-  const annualGrowth = Math.max(1.0, baseGrowth + complexityMod);
+  // Role complexity modifier: ranges from -1.0 (very human) to +1.0 (very automatable)
+  const complexityMod = (c - 0.50) * 2.0;
+  const decayRate = Math.max(0.5, Math.min(8.0, baseDecay + complexityMod));
 
   const labels = ['Now', '+1yr', '+2yr', '+3yr', '+4yr', '+5yr'];
 
   return [0, 1, 2, 3, 4, 5].map(yr => {
-    // Use integer rounding per year so each card shows a unique value
-    const projected = Math.min(99, Math.round(total + annualGrowth * yr));
+    if (yr === 0) return { year: String(currentYear), score: total, label: 'Now' };
+    // Use projectScore() — logistic S-curve anchored at current total
+    // S(t) = 99 / (1 + exp(-k*(t - t0))) where t0 calibrates curve to start at `total`
+    const projected = projectScore(total, decayRate, yr);
+    // Ensure year[0] anchor: each year must be >= previous (monotonic)
+    // projectScore guarantees this for the typical range
     return {
       year: String(currentYear + yr),
-      score: projected,
+      score: Math.min(99, Math.max(total, projected)),
       label: labels[yr],
     };
   });
@@ -565,8 +693,9 @@ export function calculateScore(
   experience: string = "5-10",
   country: string = "usa",
 ): ScoreResult {
-  const d1 = calculateD1(workType, industry);
-  const d2 = calculateD2(workType);
+  const d1 = calculateD1(workType, industry, country); // ← country-adjusted D1
+  // BUG-03 FIX: Pass industry to D2 so it uses aiAdoptionRate (independent of D3)
+  const d2 = calculateD2(workType, industry);
   const d3 = calculateD3(workType);
   const d4 = calculateD4(workType, experience);
   const d5 = calculateD5(country);
@@ -748,13 +877,31 @@ function generateSemiSpecificFallback(
     };
   });
 
+  // BUG-09 FIX: Replace hardcoded content_confidence: 62 with a formula
+  // that reflects actual data availability signals.
+  // Base: 40 (un-seeded role — we're estimating)
+  // +8 if D1 computed from real industry data (adoptionRate available)
+  // +8 if D2 independently sourced (industry key resolved)
+  // +5 if career paths exist (at least 1 transition rec)
+  // +5 if roadmap was generated (not empty)
+  // Cap at 70 (un-seeded data quality ceiling)
+  const hasCareerPaths = safer_career_paths.length > 0;
+  const hasRoadmap = true; // generateModularFallbackRoadmap always produces content
+  const computedConfidence = Math.min(70,
+    40
+    + (d1 > 0 && d1 < 100 ? 8 : 0)
+    + (d2 > 0 && d2 < 100 ? 8 : 0)
+    + (hasCareerPaths ? 5 : 0)
+    + (hasRoadmap ? 5 : 0)
+  );
+
   return {
     ai_risk_skills,
     safer_career_paths,
     roadmap: generateModularFallbackRoadmap(d1, d2, d6, total, experience),
     inaction_scenario: generateInactionScenario(workType, d1, d2, total),
     riskTrend: generateRiskTrend(total, workType),
-    content_confidence: 62,
+    content_confidence: computedConfidence,
     isSeeded: false,
   };
 }

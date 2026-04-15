@@ -39,6 +39,21 @@ export interface EnsembleResult extends ScoreResult {
   // ── [SWARM] Swarm Intelligence additions ──────────────────────────────────
   swarmReport?:      SwarmReport;     // Full 30-agent swarm output
   swarmScore?:       number;          // 0–100 swarm risk score
+  // ── [TRAJECTORY] Oracle result for Displacement Trajectory feature ────────
+  oracleResult?:     {
+    total:       number;
+    dimensions:  Array<{ key: string; label: string; score: number; reason: string }>;
+    verdict?:    string;
+    urgency?:    string;
+    timeline?:   string;
+    reasoning?:  string;
+    safer_career_paths?: Array<{
+      role: string;
+      risk_reduction_pct: number;
+      skill_gap: string;
+      transition_difficulty: string;
+    }>;
+  };
 }
 
 export interface EnsembleInputs {
@@ -55,6 +70,8 @@ export interface EnsembleInputs {
   hasKeyRelationships: boolean;
   roleExposureOverride?: RoleExposure;
   forceRefresh?:      boolean;
+  // ── Progress callback for stage-based UI transitions ──────────────────
+  onSwarmComplete?:   () => void;
 }
 
 const getScoreTier = (score: number): ScoreTier => {
@@ -76,11 +93,13 @@ export const runFullEnsembleAnalysis = async (inputs: EnsembleInputs): Promise<E
     companyName, companyData, industry, industryData, roleTitle,
     department, tenureYears, isUniqueRole, performanceTier,
     hasRecentPromotion, hasKeyRelationships, roleExposureOverride,
-    forceRefresh = false,
+    forceRefresh = false, onSwarmComplete,
   } = inputs;
 
-  // ── Step 1: Cache check ───────────────────────────────────────────────────
-  const cacheKey = `${companyName.toLowerCase()}::${roleTitle.toLowerCase()}::${department.toLowerCase()}`;
+  // ── Step 1: Cache check — BUG-B10 FIX ─────────────────────────────────────
+  // Cache key now includes forceRefresh suffix to prevent returning stale data
+  const cacheKey = `${companyName.toLowerCase()}::${roleTitle.toLowerCase()}::${department.toLowerCase()}::${forceRefresh ? 'refresh' : 'standard'}`;
+  
   if (!forceRefresh) {
     const cached = await getCachedAnalysis(cacheKey);
     if (cached) {
@@ -102,6 +121,8 @@ export const runFullEnsembleAnalysis = async (inputs: EnsembleInputs): Promise<E
   } catch (swarmErr: any) {
     console.warn('[Swarm] Layer failed — continuing without swarm data:', swarmErr.message);
   }
+  // ── Notify caller that swarm phase is complete → triggers UI stage 2 ──────
+  if (onSwarmComplete) onSwarmComplete();
 
   // ── Step 2: Run deterministic 5-layer engine (always, no API cost) ────────
   const engineResult: ScoreResult = calculateLayoffScore({
@@ -113,11 +134,23 @@ export const runFullEnsembleAnalysis = async (inputs: EnsembleInputs): Promise<E
     roleExposureOverride,
   });
 
-  // ── Step 3: Fire Gemma, DeepSeek, Llama in PARALLEL (with swarm context) ──
+  // ── Step 3: Fire Gemma, DeepSeek, Llama in PARALLEL — with 7s timeout guard (Gap3)
+  const timeoutPromise = (ms: number) => new Error(`Timeout after ${ms}ms`);
+  
+  const withTimeout = (promise: Promise<any>, timeoutMs: number, fallback: any) => 
+    Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs))
+    ]);
+
+  const fallbackGemma: GemmaResult = { model: 'gemma-3-27b', success: false, signals: null, rawConfidence: 0 };
+  const fallbackDeepSeek: DeepSeekResult = { model: 'deepseek-v3', success: false, signals: null, rawConfidence: 0 };
+  const fallbackLlama: LlamaResult = { model: 'llama-3.3-70b', success: false, signals: null, rawConfidence: 0 };
+
   const [gemmaSettled, deepseekSettled, llamaSettled] = await Promise.allSettled([
-    runGemmaOSINT(companyName, industry, roleTitle, swarmContext),
-    runDeepSeekFinancial(companyName, industry, companyData?.employeeCount ?? 'unknown', companyData?.layoffsLast24Months ?? [], swarmContext),
-    runLlamaRoleValidation(roleTitle, department, industry, tenureYears, isUniqueRole, swarmContext),
+    withTimeout(runGemmaOSINT(companyName, industry, roleTitle, swarmContext), 7000, fallbackGemma),
+    withTimeout(runDeepSeekFinancial(companyName, industry, companyData?.employeeCount ?? 'unknown', companyData?.layoffsLast24Months ?? [], swarmContext), 7000, fallbackDeepSeek),
+    withTimeout(runLlamaRoleValidation(roleTitle, department, industry, tenureYears, isUniqueRole, swarmContext), 7000, fallbackLlama),
   ]);
 
   // Safely unwrap settled results

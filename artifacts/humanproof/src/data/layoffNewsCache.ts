@@ -1,5 +1,5 @@
 // layoffNewsCache.ts
-// recent layoff events (refreshed weekly)
+// Layoff event store — seeded with major known events, dynamically expandable at runtime via OSINT.
 
 export interface LayoffNewsEvent {
   companyName: string;
@@ -11,6 +11,7 @@ export interface LayoffNewsEvent {
   affectedDepartments: string[];
 }
 
+// ── Seeded baseline events (refreshed quarterly) ────────────────────────────
 export const layoffNewsCache: LayoffNewsEvent[] = [
   {
     companyName: 'Oracle',
@@ -40,3 +41,38 @@ export const layoffNewsCache: LayoffNewsEvent[] = [
     affectedDepartments: ['VR/AR', 'Engineering', 'Research'],
   },
 ];
+
+// ── Dynamic injection — called by LayoffCalculator after OSINT resolves ─────
+
+/**
+ * Inject a real-time layoff event from OSINT into the runtime cache.
+ * Prevents duplicates by company name + date key.
+ */
+export const injectLayoffEvent = (event: LayoffNewsEvent): void => {
+  const key = `${event.companyName.toLowerCase()}::${event.date.slice(0, 10)}`;
+  const exists = layoffNewsCache.some(
+    e => `${e.companyName.toLowerCase()}::${e.date.slice(0, 10)}` === key
+  );
+  if (!exists) {
+    layoffNewsCache.push(event);
+  }
+};
+
+/**
+ * Look up the most recent layoff event for a company (case-insensitive).
+ */
+export const lookupLayoffEvent = (companyName: string): LayoffNewsEvent | null => {
+  const q = companyName.toLowerCase().trim();
+  const matches = layoffNewsCache
+    .filter(e => e.companyName.toLowerCase() === q)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return matches[0] ?? null;
+};
+
+/**
+ * Check if any layoff event exists for a company.
+ */
+export const hasLayoffEvent = (companyName: string): boolean => {
+  const q = companyName.toLowerCase().trim();
+  return layoffNewsCache.some(e => e.companyName.toLowerCase() === q);
+};

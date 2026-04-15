@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
+import { TASK_AUTO, DISRUPTION_VELOCITY, AUGMENTATION, NETWORK_MOAT, EXP_SENSITIVITY, EXP_RISK_BASE, COUNTRY_DATA, INDUSTRY_KEY_MULT, D3_CURVE_EXPONENT } from './riskData.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,10 +76,6 @@ INSTRUCTION: Use the above as your authoritative baseline. Personalize the reaso
     
     // --- 2. MULTIPLICATIVE SERVER-SIDE MATH ---
     // (Bypasses LLM hallucinations for the numerical values)
-    const {
-      TASK_AUTO, DISRUPTION_VELOCITY, AUGMENTATION, NETWORK_MOAT, EXP_SENSITIVITY, EXP_RISK_BASE, COUNTRY_DATA, INDUSTRY_KEY_MULT, D3_CURVE_EXPONENT
-    } = await import('./riskData.ts');
-
     const induMult = INDUSTRY_KEY_MULT[industry] || 1.0;
     const d1_raw = TASK_AUTO[industry]?.[roleKey] || TASK_AUTO['default']?.[roleKey] || 50;
     const calcD1 = Math.round(Math.min(d1_raw * (induMult > 1 ? 1.1 : 0.9), 100));

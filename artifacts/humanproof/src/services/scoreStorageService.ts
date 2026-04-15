@@ -16,6 +16,7 @@ export interface ScoreHistoryEntry {
   breakdown: ScoreBreakdown;
   confidence: string;
   timestamp: string;
+  dataQuality?: 'live' | 'partial' | 'fallback'; // from live OSINT or fallback defaults
 }
 
 export interface DriftResult {
@@ -31,7 +32,8 @@ export const saveLayoffScore = (
   scoreResult: ScoreResult,
   companyName: string,
   roleTitle: string,
-  department: string = ''
+  department: string = '',
+  dataQuality: 'live' | 'partial' | 'fallback' = 'live'
 ): ScoreHistoryEntry => {
   const entry: ScoreHistoryEntry = {
     id: crypto.randomUUID(),
@@ -44,6 +46,7 @@ export const saveLayoffScore = (
     breakdown: scoreResult.breakdown,
     confidence: scoreResult.confidence,
     timestamp: new Date().toISOString(),
+    dataQuality,
   };
 
   const history = getLayoffScoreHistory();

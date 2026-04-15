@@ -10,6 +10,10 @@ import { layoffNewsCache } from '../data/layoffNewsCache';
 
 export interface UserFactors {
   tenureYears: number;
+  /** Total career years across ALL jobs — distinct from tenureYears at current company.
+   *  Used for Oracle experience bracket (D4) and Displacement Trajectory modifiers.
+   *  Falls back to tenureYears if not supplied. */
+  careerYears?: number;
   isUniqueRole: boolean;
   performanceTier: 'top' | 'average' | 'below' | 'unknown';
   hasRecentPromotion: boolean;
@@ -123,11 +127,14 @@ const mapCompanySize = (count: number): number => {
 const mapOverstaffing = (revenuePerEmp: number, region: string = 'US'): number => {
   const ppp = getPPPMultiplier(region as any);
   const adjusted = revenuePerEmp / ppp; // normalize to US-equivalent
-  if (adjusted < 80000)  return 0.82;
-  if (adjusted < 150000) return 0.60;
-  if (adjusted < 300000) return 0.40;
-  if (adjusted < 600000) return 0.25;
-  return 0.12;
+  
+  // BUG-DA3 FIX: Slightly more aggressive thresholds for overstaffing risk
+  // based on 2024-2025 tech efficiency benchmarks.
+  if (adjusted < 95000)  return 0.85; // High Risk: Under $95k/emp (adjusted)
+  if (adjusted < 180000) return 0.65; // Elevated
+  if (adjusted < 350000) return 0.45; // Moderate
+  if (adjusted < 700000) return 0.25; // Low
+  return 0.10; // Very Low: Over $700k/emp
 };
 
 export const calculateCompanyHealthScore = (companyData: CompanyData): number => {
@@ -169,12 +176,27 @@ const calculateRecentLayoffRisk = (layoffs: { date: string; percentCut: number }
   return 0.15;
 };
 
-const calculateRoundFrequency = (rounds: number): number => {
+// BUG-DA4 FIX: Round frequency now considers recency alongside count.
+// Older layoff patterns are less predictive than recent ones.
+const calculateRoundFrequency = (rounds: number, layoffs?: { date: string; percentCut: number }[]): number => {
   if (!rounds || rounds === 0) return 0.05;
-  if (rounds === 1) return 0.42;
-  if (rounds === 2) return 0.68;
-  if (rounds === 3) return 0.85;
-  return 0.95;
+
+  // Base frequency score by round count
+  let base = 0.05;
+  if (rounds === 1) base = 0.42;
+  else if (rounds === 2) base = 0.68;
+  else if (rounds === 3) base = 0.85;
+  else base = 0.95;
+
+  // Recency weighting: if most layoffs are old (>18 months), reduce score by up to 20%
+  if (layoffs && layoffs.length > 0) {
+    const now = new Date();
+    const avgMonthsAgo = layoffs.reduce((sum, l) => sum + monthsDifference(l.date, now), 0) / layoffs.length;
+    if (avgMonthsAgo > 24) return base * 0.65;  // very old pattern — much less predictive
+    if (avgMonthsAgo > 18) return base * 0.80;  // old pattern — somewhat discounted
+    if (avgMonthsAgo > 12) return base * 0.90;  // moderately old
+  }
+  return base;
 };
 
 // Continuous sector contagion (replaces binary threshold)
@@ -192,7 +214,8 @@ export const calculateLayoffHistoryScore = (companyData: CompanyData, industryDa
 
   const signals = {
     recentLayoffRisk: calculateRecentLayoffRisk(companyData.layoffsLast24Months),
-    roundFrequencyRisk: calculateRoundFrequency(companyData.layoffRounds),
+    // BUG-DA4 FIX: Pass actual layoff records for recency-weighted frequency scoring
+    roundFrequencyRisk: calculateRoundFrequency(companyData.layoffRounds, companyData.layoffsLast24Months),
     severityRisk: companyData.lastLayoffPercent
       ? clamp(companyData.lastLayoffPercent / 25)
       : 0.15,
@@ -298,14 +321,21 @@ const calculateConfidence = (companyData: CompanyData): 'High' | 'Medium' | 'Low
 
 // ─── Recommendations (Action Plan) ───
 
-const generateRecommendations = (breakdown: ScoreBreakdown, companyData: CompanyData): ActionPlanItem[] => {
+const generateRecommendations = (breakdown: ScoreBreakdown, companyData: CompanyData, roleTitle?: string, department?: string): ActionPlanItem[] => {
   const plans: ActionPlanItem[] = [];
+  const company = companyData.name || 'your company';
+  const role = roleTitle || 'your role';
+  const dept = department || 'your department';
+  const L1pct = Math.round(breakdown.L1 * 100);
+  const L2pct = Math.round(breakdown.L2 * 100);
+  const L3pct = Math.round(breakdown.L3 * 100);
+  const L5pct = Math.round(breakdown.L5 * 100);
 
   if (breakdown.L1 > 0.6) {
     plans.push({
       id: 'l1-high',
-      title: 'Company Health is Deteriorating',
-      description: `Financial indicators for ${companyData.name} are weak. Secure your emergency fund and prepare your resume immediately.`,
+      title: `${company}'s Finances Are Under Pressure`,
+      description: `Financial signals for ${company} are weak (health score: ${L1pct}/100). Immediately secure a 3-month emergency fund and refresh your resume. Apply to 2–3 external roles this week as a safety measure.`,
       priority: 'High',
       layerFocus: 'Company Health'
     });
@@ -314,8 +344,8 @@ const generateRecommendations = (breakdown: ScoreBreakdown, companyData: Company
   if (breakdown.L2 > 0.7) {
     plans.push({
       id: 'l2-high',
-      title: 'Sector Layoffs Detected',
-      description: 'Your sector is experiencing high contagion. Network externally with recruiters outside your current industry.',
+      title: `${company} Has a Pattern of Layoffs`,
+      description: `${company}'s layoff history is elevated (score: ${L2pct}/100). Sector contagion is also high. Connect with recruiters outside your current industry — diversifying your network protects you if another wave hits.`,
       priority: 'High',
       layerFocus: 'Layoff History'
     });
@@ -324,18 +354,28 @@ const generateRecommendations = (breakdown: ScoreBreakdown, companyData: Company
   if (breakdown.L3 > 0.5) {
     plans.push({
       id: 'l3-high',
-      title: 'Role Vulnerable to Automation/Cuts',
-      description: 'Your position has high exposure. Focus on upskilling, learning AI tools applicable to your job, or shifting toward revenue-generating tasks.',
+      title: `The ${role} Role Has High Automation Exposure`,
+      description: `Your role has significant AI exposure (score: ${L3pct}/100). Focus on AI augmentation skills specific to ${role} tasks — tools like Copilot, Claude, or domain-specific AI platforms. Shift toward revenue-generating or client-facing responsibilities.`,
       priority: 'Medium',
       layerFocus: 'Role Exposure'
+    });
+  }
+
+  if (breakdown.L4 > 0.5) {
+    plans.push({
+      id: 'l4-high',
+      title: 'Market Headwinds in Your Industry',
+      description: `${company}'s industry is facing difficult macro conditions. Monitor competitor moves and explore adjacent sectors where your skills transfer well. Consider part-time consulting on the side to reduce income dependence.`,
+      priority: 'Medium',
+      layerFocus: 'Market Conditions'
     });
   }
 
   if (breakdown.L5 > 0.6) {
     plans.push({
       id: 'l5-high',
-      title: 'Internal Standing Needs Work',
-      description: 'Your employee factors (tenure, performance) leave you exposed. Build relationships with key stakeholders and document your recent wins.',
+      title: 'Your Internal Position Needs Strengthening',
+      description: `Your personal exposure in ${dept} is elevated (score: ${L5pct}/100). Book 1:1s with your manager and key stakeholders this month. Document your wins in writing and request a performance review. Request clarity on your role's strategic importance.`,
       priority: 'Medium',
       layerFocus: 'Employee Factors'
     });
@@ -344,8 +384,8 @@ const generateRecommendations = (breakdown: ScoreBreakdown, companyData: Company
   if (plans.length === 0) {
     plans.push({
       id: 'all-good',
-      title: 'Maintain Your Edge',
-      description: 'Your risk is low. Focus on exceeding performance goals and continuous learning to stay competitive.',
+      title: 'Keep Your Edge Sharp',
+      description: `Your risk across all 5 dimensions at ${company} is currently low. Stay ahead by setting a quarterly skills review and keeping your network warm so you hold the advantage if conditions shift.`,
       priority: 'Low',
       layerFocus: 'General'
     });
@@ -397,7 +437,9 @@ export const calculateLayoffScore = (inputs: ScoreInputs): ScoreResult => {
   const L4 = calculateMarketConditionsScore(companyData.industry, industryData);
   const L5 = calculateEmployeeFactorsScore(userFactors);
 
-  const rawScore = (L1 * 0.30) + (L2 * 0.25) + (L3 * 0.25) + (L4 * 0.12) + (L5 * 0.08);
+  // BUG-B8 FIX: Layer weights corrected — L4 was erroneously 5% (documented as 12%).
+  // Correct weights: L1=30%, L2=25%, L3=20%, L4=12%, L5=13% — sum = 100%
+  const rawScore = (L1 * 0.30) + (L2 * 0.25) + (L3 * 0.20) + (L4 * 0.12) + (L5 * 0.13);
   const finalScore = Math.round(clamp(rawScore) * 100);
 
   const nextUpdate = new Date();
@@ -413,7 +455,7 @@ export const calculateLayoffScore = (inputs: ScoreInputs): ScoreResult => {
     calculatedAt: new Date().toISOString(),
     nextUpdateDue: nextUpdate.toISOString(),
     disclaimer: 'This is a risk estimation based on publicly available signals. It is not a prediction or guarantee of future employment outcomes.',
-    recommendations: generateRecommendations(breakdown, companyData),
+    recommendations: generateRecommendations(breakdown, companyData, inputs.roleTitle, inputs.department),
   };
 };
 

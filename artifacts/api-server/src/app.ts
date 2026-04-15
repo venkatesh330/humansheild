@@ -13,6 +13,7 @@ import digestRoutes from './routes/digest';
 import waitlistRoutes from './routes/waitlist';
 import roadmapRoutes from './routes/roadmap';
 import forecastRoutes from './routes/forecast';
+import calculateRoutes from './routes/calculate';
 
 import { errorHandler } from './middlewares/errorHandler';
 
@@ -80,6 +81,7 @@ app.get('/health', (_req, res) => {
 // Registering BEFORE mounting ensures the limiter intercepts the request first.
 app.use('/api/learning-paths/generate', aiLimiter);
 app.use('/api/v1/learning-paths/generate', aiLimiter);
+app.use('/api/v1/grounded-risk', aiLimiter);
 
 // ── API Routes ──────────────────────────────────────────────────
 // v1 prefix routes (primary)
@@ -93,6 +95,7 @@ app.use('/api/v1/digest', digestRoutes);
 app.use('/api/v1/waitlist', waitlistRoutes);
 app.use('/api/v1/roadmap', roadmapRoutes);
 app.use('/api/v1/forecast', forecastRoutes);
+app.use('/api/v1/grounded-risk', calculateRoutes);
 
 // Legacy unversioned routes (backward compat — keep until frontend migrated)
 app.use('/api/assessments', assessmentRoutes);
