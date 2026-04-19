@@ -14,6 +14,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { CareerIntelligence, SkillRisk, SafeSkill, CareerPath } from '../../data/intelligence/types';
+import { DimensionRadar } from '../DimensionRadar';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAdaptiveSystem } from '../../hooks/useAdaptiveSystem';
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 const C = {
@@ -200,58 +203,43 @@ const SkillMatrix: React.FC<{ skills: CareerIntelligence['skills'] }> = ({ skill
 
 const SkillRiskCard: React.FC<{ skill: SkillRisk; type: 'obsolete' | 'at_risk' }> = ({ skill, type }) => {
   const borderColor = type === 'obsolete' ? C.red : C.amber;
-  const tc = skillTypeColor(skill.riskType);
   return (
-    <div style={{
-      background: C.bg2, border: `1px solid ${borderColor}20`,
-      borderLeft: `3px solid ${borderColor}`, borderRadius: '8px', padding: '12px 14px',
+    <div className="card card-hover" style={{
+      background: 'rgba(255,255,255,0.02)', border: `1px solid ${borderColor}20`,
+      borderRadius: '12px', padding: '16px',
+      display: 'flex', flexDirection: 'column', gap: '8px'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-        <span style={{ color: C.text, fontWeight: 600, fontSize: '0.875rem', flex: 1 }}>{skill.skill}</span>
-        <div style={{ display: 'flex', gap: '5px', flexShrink: 0, marginLeft: '8px' }}>
-          <span style={{ background: `${tc}15`, color: tc, borderRadius: '4px', padding: '2px 7px', fontSize: '0.62rem', fontFamily: C.mono }}>
-            {skill.riskType}
-          </span>
-          <span style={{ background: `${horizonColor(skill.horizon)}15`, color: horizonColor(skill.horizon), borderRadius: '4px', padding: '2px 7px', fontSize: '0.62rem', fontFamily: C.mono }}>
-            {skill.horizon}
-          </span>
-          <span style={{ background: 'rgba(255,255,255,0.06)', color: C.text2, borderRadius: '4px', padding: '2px 7px', fontSize: '0.62rem', fontFamily: C.mono }}>
-            {skill.riskScore}%
-          </span>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ color: C.text, fontWeight: 700, fontSize: '0.9rem' }}>{skill.skill}</span>
+        <span className={`badge ${type === 'obsolete' ? 'badge-red' : 'badge-amber'}`} style={{ fontSize: '0.6rem' }}>
+          {type === 'obsolete' ? 'OBSOLETE' : 'AT RISK'}
+        </span>
       </div>
-      <p style={{ margin: 0, color: C.text2, fontSize: '0.78rem', lineHeight: 1.5 }}>{skill.reason}</p>
-      {skill.aiTool && (
-        <div style={{ marginTop: '6px', fontSize: '0.68rem', color: C.violet, fontFamily: C.mono }}>
-          🤖 {skill.aiTool}
-        </div>
-      )}
+      <p style={{ color: C.text2, fontSize: '0.8rem', lineHeight: 1.5 }}>{skill.reason}</p>
+      <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+        <span className="badge badge-ghost" style={{ fontSize: '0.6rem' }}>{skill.riskType}</span>
+        <span className="badge badge-ghost" style={{ fontSize: '0.6rem' }}>{skill.horizon}</span>
+        <span className="badge badge-ghost" style={{ fontSize: '0.6rem', color: C.violet }}>{skill.aiTool}</span>
+      </div>
     </div>
   );
 };
 
 const SafeSkillCard: React.FC<{ skill: SafeSkill }> = ({ skill }) => (
-  <div style={{
-    background: C.bg2, border: `1px solid ${C.green}20`,
-    borderLeft: `3px solid ${C.green}`, borderRadius: '8px', padding: '12px 14px',
+  <div className="card card-hover" style={{
+    background: 'rgba(16,185,129,0.03)', border: `1px solid rgba(16,185,129,0.15)`,
+    borderRadius: '12px', padding: '16px',
+    display: 'flex', flexDirection: 'column', gap: '8px'
   }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-      <span style={{ color: C.text, fontWeight: 600, fontSize: '0.875rem', flex: 1 }}>{skill.skill}</span>
-      <div style={{ display: 'flex', gap: '5px', flexShrink: 0, marginLeft: '8px' }}>
-        <span style={{ background: `${C.green}15`, color: C.green, borderRadius: '4px', padding: '2px 7px', fontSize: '0.62rem', fontFamily: C.mono }}>
-          {skill.longTermValue}% value
-        </span>
-        <span style={{ background: 'rgba(255,255,255,0.06)', color: C.text2, borderRadius: '4px', padding: '2px 7px', fontSize: '0.62rem', fontFamily: C.mono }}>
-          {skill.difficulty}
-        </span>
-      </div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ color: C.text, fontWeight: 700, fontSize: '0.9rem' }}>{skill.skill}</span>
+      <span className="badge badge-emerald" style={{ fontSize: '0.6rem' }}>SAFE</span>
     </div>
-    <p style={{ margin: 0, color: C.text2, fontSize: '0.78rem', lineHeight: 1.5 }}>{skill.whySafe}</p>
-    {skill.resource && (
-      <div style={{ marginTop: '6px', fontSize: '0.68rem', color: C.cyan, fontFamily: C.mono }}>
-        📚 {skill.resource}
-      </div>
-    )}
+    <p style={{ color: C.text2, fontSize: '0.8rem', lineHeight: 1.5 }}>{skill.whySafe}</p>
+    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+      <span className="badge badge-ghost" style={{ fontSize: '0.6rem' }}>{skill.difficulty}</span>
+      <span className="badge badge-cyan" style={{ fontSize: '0.6rem' }}>{skill.longTermValue}% value</span>
+    </div>
   </div>
 );
 
@@ -370,42 +358,50 @@ const SeniorityTable: React.FC<{
 
 // ── Roadmap phase ─────────────────────────────────────────────────────────
 const RoadmapPhaseCard: React.FC<{
-  phase: NonNullable<NonNullable<CareerIntelligence['roadmap']>['0-2']>['phase_1'];
+  phase: any;
   label: string;
   color: string;
-}> = ({ phase, label, color }) => (
-  <div style={{
-    background: C.bg2, border: `1px solid ${color}25`,
-    borderLeft: `3px solid ${color}`, borderRadius: '10px', padding: '14px 16px', marginBottom: '10px',
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-      <span style={{ color, fontWeight: 700, fontSize: '0.82rem', fontFamily: C.mono }}>{label}</span>
-      <span style={{ color: C.text3, fontSize: '0.72rem', fontFamily: C.mono }}>{phase.timeline}</span>
-    </div>
-    <div style={{ color: C.text, fontSize: '0.85rem', fontWeight: 600, marginBottom: '10px' }}>
-      Focus: {phase.focus}
-    </div>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {phase.actions.map((action, i) => (
-        <div key={i} style={{ background: C.bg3, borderRadius: '6px', padding: '10px 12px' }}>
-          <div style={{ color: C.text, fontSize: '0.82rem', fontWeight: 600, marginBottom: '4px' }}>
-            ✦ {action.action}
-          </div>
-          <div style={{ color: C.text2, fontSize: '0.74rem', lineHeight: 1.5, marginBottom: action.outcome ? '4px' : 0 }}>
-            {action.why}
-          </div>
-          {action.outcome && (
-            <div style={{ fontSize: '0.68rem', color: color, fontFamily: C.mono }}>
-              → {action.outcome}
+  isLast?: boolean;
+}> = ({ phase, label, color, isLast }) => (
+  <div style={{ position: 'relative', paddingLeft: '32px', marginBottom: isLast ? 0 : '40px' }}>
+    {/* Connector Line */}
+    {!isLast && (
+      <div style={{ 
+        position: 'absolute', left: '10px', top: '24px', bottom: '-40px', 
+        width: '2px', background: `linear-gradient(to bottom, ${color}, transparent)` 
+      }} />
+    )}
+    {/* Dot */}
+    <div style={{ 
+      position: 'absolute', left: '0', top: '0', width: '22px', height: '22px', 
+      borderRadius: '50%', background: C.bg1, border: `3px solid ${color}`,
+      boxShadow: `0 0 10px ${color}40`, zIndex: 1
+    }} />
+
+    <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h4 style={{ color, fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+          {label}: {phase.focus}
+        </h4>
+        <div className="badge badge-ghost">{phase.timeline}</div>
+      </div>
+
+      <div style={{ display: 'grid', gap: '12px' }}>
+        {phase.actions.map((action: any, i: number) => (
+          <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+            <div style={{ marginTop: '4px', width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text)', marginBottom: '4px' }}>{action.action}</div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-3)', lineHeight: 1.5 }}>{action.why}</p>
+              {action.outcome && (
+                <div style={{ marginTop: '8px', fontSize: '0.75rem', color, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                  → PREDICTED OUTCOME: {action.outcome}
+                </div>
+              )}
             </div>
-          )}
-          {action.tool && (
-            <div style={{ fontSize: '0.65rem', color: C.violet, fontFamily: C.mono, marginTop: '2px' }}>
-              🛠 {action.tool}
-            </div>
-          )}
-        </div>
-      ))}
+          </div>
+        ))}
+      </div>
     </div>
   </div>
 );
@@ -417,6 +413,7 @@ export const OracleInsightsPanel: React.FC<Props> = ({
   experience = '5-10',
 }) => {
   const { ref, visible } = useReveal();
+  const { width, isTouch, scaleFactor } = useAdaptiveSystem();
   const [expandedSections, setExpandedSections] = useState({
     skills: true,
     paths: true,
@@ -463,10 +460,13 @@ export const OracleInsightsPanel: React.FC<Props> = ({
     <div
       ref={ref}
       style={{
-        marginTop: '32px', marginBottom: '32px',
+        marginTop: 'var(--space-8)',
+        marginBottom: 'var(--space-8)',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(24px)',
         transition: 'opacity 0.6s ease, transform 0.6s ease',
+        containerType: 'inline-size',
+        containerName: 'oracle-panel',
       }}
     >
       {/* ── Header ── */}
@@ -507,25 +507,36 @@ export const OracleInsightsPanel: React.FC<Props> = ({
         background: 'rgba(10,15,25,0.9)', border: `1px solid ${C.violet}18`,
         borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '24px',
       }}>
-        {/* Summary */}
-        <p style={{ margin: '0 0 16px', color: C.text2, fontSize: '0.88rem', lineHeight: 1.7, borderLeft: `3px solid ${C.violet}50`, paddingLeft: '12px' }}>
-          {intelligence.summary}
-        </p>
-
-        {/* Context tags */}
-        {intelligence.contextTags && intelligence.contextTags.length > 0 && (
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '20px' }}>
-            {intelligence.contextTags.map(tag => (
-              <span key={tag} style={{
-                background: 'rgba(124,58,255,0.1)', border: '1px solid rgba(124,58,255,0.2)',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '0.65rem', color: C.purple, fontFamily: C.mono,
-              }}>
-                {tag}
-              </span>
-            ))}
+        {/* Summary & Radar Section */}
+        <div className="oracle-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '32px', marginBottom: '32px' }}>
+          <div>
+            <SectionLabel label="Displacement Analysis" />
+            <p style={{ margin: '0 0 20px', color: C.text, fontSize: '1.1rem', fontWeight: 500, lineHeight: 1.6 }}>
+              {intelligence.summary}
+            </p>
+            {/* Context tags */}
+            {intelligence.contextTags && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {intelligence.contextTags.map(tag => (
+                  <span key={tag} className="badge badge-indigo">{tag}</span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '20px', padding: '24px', border: '1px solid var(--border)' }}>
+             <DimensionRadar 
+               dimensions={[
+                 { key: 'automation', label: 'Automation', score: intelligence.skills.obsolete?.length ? 85 : 40 },
+                 { key: 'augmentation', label: 'Augmentation', score: intelligence.skills.at_risk?.length ? 70 : 30 },
+                 { key: 'longevity', label: 'Longevity', score: intelligence.skills.safe?.length ? (intelligence.skills.safe.length * 10) : 50 },
+                 { key: 'transition', label: 'Transition', score: intelligence.careerPaths?.length ? 60 : 20 },
+                 { key: 'demand', label: 'Demand', score: intelligence.seniority?.find(l => l.level === 'mid')?.riskDelta ?? 50 },
+                 { key: 'oversupply', label: 'Oversupply', score: 45 }
+               ]}
+               size={280}
+             />
+          </div>
+        </div>
 
         {/* Seeded risk trend */}
         {intelligence.riskTrend && intelligence.riskTrend.length >= 2 && (
@@ -591,28 +602,37 @@ export const OracleInsightsPanel: React.FC<Props> = ({
         {/* ── Action Roadmap ── */}
         {roadmapBracket && (
           <div style={{ marginBottom: '8px' }}>
-            <SectionToggle label={`Action Roadmap — ${experience} Years Experience`} k="roadmap" accent={C.violet} />
+            <SectionToggle label={`Strategic Action Roadmap — ${experience}`} k="roadmap" accent={C.violet} />
             {expandedSections.roadmap && (
-              <div>
+              <div style={{ padding: '20px 0' }}>
                 {roadmapBracket.phase_1 && (
-                  <RoadmapPhaseCard phase={roadmapBracket.phase_1} label="Phase 1" color={C.cyan} />
+                  <RoadmapPhaseCard phase={roadmapBracket.phase_1} label="Stabilize" color={C.cyan} />
                 )}
                 {roadmapBracket.phase_2 && (
-                  <RoadmapPhaseCard phase={roadmapBracket.phase_2} label="Phase 2" color={C.violet} />
+                  <RoadmapPhaseCard phase={roadmapBracket.phase_2} label="Amplify" color={C.violet} />
                 )}
                 {roadmapBracket.phase_3 && (
-                  <RoadmapPhaseCard phase={roadmapBracket.phase_3} label="Phase 3" color={C.amber} />
+                  <RoadmapPhaseCard phase={roadmapBracket.phase_3} label="Transition" color={C.amber} isLast />
                 )}
               </div>
             )}
           </div>
         )}
 
-        {/* Footnote */}
-        <div style={{
-          marginTop: '20px', paddingTop: '14px', borderTop: `1px solid ${C.border}`,
-          color: C.text3, fontSize: '0.68rem', fontFamily: C.mono, textAlign: 'center', lineHeight: 1.6,
-        }}>
+      <style>{`
+        @container oracle-panel (max-width: 600px) {
+          .oracle-grid { grid-template-columns: 1fr !important; }
+          .adaptive-hide { display: none; }
+        }
+        @container oracle-panel (min-width: 900px) {
+          .oracle-grid { grid-template-columns: 1fr 340px !important; }
+        }
+      `}</style>
+      {/* Footnote */}
+      <div style={{
+        marginTop: '20px', paddingTop: '14px', borderTop: `1px solid ${C.border}`,
+        color: C.text3, fontSize: '0.68rem', fontFamily: C.mono, textAlign: 'center', lineHeight: 1.6,
+      }}>
           Source: Risk Oracle Engine · MASTER_CAREER_INTELLIGENCE v4.0 · WEF Future of Jobs 2025
           {intelligence.evolutionHorizon && ` · Data valid until ${intelligence.evolutionHorizon}`}
         </div>

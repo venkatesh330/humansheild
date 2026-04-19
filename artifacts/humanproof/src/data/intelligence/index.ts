@@ -17,29 +17,30 @@
 // import it here and spread it into MASTER_CAREER_INTELLIGENCE.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { CareerIntelligence } from './types.ts';
+import { CareerIntelligence } from './types';
 
 // ── Core Intelligence Modules ──────────────────────────────────────────────────
-import { TECH_INTELLIGENCE } from './tech.ts';
-import { FINANCE_INTELLIGENCE } from './finance.ts';
-import { HEALTHCARE_INTELLIGENCE } from './healthcare.ts';
-import { INDUSTRY_INTELLIGENCE } from './industry.ts';
-import { CREATIVE_INTELLIGENCE } from './creative.ts';
+import { TECH_INTELLIGENCE } from './tech';
+import { FINANCE_INTELLIGENCE } from './finance';
+import { HEALTHCARE_INTELLIGENCE } from './healthcare';
+import { INDUSTRY_INTELLIGENCE } from './industry';
+import { CREATIVE_INTELLIGENCE } from './creative';
 
 // ── Services Module (Split from original services.ts) ──────────────────────────
-import { SERVICES_LEGAL_INTELLIGENCE } from './services_legal.ts';
-import { SERVICES_HR_INTELLIGENCE } from './services_hr.ts';
+import { SERVICES_LEGAL_INTELLIGENCE } from './services_legal';
+import { SERVICES_HR_INTELLIGENCE } from './services_hr';
 
 // ── Original Services (still active — legacy roles not yet migrated) ────────────
-import { SERVICES_INTELLIGENCE } from './services.ts';
+import { SERVICES_INTELLIGENCE } from './services';
 
 // ── New: Emerging AI-Era Roles ──────────────────────────────────────────────────
-import { EMERGING_INTELLIGENCE } from './emerging.ts';
+import { EMERGING_INTELLIGENCE } from './emerging';
 
 // ── New v4.0: Expanded Service Vertical Modules ──────────────────────────────────
-import { SERVICES_GOV_INTELLIGENCE } from './services_gov.ts';
-import { SERVICES_EDU_INTELLIGENCE } from './services_edu.ts';
-import { SERVICES_RETAIL_INTELLIGENCE } from './services_retail.ts';
+import { SERVICES_GOV_INTELLIGENCE } from './services_gov';
+import { SERVICES_EDU_INTELLIGENCE } from './services_edu';
+import { SERVICES_RETAIL_INTELLIGENCE } from './services_retail';
+
 
 /**
  * MASTER_CAREER_INTELLIGENCE
@@ -412,8 +413,8 @@ export const getRolesByRiskLevel = (minCurrentScore: number, maxCurrentScore: nu
 };
 
 // ── Re-exports for convenience ────────────────────────────────────────────────
-export type { CareerIntelligence } from './types.ts';
-export { getCountryAdaptedIntelligence, getCountryCluster } from './countryIntelligenceModifier.ts';
+export type { CareerIntelligence } from './types';
+export { getCountryAdaptedIntelligence, getCountryCluster } from './countryIntelligenceModifier';
 export {
   getVariantInactionScenario,
   getVariantSkillReason,
@@ -421,4 +422,5 @@ export {
   getVariantSummaryPrefix,
   buildContextTags,
   seedHash,
-} from './contentVariantEngine.ts';
+} from './contentVariantEngine';
+

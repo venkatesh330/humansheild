@@ -59,6 +59,47 @@ export const injectLayoffEvent = (event: LayoffNewsEvent): void => {
 };
 
 /**
+ * refreshFromNewsAPI — fetches live layoff headlines for a company and injects them.
+ * Requires VITE_NEWSAPI_KEY. Returns count of events injected.
+ */
+export const refreshFromNewsAPI = async (companyName: string): Promise<number> => {
+  const apiKey = (import.meta as any).env?.VITE_NEWSAPI_KEY as string | undefined;
+  if (!apiKey) return 0;
+  try {
+    const thirty = new Date();
+    thirty.setDate(thirty.getDate() - 30);
+    const from = thirty.toISOString().split('T')[0];
+    const q = encodeURIComponent(`"${companyName}" AND (layoff OR "job cuts" OR restructuring)`);
+    const url = `https://newsapi.org/v2/everything?q=${q}&from=${from}&sortBy=publishedAt&language=en&pageSize=5&apiKey=${apiKey}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6_000) });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    if (data.status !== 'ok') return 0;
+    let injected = 0;
+    for (const article of (data.articles ?? [])) {
+      const text = (article.title ?? '') + ' ' + (article.description ?? '');
+      const lower = text.toLowerCase();
+      if (lower.includes('layoff') || lower.includes('job cut') || lower.includes('restructur')) {
+        const pctMatch = text.match(/(\d+(?:\.\d+)?)\s*%/);
+        injectLayoffEvent({
+          companyName,
+          date: (article.publishedAt ?? new Date().toISOString()).slice(0, 10),
+          headline: article.title ?? '',
+          percentCut: pctMatch ? parseFloat(pctMatch[1]) : 5,
+          source: article.source?.name ?? 'NewsAPI',
+          url: article.url ?? '',
+          affectedDepartments: [],
+        });
+        injected++;
+      }
+    }
+    return injected;
+  } catch {
+    return 0;
+  }
+};
+
+/**
  * Look up the most recent layoff event for a company (case-insensitive).
  */
 export const lookupLayoffEvent = (companyName: string): LayoffNewsEvent | null => {

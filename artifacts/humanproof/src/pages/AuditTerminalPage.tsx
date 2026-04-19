@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { INDUSTRIES, WORK_TYPES, COUNTRIES } from '../data/catalogData';
 import {
   calculateScore,
@@ -16,9 +16,12 @@ import { supabase } from '../utils/supabase';
 import { getCachedRisk, setCachedRisk } from '../services/cache/riskCache';
 import { recordScore, getScoreDelta, type ScoreDelta } from '../services/scoreDeltaService';
 import { PremiumSelect, SelectOption } from '../components/ui/PremiumSelect';
-import { AIRiskSkillMatrix } from '../components/AIRiskSkillMatrix';
 import { StrategicRoadmap } from '../components/StrategicRoadmap';
 import { getCareerIntelligence } from '../data/intelligence/index';
+import { DimensionRadar } from '../components/DimensionRadar';
+import { AIRiskSkillMatrix } from '../components/AIRiskSkillMatrix';
+import { RoleRiskComparison } from '../components/RoleRiskComparison';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Briefcase, 
   Cpu, 
@@ -127,7 +130,7 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
   );
 }
 
-export default function AuditTerminalPage() {
+export default function AuditTerminalPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { state, saveAssessment, dispatch } = useHumanProof();
   const [industryKey, setIndustryKey] = useState(state.initialIndustryKey || '');
   const [workTypeKey, setWorkTypeKey] = useState(state.initialWorkTypeKey || '');
@@ -229,280 +232,286 @@ export default function AuditTerminalPage() {
   const [activeTab, setActiveTab] = useState<'audit' | 'matrix' | 'roadmap' | 'forecast'>('audit');
 
   return (
-    <div className="page-wrap" style={{ background: 'var(--bg)' }}>
-      <div className="container" style={{ maxWidth: 1000 }}>
-        {/* Terminal Header */}
-        <div className="section-hero reveal" style={{ marginBottom: '40px', textAlign: 'left', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div className="badge badge-cyan" style={{ marginBottom: '16px' }}>SENSOR INPUT REQUIRED</div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2.5rem, 6vw, 4rem)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 0.95, marginBottom: '16px' }}>
-              Risk Oracle
-            </h1>
-            <p style={{ color: 'var(--text-2)', fontWeight: 500, maxWidth: 480, lineHeight: 1.6 }}>
-              Central command for your career displacement analytics. Configure parameters below to generate your 6-Dimension risk profile across all engines.
-            </p>
-          </div>
-        </div>
+    <div className="page-wrap" style={{ background: 'var(--bg)', perspective: '1000px' }}>
+      <div className="container" style={{ maxWidth: 1200 }}>
+        
 
-        <div className="grid-3" style={{ gridTemplateColumns: 'minmax(300px, 1fr) minmax(0, 2.5fr)', gap: '32px', alignItems: 'start' }}>
-          
-          {/* Left Panel: Configuration Form */}
-          <div className="card reveal" style={{ padding: '32px', position: 'sticky', top: '100px' }}>
-            <h2 className="label-xs" style={{ marginBottom: '24px' }}>System Configuration</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '32px' }}>
-              <PremiumSelect
-                label="Industry Cluster"
-                value={industryKey}
-                onChange={val => { setIndustryKey(val); setWorkTypeKey(''); setResult(null); }}
-                options={INDUSTRIES.map(i => ({
-                  key: i.key,
-                  label: i.label,
-                  icon: i.icon,
-                  cat: i.cat,
-                  color: CAT_COLORS[i.cat]
-                }))}
-                placeholder="Select domain..."
-                groups={useMemo(() => {
-                  const grps: Record<string, SelectOption[]> = {};
-                  INDUSTRIES.forEach(i => {
-                    if (!grps[i.cat]) grps[i.cat] = [];
-                    grps[i.cat].push({
+        <AnimatePresence mode="wait">
+          {!result ? (
+            <motion.div
+              key="config"
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 1.02, y: -10 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            >
+              <div className="section-hero" style={{ marginBottom: '40px', padding: 0 }}>
+                <div className="badge badge-cyan" style={{ marginBottom: '16px' }}>ORACLE CONFIGURATION</div>
+                <h1 className="display-2" style={{ marginBottom: '16px' }}>Configure Parameters</h1>
+                <p style={{ color: 'var(--text-2)', maxWidth: 600, margin: '0 auto' }}>
+                  Finalize your professional profile details to generate a high-fidelity displacement audit.
+                </p>
+              </div>
+
+              <div style={{ maxWidth: 600, margin: '0 auto', padding: '40px', borderRadius: 'var(--radius-xl)' }} className="glass-panel">
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  
+                  {/* Industry Selection Dropdown — Simple Management */}
+                  <PremiumSelect
+                    label="Select Your Domain"
+                    value={industryKey}
+                    onChange={(val) => { 
+                      setIndustryKey(val); 
+                      setWorkTypeKey(""); // Reset role selection when industry changes
+                    }}
+                    options={INDUSTRIES.map(i => ({
                       key: i.key,
                       label: i.label,
                       icon: i.icon,
-                      cat: i.cat,
                       color: CAT_COLORS[i.cat]
-                    });
-                  });
-                  return grps;
-                }, [])}
-              />
+                    }))}
+                  />
 
-              <PremiumSelect
-                label="Role Designation"
-                value={workTypeKey}
-                onChange={(val) => { setWorkTypeKey(val); setResult(null); }}
-                disabled={!industryKey}
-                placeholder={!industryKey ? "Select industry first..." : "Select role..."}
-                options={workTypes.map((w: any) => ({
-                  key: w.key,
-                  label: w.label,
-                  icon: getRoleIcon(w.label),
-                  color: industryKey ? CAT_COLORS[INDUSTRIES.find(i => i.key === industryKey)?.cat || ''] : undefined
-                }))}
-              />
+                  {industryKey && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        <PremiumSelect
+                          label="Role Designation"
+                          value={workTypeKey}
+                          onChange={(val) => { setWorkTypeKey(val); }}
+                          options={workTypes.map((w: any) => ({
+                            key: w.key,
+                            label: w.label,
+                            icon: getRoleIcon(w.label),
+                            color: CAT_COLORS[INDUSTRIES.find(i => i.key === industryKey)?.cat || '']
+                          }))}
+                        />
 
-              <PremiumSelect
-                label="Experience Level"
-                value={experience}
-                onChange={(val) => { setExperience(val); setResult(null); }}
-                options={EXPERIENCE_LEVELS.map(l => ({
-                  key: l.key,
-                  label: l.label,
-                  icon: getExperienceIcon(l.key)
-                }))}
-              />
+                        <div className="grid-2">
+                          <PremiumSelect
+                            label="Years of Experience"
+                            value={experience}
+                            onChange={(val) => setExperience(val)}
+                            options={EXPERIENCE_LEVELS.map(l => ({
+                              key: l.key,
+                              label: l.label,
+                              icon: getExperienceIcon(l.key)
+                            }))}
+                          />
+                          <PremiumSelect
+                            label="Target Market / Region"
+                            value={countryKey}
+                            onChange={(val) => setCountryKey(val)}
+                            options={COUNTRIES.map(c => ({
+                              key: c.key,
+                              label: c.label,
+                              icon: c.flag
+                            }))}
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
 
-              <PremiumSelect
-                label="Territory Exposure"
-                value={countryKey}
-                onChange={(val) => { setCountryKey(val); setResult(null); }}
-                options={COUNTRIES.map(c => ({
-                  key: c.key,
-                  label: c.label,
-                  icon: c.flag
-                }))}
-              />
-            </div>
-
-            <button
-              onClick={() => handleCalculate()}
-              disabled={!industryKey || !workTypeKey || loading}
-              className="btn btn-primary btn-full btn-lg"
-              style={{
-                background: !industryKey || !workTypeKey ? 'rgba(255,255,255,0.1)' : 'var(--cyan)',
-                color: !industryKey || !workTypeKey ? 'var(--text-3)' : '#000',
-                letterSpacing: '-0.01em',
-              }}
+                  <button
+                    onClick={() => handleCalculate()}
+                    disabled={!industryKey || !workTypeKey || loading}
+                    className="btn btn-cyan btn-lg btn-full"
+                    style={{ marginTop: '12px' }}
+                  >
+                    {loading ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div className="spinner" />
+                        <span>Scanning Neural Pathways…</span>
+                      </div>
+                    ) : 'Execute Deep Audit'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="result"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
             >
-              {loading ? (
-                <>
-                  <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2, borderColor: 'rgba(0,0,0,0.2)', borderTopColor: '#000' }} />
-                  {loadingText}
-                </>
-              ) : (
-                'Execute Risk Audit'
-              )}
-            </button>
-          </div>
+               <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap', alignItems: 'start' }}>
+                
+                {/* Main Results Panel — Responsive Flexbox */}
+                <div style={{ flex: '1 1 600px', minWidth: 0 }}>
+                  <div className="card" style={{ padding: 0, overflow: 'hidden', border: 'none', background: 'transparent' }}>
+                  
+                  {/* Results Sub-Nav */}
+                  <div className="tabs-wrap no-scrollbar" style={{ marginBottom: '24px', background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: '12px', width: 'fit-content' }}>
+                    {[ 
+                      { id: 'audit', label: '1. Risk Audit' }, 
+                      { id: 'matrix', label: '2. Skill Matrix' }, 
+                      { id: 'roadmap', label: '3. Strategic Roadmap' },
+                      { id: 'forecast', label: '4. Trajectory' }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+                        style={{ height: '44px' }}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
 
-          {/* Right Panel: Output Terminal */}
-          <div className="card reveal" style={{ minHeight: '600px', background: 'var(--bg-raised)', padding: 0, overflow: 'hidden' }}>
-            
-            {/* Terminal Output Navigation */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)', padding: '0 16px', overflowX: 'auto' }}>
-              {[ 
-                { id: 'audit', label: '1. Risk Audit' }, 
-                { id: 'matrix', label: '2. Skill Matrix', disabled: !result }, 
-                { id: 'roadmap', label: '3. Strategic Roadmap', disabled: !result },
-                { id: 'forecast', label: '4. Trajectory', disabled: !result }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => !tab.disabled && setActiveTab(tab.id as any)}
-                  style={{
-                    padding: '16px 24px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: activeTab === tab.id ? '2px solid var(--cyan)' : '2px solid transparent',
-                    color: activeTab === tab.id ? 'var(--text)' : tab.disabled ? 'var(--text-3)' : 'var(--text-2)',
-                    fontSize: '0.85rem',
-                    fontWeight: activeTab === tab.id ? 800 : 500,
-                    cursor: tab.disabled ? 'not-allowed' : 'pointer',
-                    opacity: tab.disabled ? 0.5 : 1,
-                    transition: 'all 0.2s',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ padding: '32px' }} ref={resultRef}>
-              {!result && !loading && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', opacity: 0.5 }}>
-                  <ShieldCheck size={48} style={{ marginBottom: '16px' }} />
-                  <p className="label-xs">AWAITING SYSTEM PARAMETERS</p>
-                </div>
-              )}
-
-              {loading && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px' }}>
-                  <div className="spinner" style={{ width: 40, height: 40, marginBottom: '20px' }} />
-                  <p className="label-xs text-glow" style={{ color: 'var(--cyan)' }}>Running Deep Neural Analysis...</p>
-                </div>
-              )}
-
-              {result && !loading && (() => {
-                const seededIntel = getCareerIntelligence(result.workTypeKey || workTypeKey);
-                const hasSeeded = !!seededIntel;
-
-                return (
-                  <div>
-                    {/* TAB: AUDIT */}
+                  <div className="glass-panel" style={{ padding: '32px', borderRadius: 'var(--radius-xl)' }}>
                     {activeTab === 'audit' && (
                       <div className="fade-in">
-                        <div style={{ display: 'flex', gap: '32px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
+                        <div style={{ display: 'flex', gap: '48px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '48px' }}>
                           <ScoreRing score={result.total} color={scoreColor} />
-                          <div style={{ flex: 1, minWidth: 200 }}>
-                            <div className="badge badge-ghost" style={{ marginBottom: '12px' }}>Assessment Complete</div>
-                            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: '12px', color: scoreColor }}>
+                          <div style={{ flex: 1, minWidth: 280 }}>
+                            <div className="badge badge-cyan" style={{ marginBottom: '12px' }}>Oracle Analysis Live</div>
+                            <h2 className="display-3" style={{ marginBottom: '16px', color: scoreColor }}>
                               {getVerdict(result.total)} Risk Profile
                             </h2>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '32px' }}>
                               <span className="badge badge-ghost">⏱ {getTimeline(result.total)}</span>
                               <span className="badge badge-ghost">Urgency: {getUrgency(result.total)}</span>
-                              {result.isGrounded && <span className="badge badge-cyan">AI Verified</span>}
+                              {result.isGrounded && <span className="badge badge-cyan">AI-Verified Data</span>}
                             </div>
-                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                               <button className="btn btn-secondary btn-sm" onClick={async () => { const snap = generateAssessmentSnapshot(result.total, workTypeKey, 0, 0); await downloadAssessmentPDF(snap, 'audit-snapshot'); }}>↓ Download PDF</button>
-                               <button className="btn btn-ghost btn-sm" onClick={() => { const params = new URLSearchParams({ industry: result.industryKey || industryKey, role: result.workTypeKey || workTypeKey, country: result.countryKey || countryKey, exp: result.experience || experience, score: String(result.total) }); navigator.clipboard.writeText(`${window.location.origin}/terminal?${params.toString()}`); }}>↗ Share Link</button>
-                            </div>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                               <button className="btn btn-primary btn-sm" onClick={async () => { const snap = generateAssessmentSnapshot(result.total, workTypeKey, 0, 0); await downloadAssessmentPDF(snap, 'audit-report'); }}>↓ Download Audit</button>
+                               <button className="btn btn-secondary btn-sm" onClick={() => { setIndustryKey(""); setWorkTypeKey(""); setResult(null); }}>↻ New Audit</button>
+                             </div>
                           </div>
                         </div>
 
-                        {result.reasoning && (
-                          <div className="card card-ghost" style={{ padding: '24px', marginBottom: '32px', background: 'rgba(0,240,255,0.03)', border: '1px solid rgba(0,240,255,0.1)' }}>
-                            <h3 className="label-xs" style={{ color: 'var(--cyan)', marginBottom: '12px' }}>AI Synthesis</h3>
-                            <p style={{ color: 'var(--text-2)', fontSize: '0.9rem', lineHeight: 1.7 }}>{result.reasoning}</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
+                          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '32px', borderRadius: 'var(--radius-xl)', border: '1px solid var(--border)' }}>
+                            <h3 className="label-xs" style={{ marginBottom: '32px' }}>Dimension Analysis</h3>
+                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                              <DimensionRadar 
+                                dimensions={result.dimensions?.map((d: any) => ({
+                                  key: d.key,
+                                  label: DIM_INFO[d.key]?.label || d.label,
+                                  score: d.score
+                                })) || []} 
+                                size={340}
+                                color={scoreColor}
+                              />
+                            </div>
                           </div>
-                        )}
 
-                        <h3 className="label-xs" style={{ marginBottom: '24px' }}>6-Dimension Breakdown</h3>
-                        <div style={{ display: 'grid', gap: '20px' }}>
-                          {result.dimensions?.map((dim: any) => (
-                            <div key={dim.key}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
-                                  <span style={{ marginRight: 8, opacity: 0.7 }}>{DIM_INFO[dim.key]?.icon}</span>
-                                  {DIM_INFO[dim.key]?.label || dim.label}
-                                </span>
-                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 700, color: getScoreColor(dim.score) }}>
-                                  {dim.score}%
-                                </span>
-                              </div>
-                              <div className="gauge-track" style={{ marginBottom: '8px', height: 4 }}>
-                                <div className="gauge-fill" style={{ width: `${dim.score}%`, background: getScoreColor(dim.score) }} />
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                              <h3 className="label-xs" style={{ margin: 0 }}>AI Synthesis</h3>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(0,212,224,0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(0,212,224,0.2)' }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cyan)', animation: 'pulse 2s infinite' }} />
+                                <span style={{ fontSize: '0.6rem', color: 'var(--cyan)', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>LIVE SIGNAL</span>
                               </div>
                             </div>
-                          ))}
+                            <div className="card" style={{ background: 'rgba(255,255,255,0.02)', padding: '32px', borderRadius: 'var(--radius-lg)', position: 'relative', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                              <div style={{ position: 'absolute', top: 0, left: 0, width: '2px', height: '100%', background: 'var(--cyan)' }} />
+                              <p style={{ color: 'var(--text-2)', fontSize: '1.05rem', lineHeight: 1.8, fontStyle: 'italic', margin: 0 }}>
+                                "{result.reasoning || 'Analyzing displacement markers and economic vectors for this specific role and region to generate a strategic synthesis...'}"
+                              </p>
+                              <div style={{ marginTop: '32px', display: 'flex', alignItems: 'center', gap: '12px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '24px' }}>
+                                <div style={{ 
+                                  width: 36, height: 36, borderRadius: '10px', 
+                                  background: 'linear-gradient(135deg, var(--cyan), var(--violet))', 
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                                  fontSize: '11px', color: '#000', fontWeight: 900,
+                                  boxShadow: '0 0 15px rgba(0,212,224,0.3)'
+                                }}>AI</div>
+                                <div>
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--text)', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Verified Strategy Engine</div>
+                                  <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>v4.0.21 Deterministic Proxy</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
+
                     )}
 
-                    {/* TAB: MATRIX */}
                     {activeTab === 'matrix' && (
                       <div className="fade-in">
-                        {hasSeeded ? (
-                          <AIRiskSkillMatrix intel={seededIntel} scoreColor={scoreColor} roleKey={result.workTypeKey || workTypeKey} />
+                        {getCareerIntelligence(result.workTypeKey || workTypeKey) ? (
+                          <AIRiskSkillMatrix intel={getCareerIntelligence(result.workTypeKey || workTypeKey)} scoreColor={scoreColor} roleKey={result.workTypeKey || workTypeKey} />
                         ) : (
-                          <div style={{ textAlign: 'center', padding: 32 }}>
-                            <p className="label-xs" style={{ color: 'var(--text-3)' }}>Matrix generation unavailable for this specific sub-role.</p>
+                          <div style={{ textAlign: 'center', padding: 64, opacity: 0.5 }}>
+                            <Cpu size={48} style={{ marginBottom: '16px' }} />
+                            <p className="label-xs">No deep intelligence available for this specific role.</p>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* TAB: ROADMAP */}
                     {activeTab === 'roadmap' && (
                       <div className="fade-in">
-                         {hasSeeded ? (
-                          <StrategicRoadmap intel={seededIntel} experience={experience} scoreColor={scoreColor} score={result.total} />
+                         {getCareerIntelligence(result.workTypeKey || workTypeKey) ? (
+                          <StrategicRoadmap intel={getCareerIntelligence(result.workTypeKey || workTypeKey)} experience={experience} scoreColor={scoreColor} score={result.total} />
                          ) : (
-                           <div style={{ textAlign: 'center', padding: 32 }}>
-                             <p className="label-xs" style={{ color: 'var(--text-3)' }}>Strategic Roadmap unavailable for this specific sub-role.</p>
+                           <div style={{ textAlign: 'center', padding: 64, opacity: 0.5 }}>
+                             <ShieldCheck size={48} style={{ marginBottom: '16px' }} />
+                             <p className="label-xs">Strategic Roadmap unavailable.</p>
                            </div>
                          )}
                       </div>
                     )}
 
-                    {/* TAB: FORECAST */}
                     {activeTab === 'forecast' && (
                       <div className="fade-in">
-                        <h3 className="label-xs" style={{ marginBottom: '24px' }}>Displacement Trajectory</h3>
+                        <h3 className="label-xs" style={{ marginBottom: '32px' }}>Temporal Displacement Trajectory</h3>
                         {result.riskTrend && result.riskTrend.length > 0 ? (
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', overflowX: 'auto', paddingBottom: 16 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '12px', marginBottom: '40px' }}>
                             {result.riskTrend.map((t: any, i: number) => {
                               const val = t.score ?? t.riskScore ?? 0;
                               const color = getScoreColor(val);
-                              const isNow = i === 0;
                               return (
-                                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 80 }}>
-                                  <div style={{ padding: '16px 12px', background: isNow ? `${color}15` : 'rgba(255,255,255,0.02)', border: `1px solid ${isNow ? color : 'var(--border)'}`, borderRadius: '12px', textAlign: 'center', width: '100%' }}>
-                                    <div style={{ fontWeight: 900, fontSize: '1.25rem', color, fontFamily: 'var(--font-display)' }}>{val}%</div>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginTop: 8 }}>{t.year}</div>
-                                  </div>
-                                </div>
+                                <motion.div 
+                                  key={i}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: i * 0.1 }}
+                                  className="glass-panel" 
+                                  style={{ padding: '20px 12px', textAlign: 'center', borderRadius: '16px' }}
+                                >
+                                  <div style={{ color: 'var(--text-3)', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>{t.year}</div>
+                                  <div style={{ fontWeight: 900, fontSize: '1.5rem', color, fontFamily: 'var(--font-display)' }}>{val}%</div>
+                                </motion.div>
                               );
                             })}
                           </div>
                         ) : (
-                          <div style={{ textAlign: 'center', padding: 32 }}>
-                            <p className="label-xs" style={{ color: 'var(--text-3)' }}>Forecast data generation unavailable.</p>
-                          </div>
+                          <div style={{ textAlign: 'center', padding: 32, opacity: 0.5 }}>NO FORECAST DATA</div>
                         )}
                         <ScoreComparison />
                       </div>
                     )}
-
                   </div>
-                );
-              })()}
-            </div>
-            
-          </div>
-        </div>
+                </div>
+              </div>
+
+
+                {/* Right Panel — Responsive Flex item */}
+                <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  <div className="card-cyan" style={{ padding: '24px', borderRadius: 'var(--radius-lg)' }}>
+                    <h3 className="label-xs" style={{ color: 'var(--cyan)', marginBottom: '16px' }}>Sensor Insights</h3>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', lineHeight: 1.6 }}>
+                      Our sensors indicate high AI volatility in the <strong>{INDUSTRIES.find(i => i.key === (result.industryKey || industryKey))?.cat || 'Strategic'}</strong> sector. Role-specific task automation is projected to increase significantly by Q3 2026.
+                    </p>
+                  </div>
+                  <PortfolioShield />
+                  <RoleRiskComparison currentRoleKey={result.workTypeKey || workTypeKey} currentScore={result.total} />
+                  <DataFreshnessBadge roleKey={result?.workTypeKey || workTypeKey} />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -1,129 +1,330 @@
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
-async function performGemmaOSINT(companyName: string, gemmaKey: string) {
-  // Pass 1: Signal Extraction
-  const extractionPrompt = `Analyze the company: "${companyName}".
-Extract: industry, isPublic, employeeCount, revenueTrend, and recent layoff likelihood.
-Respond ONLY with JSON.`;
+type JsonObject = Record<string, any>;
 
-  const extractResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: extractionPrompt }] }],
-      generationConfig: { responseMimeType: "application/json" }
-    }),
-  });
-  
-  const extractData = await extractResp.json();
-  const signals = JSON.parse(extractData.candidates[0].content.parts[0].text);
+const STALE_HOURS = 24;
 
-  // Pass 2: Market Trend Correlation (Multi-Agent reasoning)
-  const trendPrompt = `You are a Market Trend Analyst.
-Signals for ${companyName}: ${JSON.stringify(signals)}
+const toIsoDate = (value: unknown): string => {
+  try {
+    return new Date(String(value)).toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+};
 
-Correlate these signals with 2026 AI disruption trends for the ${signals.industry} sector.
-Provide:
-1. "displacementRisk": (1-100)
-2. "reasoning": (Detailed multi-agent synthesis)
-3. "marketTrend": (Observed industry shift)
+const normalizeCompanyName = (name: string): string =>
+  name.trim().toLowerCase();
 
-Respond ONLY with JSON.`;
+const extractEmployeeCount = (row: JsonObject): number => {
+  const fromSignals = row.financial_signals?.employee_count;
+  if (typeof fromSignals === "number" && fromSignals > 0) return fromSignals;
 
-  const trendResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: trendPrompt }] }],
-      generationConfig: { responseMimeType: "application/json" }
-    }),
-  });
+  const sizeMap: Record<string, number> = {
+    small: 60,
+    mid: 500,
+    large: 5000,
+    enterprise: 50000,
+  };
+  return sizeMap[String(row.company_size || "").toLowerCase()] || 1000;
+};
 
-  const trendData = await trendResp.json();
-  const analysis = JSON.parse(trendData.candidates[0].content.parts[0].text);
+const normalizeFromCompanyIntel = (row: JsonObject) => {
+  const financial = row.financial_signals || {};
+  const layoffs = row.layoff_history || {};
+  const hiring = row.hiring_signals || {};
 
-  return { ...signals, ...analysis };
-}
+  const lastUpdated = row.last_updated
+    ? toIsoDate(row.last_updated)
+    : new Date().toISOString();
+
+  return {
+    company_name: row.company_name,
+    ticker:
+      financial.ticker || financial.stock_ticker || financial.symbol || null,
+    is_public:
+      row.stage === "public" ||
+      financial.is_public === true ||
+      financial.public === true,
+    industry: row.industry || "Technology",
+    region: financial.region || financial.country_code || "GLOBAL",
+    employee_count: extractEmployeeCount(row),
+    revenue_yoy:
+      typeof financial.revenue_yoy === "number"
+        ? financial.revenue_yoy
+        : typeof financial.revenue_growth_yoy === "number"
+          ? financial.revenue_growth_yoy
+          : null,
+    stock_90d_change:
+      typeof financial.stock_90d_change === "number"
+        ? financial.stock_90d_change
+        : typeof financial.stock_change_90d === "number"
+          ? financial.stock_change_90d
+          : null,
+    annual_revenue:
+      typeof financial.annual_revenue === "number"
+        ? financial.annual_revenue
+        : null,
+    revenue_per_employee:
+      typeof financial.revenue_per_employee === "number"
+        ? financial.revenue_per_employee
+        : null,
+    recent_layoffs: Array.isArray(layoffs.recent_layoffs)
+      ? layoffs.recent_layoffs
+      : [],
+    layoff_rounds:
+      typeof layoffs.layoff_rounds === "number"
+        ? layoffs.layoff_rounds
+        : typeof layoffs.rounds === "number"
+          ? layoffs.rounds
+          : 0,
+    last_layoff_percent:
+      typeof layoffs.last_layoff_percent === "number"
+        ? layoffs.last_layoff_percent
+        : null,
+    recent_layoff_news:
+      layoffs.recent_layoff_news === true ||
+      (Array.isArray(layoffs.recent_layoffs) &&
+        layoffs.recent_layoffs.length > 0),
+    ai_investment_signal:
+      hiring.ai_investment_signal || financial.ai_investment_signal || "medium",
+    last_updated: lastUpdated,
+    source: row.data_source || "company_intelligence",
+  };
+};
+
+const isStale = (isoDate: string): boolean => {
+  const ageMs = Date.now() - new Date(isoDate).getTime();
+  return ageMs > STALE_HOURS * 60 * 60 * 1000;
+};
+
+const tryFetchAlphaVantage90D = async (
+  ticker: string,
+  apiKey: string,
+): Promise<number | null> => {
+  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(ticker)}&outputsize=compact&apikey=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) return null;
+
+  const json = await res.json();
+  const ts = json["Time Series (Daily)"];
+  if (!ts || typeof ts !== "object") return null;
+
+  const dates = Object.keys(ts).sort(
+    (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+  );
+  if (dates.length < 2) return null;
+
+  const latestDate = dates[0];
+  const olderDate = dates[Math.min(89, dates.length - 1)];
+  const latestClose = Number(ts[latestDate]?.["4. close"]);
+  const olderClose = Number(ts[olderDate]?.["4. close"]);
+  if (
+    !Number.isFinite(latestClose) ||
+    !Number.isFinite(olderClose) ||
+    olderClose <= 0
+  )
+    return null;
+
+  return Number((((latestClose - olderClose) / olderClose) * 100).toFixed(2));
+};
+
+const tryFetchLayoffNews = async (
+  companyName: string,
+  apiKey: string,
+): Promise<{
+  hasLayoffNews: boolean;
+  layoffs: Array<{ date: string; percent_cut: number }>;
+}> => {
+  const query = `"${companyName}" AND (layoff OR layoffs OR workforce reduction OR job cuts)`;
+  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&pageSize=5&language=en&apiKey=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) return { hasLayoffNews: false, layoffs: [] };
+
+  const json = await res.json();
+  const articles = Array.isArray(json.articles) ? json.articles : [];
+  if (articles.length === 0) return { hasLayoffNews: false, layoffs: [] };
+
+  return {
+    hasLayoffNews: true,
+    layoffs: articles.slice(0, 3).map((a: any) => ({
+      date: a.publishedAt || new Date().toISOString(),
+      percent_cut: 5,
+    })),
+  };
+};
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      {
+        global: {
+          headers: { Authorization: req.headers.get("Authorization") || "" },
+        },
+      },
     );
 
-    const gemmaKey = Deno.env.get("GEMMA_API_KEY");
-    if (!gemmaKey) throw new Error("Missing GEMMA_API_KEY");
-
-    const { companyName } = await req.json();
+    const body = await req.json();
+    const companyName = String(body.companyName || "").trim();
     if (!companyName) throw new Error("companyName is required");
 
-    const lowerName = companyName.trim().toLowerCase();
+    const normalized = normalizeCompanyName(companyName);
 
-    // 1. Check Cache
-    const { data: cachedData } = await supabaseClient
-      .from('cached_company_intelligence')
-      .select('*')
-      .eq('company_name', lowerName)
-      .single();
+    // Primary source: company_intelligence
+    const { data: intelExact } = await supabaseClient
+      .from("company_intelligence")
+      .select("*")
+      .ilike("company_name", companyName)
+      .maybeSingle();
 
-    const now = new Date();
-    if (cachedData && new Date(cachedData.next_refresh_due) > now) {
-      return new Response(JSON.stringify({
-        data: cachedData,
-        source: 'Cached Intelligence (Gemma 4)',
-        dataQuality: 'HIGH_ACCURACY_AI',
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    let intelRow = intelExact;
+    if (!intelRow) {
+      const { data: intelFuzzy } = await supabaseClient
+        .from("company_intelligence")
+        .select("*")
+        .ilike("company_name", `%${companyName}%`)
+        .limit(1)
+        .maybeSingle();
+      intelRow = intelFuzzy;
     }
 
-    // 2. Perform AI OSINT
-    const freshData = await performGemmaOSINT(lowerName, gemmaKey);
+    let merged = intelRow
+      ? normalizeFromCompanyIntel(intelRow)
+      : {
+          company_name: companyName,
+          ticker: null,
+          is_public: body.isPublic === true,
+          industry: body.industry || "Technology",
+          region: "GLOBAL",
+          employee_count: body.employeeCount || 1000,
+          revenue_yoy: null,
+          stock_90d_change: null,
+          annual_revenue: null,
+          revenue_per_employee: null,
+          recent_layoffs: [],
+          layoff_rounds: 0,
+          last_layoff_percent: null,
+          recent_layoff_news: false,
+          ai_investment_signal: "medium",
+          last_updated: new Date().toISOString(),
+          source: "fallback",
+        };
 
+    const provenance: string[] = [];
+    provenance.push(
+      intelRow ? "supabase.company_intelligence" : "fallback.input_defaults",
+    );
+
+    // optional enrichment when stale or missing critical fields
+    const alphaKey =
+      Deno.env.get("ALPHA_VANTAGE_API_KEY") ||
+      Deno.env.get("ALPHA_VANTAGE_KEY") ||
+      "";
+    const newsKey =
+      Deno.env.get("NEWS_API_KEY") || Deno.env.get("NEWSAPI_KEY") || "";
+
+    const shouldEnrichStock =
+      merged.is_public &&
+      (merged.stock_90d_change === null || isStale(merged.last_updated));
+    if (shouldEnrichStock && alphaKey && merged.ticker) {
+      try {
+        const stock90d = await tryFetchAlphaVantage90D(merged.ticker, alphaKey);
+        if (stock90d !== null) {
+          merged.stock_90d_change = stock90d;
+          merged.last_updated = new Date().toISOString();
+          provenance.push("alpha_vantage.stock_90d_change");
+        }
+      } catch {
+        provenance.push("alpha_vantage.failed");
+      }
+    }
+
+    const shouldEnrichNews =
+      !merged.recent_layoff_news || isStale(merged.last_updated);
+    if (shouldEnrichNews && newsKey) {
+      try {
+        const layoffNews = await tryFetchLayoffNews(
+          merged.company_name,
+          newsKey,
+        );
+        if (layoffNews.hasLayoffNews) {
+          merged.recent_layoff_news = true;
+          merged.recent_layoffs = layoffNews.layoffs;
+          merged.layoff_rounds = Math.max(
+            merged.layoff_rounds || 0,
+            layoffNews.layoffs.length,
+          );
+          merged.last_layoff_percent = merged.last_layoff_percent ?? 5;
+          merged.last_updated = new Date().toISOString();
+          provenance.push("newsapi.layoff_news");
+        }
+      } catch {
+        provenance.push("newsapi.failed");
+      }
+    }
+
+    if (
+      !merged.revenue_per_employee &&
+      merged.annual_revenue &&
+      merged.employee_count
+    ) {
+      merged.revenue_per_employee = Math.round(
+        merged.annual_revenue / merged.employee_count,
+      );
+    }
+
+    // cache normalized payload for fast repeat access
     const nextRefresh = new Date();
-    nextRefresh.setDate(nextRefresh.getDate() + 7); // Cache AI reasoning for 7 days
+    nextRefresh.setHours(nextRefresh.getHours() + STALE_HOURS);
 
-    const dbPayload = {
-      company_name: lowerName,
-      domain: `${lowerName.replace(/\s+/g, '')}.com`,
-      employee_count: freshData.employeeCount,
-      revenue_yoy: freshData.revenueYoy,
-      stock_90d_change: freshData.stock90dChange,
-      recent_layoff_news: freshData.recentLayoffNews,
-      industry: freshData.industry,
-      is_public: freshData.isPublic,
-      last_updated: now.toISOString(),
+    const cachePayload = {
+      company_name: normalized,
+      domain: `${normalized.replace(/\s+/g, "")}.com`,
+      employee_count: merged.employee_count,
+      revenue_yoy: merged.revenue_yoy,
+      stock_90d_change: merged.stock_90d_change,
+      recent_layoff_news: merged.recent_layoff_news,
+      industry: merged.industry,
+      is_public: merged.is_public,
+      last_updated: merged.last_updated,
       next_refresh_due: nextRefresh.toISOString(),
     };
 
-    // Upsert
-    const { data: upsertData } = await supabaseClient
-      .from('cached_company_intelligence')
-      .upsert(dbPayload, { onConflict: 'company_name' })
-      .select()
-      .single();
+    await supabaseClient
+      .from("cached_company_intelligence")
+      .upsert(cachePayload, { onConflict: "company_name" });
 
-    return new Response(JSON.stringify({
-      data: upsertData || dbPayload,
-      source: 'Gemma 4 Synthetic OSINT',
-      dataQuality: 'HIGH_ACCURACY_AI',
-      reasoning: freshData.reasoning,
-      displacementRisk: freshData.displacementRisk
-    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const stale = isStale(merged.last_updated);
 
+    return new Response(
+      JSON.stringify({
+        data: merged,
+        source: provenance.join(" | "),
+        provenance,
+        dataQuality: stale ? "PARTIAL_STALE" : "LIVE_OR_REFRESHED",
+        dataFreshness: {
+          lastUpdated: merged.last_updated,
+          stale,
+          staleThresholdHours: STALE_HOURS,
+        },
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (error: any) {
     return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
   }

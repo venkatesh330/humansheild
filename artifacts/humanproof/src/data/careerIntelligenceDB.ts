@@ -3,13 +3,14 @@ import {
   getCareerIntelligence as getModularIntelligence,
   hasSeededData as hasModularSeeded,
   getSeededRoleKeys as getModularKeys
-} from './intelligence';
+} from './intelligence/index';
 import { 
   CareerIntelligence, 
   TrendPoint, 
   CareerPath, 
   ExperienceRoadmap 
 } from './intelligence/types';
+
 
 /**
  * @legacy CAREER_INTELLIGENCE_DB

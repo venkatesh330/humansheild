@@ -62,6 +62,7 @@ export const aggregateEnsembleResults = ({
   llamaResult,
   geminiResult,
   engineScore,
+  engineConfidence,
   swarmScore,
 }: {
   gemmaResult: GemmaResult;
@@ -69,6 +70,7 @@ export const aggregateEnsembleResults = ({
   llamaResult: LlamaResult;
   geminiResult: GeminiResult | null;
   engineScore: number;
+  engineConfidence: number;
   swarmScore?: number;    // [SWARM] Optional swarm risk score (0–100)
 }): AggregateResult => {
   const scores: IndividualScore[] = [];
@@ -155,6 +157,15 @@ export const aggregateEnsembleResults = ({
     finalScore      = Math.round(consensusScore * 0.70 + g.finalScore * 0.30);
     finalConfidence = Math.min(98, Math.round((agreementPercent * 0.6) + (g.confidencePercent * 0.4)));
   }
+
+  // ── [PHASE 3 FIX] Cap LLM confidence inflation against data reality ─────────
+  // If the underlying deterministic engine states confidence is low (e.g. 35% due to 
+  // missing live signals or unknown company), the LLMs cannot magically have "90%" 
+  // confidence. They are guessing confidently on missing data. We strictly bound it.
+  const maxAllowedConfidence = engineConfidence + 15; // LLMs can add max +15 pts confidence via consensus
+  finalConfidence = Math.min(finalConfidence, maxAllowedConfidence);
+
+
 
   // ── [SWARM] Blend swarm score into final (configurable weight, default 15%) ──
   if (swarmScore !== undefined && swarmScore >= 0 && swarmScore <= 100) {

@@ -170,7 +170,7 @@ export default function DailyChallenge({ onNavigateJournal }: DailyChallengeProp
     <div style={{
       position: 'fixed',
       bottom: 90,
-      right: 24,
+      left: 24,
       zIndex: 998,
       background: 'var(--bg2, #111827)',
       border: `1px solid ${dimColor}40`,

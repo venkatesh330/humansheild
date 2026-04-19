@@ -8,21 +8,20 @@ import {
 } from "react";
 import type { ReactNode, ErrorInfo } from "react";
 
+import { useHumanProof } from "../context/HumanProofContext";
 import SkillRiskCalculator from "../components/SkillRiskCalculator";
 import HumanIrreplacibilityIndex from "../components/HumanIrreplacibilityIndex";
-import UpskillingRoadmap from "../components/UpskillingRoadmap";
-import HumanEdgeJournal from "../components/HumanEdgeJournal";
 import ScoreDriftTracker, {
   ScoreDriftBanner,
   PlotScoreInversionBanner,
 } from "../components/ScoreDriftTracker";
-import DisplacementForecast from "../components/DisplacementForecast";
-
+import { LayoffCalculator } from "../components/LayoffCalculator/LayoffCalculator";
+import UpskillingRoadmap from "../components/UpskillingRoadmap";
+import HumanEdgeJournal from "../components/HumanEdgeJournal";
 import ResilienceBadge from "../components/ResilienceBadge";
 import DailyChallenge from "../components/DailyChallenge";
-import { LayoffCalculator } from "../components/LayoffCalculator/LayoffCalculator";
-import { DataFreshnessBadge } from "../components/DataFreshnessBadge";
-import { useHumanProof } from "../context/HumanProofContext";
+import DisplacementForecast from "../components/DisplacementForecast";
+import RiskCalculatorsView from "../components/RiskCalculatorsView";
 import {
   getScoreHistory,
   getEverCompletedFlags,
@@ -36,7 +35,6 @@ import {
   generateAssessmentSnapshot,
   generateShareableLink,
 } from "../utils/assessmentExport";
-import RiskCalculatorsView from "../components/RiskCalculatorsView";
 
 class TabErrorBoundary extends Component<
   { tabId: string; children: ReactNode },
@@ -105,7 +103,6 @@ export default function ToolsPage() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
 
-
   useEffect(() => {
     const isStale = () => {
       const history = getScoreHistory();
@@ -129,8 +126,6 @@ export default function ToolsPage() {
   useEffect(() => {
     if (hasLegacyVersionEntries()) setShowLegacyVersionBanner(true);
   }, []);
-
-
 
   const switchTab = useCallback(
     (tabId: string) => {
@@ -345,8 +340,6 @@ export default function ToolsPage() {
       </div>
 
       <DailyChallenge onNavigateJournal={() => switchTab("edge-log")} />
-
-
 
       {toastMsg && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[10000] px-6 py-3 bg-white text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-full shadow-2xl">

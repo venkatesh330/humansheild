@@ -33,10 +33,11 @@ interface HumanProofState {
   quizAnswers: Record<number, number>;
   initialWorkTypeKey: string | null;
   initialIndustryKey: string | null;
+  companyName: string | null;
 }
 
 type Action =
-  | { type: 'SET_JOB_RISK'; score: number; title: string; industry?: string }
+  | { type: 'SET_JOB_RISK'; score: number; title: string; industry?: string; companyName?: string }
   | { type: 'SET_SKILL_RISK'; score: number; skills: SkillEntry[]; breakdown: SkillEntry[] }
   | { type: 'SET_HUMAN_SCORE'; score: number; dimensions: Record<string, number>; justification?: string }
   | { type: 'SET_USER_NAME'; name: string }
@@ -71,6 +72,7 @@ const defaultState: HumanProofState = {
   quizAnswers: {},
   initialWorkTypeKey: null,
   initialIndustryKey: null,
+  companyName: null,
 };
 
 function reducer(state: HumanProofState, action: Action): HumanProofState {
@@ -84,6 +86,7 @@ function reducer(state: HumanProofState, action: Action): HumanProofState {
         jobRiskScore: action.score,
         jobTitle: action.title,
         industry: action.industry ?? state.industry,
+        companyName: action.companyName ?? state.companyName,
         lastUpdated: new Date().toISOString(),
         assessmentTimestamp: Date.now(),
       };
@@ -259,6 +262,7 @@ export function HumanProofProvider({ children }: { children: ReactNode }) {
       score: data.score,
       title: data.workType,
       industry: data.industry,
+      companyName: data.details?.companyName || null,
     });
     // Best-effort API persist (silently ignored if not authenticated)
     try {

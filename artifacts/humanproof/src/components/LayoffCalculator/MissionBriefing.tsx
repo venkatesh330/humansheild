@@ -12,6 +12,8 @@ interface MissionObjective {
   deadline: string;
   successCriteria: string;
   sourceAgents?: string[];
+  /** Estimated risk-score reduction if this action is completed */
+  riskReductionPct?: number;
 }
 
 interface Props {
@@ -129,14 +131,16 @@ export const MissionBriefing: React.FC<Props> = ({ objectives }) => {
                 background: isCritical
                   ? `${color}08`
                   : "rgba(255,255,255,0.02)",
-                border: `1px solid ${color}30`,
+                border: `1px solid ${color}${isCritical ? '50' : '30'}`,
+                borderLeft: isCritical ? `3px solid ${color}` : undefined,
                 borderRadius: "8px",
                 padding: "16px",
                 position: "relative",
                 overflow: "hidden",
+                boxShadow: isCritical ? `0 0 18px ${color}10` : undefined,
               }}
             >
-              {/* Priority Stamp */}
+              {/* Priority stamp — top-right */}
               <div
                 style={{
                   position: "absolute",
@@ -154,6 +158,28 @@ export const MissionBriefing: React.FC<Props> = ({ objectives }) => {
               >
                 {getPriorityStamp(obj.priority)}
               </div>
+
+              {/* Risk reduction badge — bottom-right, only when actionable */}
+              {typeof obj.riskReductionPct === 'number' && obj.riskReductionPct > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "10px",
+                    right: "12px",
+                    background: "rgba(16,185,129,0.12)",
+                    border: "1px solid rgba(16,185,129,0.30)",
+                    borderRadius: "6px",
+                    padding: "2px 9px",
+                    fontSize: "0.62rem",
+                    color: "#10b981",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontWeight: 700,
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  ↓ −{obj.riskReductionPct}pt risk
+                </div>
+              )}
 
               {/* Mission ID */}
               <div
@@ -266,37 +292,41 @@ export const recommendationsToMissions = (
     description: string;
     priority: string;
     layerFocus: string;
+    riskReductionPct?: number;
+    deadline?: string;
   }[],
 ): MissionObjective[] => {
-  const deadlineMap: Record<string, string> = {
-    High: "7 days",
-    Medium: "30 days",
-    Low: "90 days",
+  const priorityMap: Record<string, MissionObjective['priority']> = {
+    Critical: "CRITICAL",
+    High:     "HIGH",
+    Medium:   "MEDIUM",
+    Low:      "LOW",
   };
 
   const successMap: Record<string, string> = {
-    High: "Complete CV update and submit 5+ applications",
-    Medium: "Complete certification or upskill course",
-    Low: "Implement suggested improvements",
+    CRITICAL: "Activate job search: 3 applications + network outreach sent",
+    HIGH:     "Resume updated and submitted to 2+ external roles",
+    MEDIUM:   "Complete upskill course or stakeholder meeting confirmed",
+    LOW:      "Quarterly skill review scheduled",
   };
 
-  return recommendations.map((rec, idx) => ({
-    id: rec.id || `mission-${idx}`,
-    priority: (rec.priority === "High"
-      ? "HIGH"
-      : rec.priority === "Medium"
-        ? "MEDIUM"
-        : "LOW") as any,
-    title: rec.title,
-    briefing: rec.description,
-    deadline: deadlineMap[rec.priority] || "30 days",
-    successCriteria: successMap[rec.priority] || "Complete objective",
-    sourceAgents: [
-      rec.layerFocus
-        ? `${rec.layerFocus.substring(0, 5).toUpperCase()}-1`
-        : "AGENT-1",
-    ],
-  }));
+  return recommendations.map((rec, idx) => {
+    const mappedPriority = priorityMap[rec.priority] || "MEDIUM";
+    return {
+      id:              rec.id || `mission-${idx}`,
+      priority:        mappedPriority,
+      title:           rec.title,
+      briefing:        rec.description,
+      deadline:        rec.deadline || (mappedPriority === 'CRITICAL' ? '7 days' : mappedPriority === 'HIGH' ? '14 days' : mappedPriority === 'MEDIUM' ? '30 days' : '90 days'),
+      successCriteria: successMap[mappedPriority] || "Complete objective",
+      riskReductionPct: rec.riskReductionPct ?? undefined,
+      sourceAgents:    [
+        rec.layerFocus
+          ? `${rec.layerFocus.substring(0, 12).toUpperCase()}-LAYER`
+          : "ENGINE-5L",
+      ],
+    };
+  });
 };
 
 export default MissionBriefing;

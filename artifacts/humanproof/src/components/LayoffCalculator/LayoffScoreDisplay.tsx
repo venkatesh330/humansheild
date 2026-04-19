@@ -14,6 +14,7 @@ import { OracleInsightsPanel } from "./OracleInsightsPanel";
 import { CareerIntelligence } from "../../data/intelligence/types";
 import { ScoreConfidenceInterval } from "./ScoreConfidenceInterval";
 import { WhatIfSkillSimulator } from "./WhatIfSkillSimulator";
+import { KeyRiskDriversPanel } from "./KeyRiskDriversPanel";
 
 interface Props {
   result: ScoreResult | EnsembleResult;
@@ -1235,15 +1236,27 @@ export const LayoffScoreDisplay: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* ── KEY RISK DRIVERS PANEL — FACT/INFERENCE/PREDICTION breakdown ── */}
+      <KeyRiskDriversPanel
+        breakdown={breakdown}
+        roleTitle={roleTitle}
+        companyName={companyName}
+        dataQuality={dataQuality}
+        dominantRisk={ensembleData?.dominantRisk}
+        hasOutlier={ensembleData?.hasOutlier ?? false}
+        outlierModels={ensembleData?.outlierModels ?? []}
+        verificationNote={ensembleData?.geminiSynthesis?.verificationNote ?? null}
+      />
+
       <div style={{ marginBottom: "32px" }}>
         <h3 style={{ color: "#fff", marginBottom: "24px" }}>
-          What's driving your score
+          5-Layer Score Breakdown
         </h3>
         <LayerBar label="Company health" value={breakdown.L1} weight="30%" />
         <LayerBar label="Layoff history" value={breakdown.L2} weight="25%" />
-        <LayerBar label="Role exposure" value={breakdown.L3} weight="25%" />
-        <LayerBar label="Market conditions" value={breakdown.L4} weight="5%" />
-        <LayerBar label="Your profile" value={breakdown.L5} weight="15%" />
+        <LayerBar label="Role exposure" value={breakdown.L3} weight="20%" />
+        <LayerBar label="Market conditions" value={breakdown.L4} weight="12%" />
+        <LayerBar label="Your profile" value={breakdown.L5} weight="13%" />
       </div>
 
       {/* ── CONTROL SPLIT PANEL — Behavioural psychology: focus on what's changeable ── */}

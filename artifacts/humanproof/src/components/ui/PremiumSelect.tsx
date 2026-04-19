@@ -36,32 +36,36 @@ const PremiumSelect = ({
   const selectedOption = options.find((opt) => opt.key === value);
 
   return (
-    <div className={cn("input-wrap", className)}>
-      {label && <label className="input-label">{label}</label>}
+    <div className={cn("flex flex-col gap-[var(--space-2)]", className)}>
+      {label && <label className="label-xs text-muted-foreground font-black uppercase tracking-widest">{label}</label>}
       <SelectPrimitive.Root value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectPrimitive.Trigger className="select-trigger">
-          <div className="flex items-center gap-3 overflow-hidden">
-            {selectedOption?.icon && (
-              <span className="select-item-icon shrink-0">
-                {selectedOption.icon}
-              </span>
-            )}
-            <div className="truncate">
-              <SelectPrimitive.Value placeholder={placeholder} />
+        <motion.div
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.98 }}
+          className="w-full"
+        >
+          <SelectPrimitive.Trigger className="select-trigger group">
+            <div className="flex items-center gap-[var(--space-3)] overflow-hidden">
+              {selectedOption?.icon && (
+                <span className="select-item-icon shrink-0 text-lg flex items-center justify-center">
+                  {selectedOption.icon}
+                </span>
+              )}
+              <div className="truncate font-bold tracking-tight">
+                <SelectPrimitive.Value placeholder={placeholder} />
+              </div>
             </div>
-          </div>
-          <SelectPrimitive.Icon className="shrink-0">
-            <ChevronDown className="w-4 h-4 opacity-50" />
-          </SelectPrimitive.Icon>
-        </SelectPrimitive.Trigger>
+            <SelectPrimitive.Icon className="shrink-0 transition-transform group-data-[state=open]:rotate-180">
+              <ChevronDown className="w-4 h-4 opacity-50 font-black" />
+            </SelectPrimitive.Icon>
+          </SelectPrimitive.Trigger>
+        </motion.div>
 
         <SelectPrimitive.Portal>
           <SelectPrimitive.Content 
             className="select-content" 
             position="popper" 
-            sideOffset={5}
-            // Ensure the content doesn't overflow the viewport
-            style={{ maxHeight: 'var(--radix-select-content-available-height)' }}
+            sideOffset={8}
           >
             <SelectPrimitive.ScrollUpButton className="select-scroll-btn">
               <ChevronUp className="w-4 h-4" />
@@ -71,11 +75,11 @@ const PremiumSelect = ({
               {groups ? (
                 Object.entries(groups).map(([groupName, groupOptions]) => (
                   <SelectPrimitive.Group key={groupName}>
-                    <SelectPrimitive.Label className="select-group-label">{groupName}</SelectPrimitive.Label>
+                    <SelectPrimitive.Label className="px-[var(--space-4)] py-[var(--space-2)] text-[10px] font-black uppercase text-white/20 tracking-[0.2em]">{groupName}</SelectPrimitive.Label>
                     {groupOptions.map((opt) => (
                       <SelectItem key={opt.key} value={opt.key} option={opt} />
                     ))}
-                    <SelectPrimitive.Separator className="select-separator" />
+                    <SelectPrimitive.Separator className="h-px bg-white/5 my-[var(--space-2)]" />
                   </SelectPrimitive.Group>
                 ))
               ) : (

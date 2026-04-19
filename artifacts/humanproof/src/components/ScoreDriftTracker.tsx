@@ -102,7 +102,7 @@ export function ScoreDriftBanner({ onDismiss }: { onDismiss: () => void }) {
           >
             {Math.abs(drift.change)} points
           </strong>{" "}
-          since {new Date(drift.previousDate).toLocaleDateString()}.
+          since {formatDate(drift.previousTimestamp)}.
           {increased && " Review the progress tab for next steps."}
         </span>
       </div>
@@ -458,7 +458,7 @@ export default function ScoreDriftTracker() {
             </div>
             <div>
               <div style={{ fontSize: "0.875rem", color: "var(--text)" }}>
-                Since {new Date(drift.previousDate).toLocaleDateString()}
+                Since {formatDate(drift.previousTimestamp)}
               </div>
               <div style={{ fontSize: "0.8rem", color: "var(--text2)" }}>
                 {prevEntry && currEntry

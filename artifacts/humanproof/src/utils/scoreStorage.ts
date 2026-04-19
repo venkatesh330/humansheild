@@ -133,6 +133,7 @@ export interface DriftResult {
   change: number;
   direction: "up" | "down";
   previousDate: string;
+  previousTimestamp: number;
   latest: number;
   previous: number;
   source: string;
@@ -163,6 +164,7 @@ export const getScoreDrift = (): DriftResult | null => {
     change,
     direction: latest.plotScore > previous.plotScore ? "up" : "down",
     previousDate: new Date(previous.timestamp).toLocaleDateString(),
+    previousTimestamp: previous.timestamp,
     latest: latest.score,
     previous: previous.score,
     source: latest.source,

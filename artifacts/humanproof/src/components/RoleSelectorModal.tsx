@@ -2,10 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Shield, Cpu, Activity, ArrowRight, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import * as Dialog from '@radix-ui/react-dialog';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { MASTER_CAREER_INTELLIGENCE } from '../data/intelligence';
 import { useHumanProof } from '../context/HumanProofContext';
 import { WORK_TYPES } from '../data/catalogData';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 
 interface RoleSelectorModalProps {
   isOpen: boolean;
@@ -27,12 +31,6 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
   }).slice(0, 8);
 
   const startAnalysis = (role: any) => {
-    // Sync with context so CalculatorPage can pre-fill
-    // We need to find the correct keys. In this data structure, 
-    // we might need to find which category the role belongs to.
-    // For now we will pass a best-guess or just the role name.
-    
-    // Find the career key and industry key from MASTER_CAREER_INTELLIGENCE
     let foundWorkTypeKey = '';
     let foundIndustryKey = '';
     
@@ -40,7 +38,6 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
       if (value.displayRole === role.displayRole) {
         foundWorkTypeKey = key;
         
-        // Find parent industry from WORK_TYPES
         for (const [iKey, types] of Object.entries(WORK_TYPES)) {
           if (types.some(t => t.key === key)) {
             foundIndustryKey = iKey;
@@ -48,7 +45,6 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
           }
         }
         
-        // Fallback for default/generic roles
         if (!foundIndustryKey) foundIndustryKey = 'it_software'; 
         break;
       }
@@ -98,169 +94,117 @@ export function RoleSelectorModal({ isOpen, onClose }: RoleSelectorModalProps) {
       setCurrentStep(steps[0]);
       return () => clearInterval(interval);
     }
-  }, [isAnalyzing, onClose]);
+  }, [isAnalyzing, onClose, dispatch, navigate]);
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="overlay-bg" style={{ zIndex: 1100 }} />
-        <Dialog.Content 
-          className="card" 
-          style={{ 
-            position: 'fixed', 
-            top: '50%', 
-            left: '50%', 
-            transform: 'translate(-50%, -50%)',
-            width: '90vw',
-            maxWidth: '600px',
-            zIndex: 1200,
-            padding: 0,
-            border: '1px solid var(--border-cyan)',
-            boxShadow: '0 0 50px rgba(0, 240, 255, 0.15)',
-            background: 'var(--bg-overlay)',
-          }}
+    <DialogPrimitive.Root open={isOpen} onOpenChange={onClose}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1100]" />
+        <DialogPrimitive.Content 
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-var(--space-8))] max-w-[600px] z-[1200] outline-none"
         >
-          <AnimatePresence mode="wait">
-            {!isAnalyzing ? (
-              <motion.div
-                key="search"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                style={{ padding: '32px' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <div>
-                    <h2 className="display-3" style={{ fontSize: '1.75rem', marginBottom: '8px' }}>Risk Oracle</h2>
-                    <p style={{ color: 'var(--text-3)', fontSize: '0.875rem' }}>Select your role to begin high-fidelity auditing.</p>
-                  </div>
-                  <button onClick={onClose} className="theme-toggle">
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div className="input-prefix-wrap" style={{ marginBottom: '24px' }}>
-                  <Search className="input-prefix-icon" size={18} />
-                  <input 
-                    type="text" 
-                    className="input" 
-                    placeholder="Search thousands of professionally verified roles..." 
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {filteredRoles.map((role) => (
-                    <button
-                      key={role.displayRole}
-                      className="btn btn-secondary"
-                      onClick={() => startAnalysis(role)}
-                      style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center',
-                        padding: '14px 20px',
-                        textAlign: 'left',
-                        width: '100%',
-                        borderRadius: '12px',
-                        fontSize: '0.9rem',
-                        fontWeight: 600,
-                      }}
-                    >
-                      <span>{role.displayRole}</span>
-                      <ArrowRight size={14} style={{ opacity: 0.5 }} />
-                    </button>
-                  ))}
-                  {filteredRoles.length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-3)' }}>
-                      No roles found. Try a different industry.
+          <Card className="p-0 border-[var(--border-cyan)] shadow-[0_0_50px_rgba(0,240,255,0.15)] bg-black/90 backdrop-blur-xl overflow-hidden rounded-[var(--radius-2xl)]">
+            <AnimatePresence mode="wait">
+              {!isAnalyzing ? (
+                <motion.div
+                  key="search"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="p-[var(--space-6)]"
+                >
+                  <div className="flex justify-between items-start mb-[var(--space-8)]">
+                    <div>
+                      <h2 className="display-3 mb-[var(--space-2)]">Risk Oracle</h2>
+                      <p className="body text-muted-foreground">Select your role to begin high-fidelity auditing.</p>
                     </div>
-                  )}
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="analyzing"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                style={{ 
-                  padding: '64px 32px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  textAlign: 'center'
-                }}
-              >
-                <div style={{ position: 'relative', marginBottom: '40px' }}>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-                    style={{
-                      width: '120px',
-                      height: '120px',
-                      borderRadius: '50%',
-                      border: '2px solid var(--cyan-dim)',
-                      borderTopColor: 'var(--cyan)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Shield size={48} className="text-cyan-400" style={{ color: 'var(--cyan)' }} />
-                  </motion.div>
-                  <motion.div
-                    animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.3, 0.1] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    style={{
-                      position: 'absolute',
-                      inset: -20,
-                      borderRadius: '50%',
-                      background: 'radial-gradient(circle, var(--cyan) 0%, transparent 70%)',
-                      zIndex: -1
-                    }}
-                  />
-                </div>
+                    <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
+                      <X size={18} />
+                    </Button>
+                  </div>
 
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '12px', letterSpacing: '0.05em' }}>
-                  ANALYZING WITH FRONTIER AI...
-                </h2>
-                
-                <div style={{ width: '100%', maxWidth: '300px', marginBottom: '24px' }}>
-                  <div className="gauge-track" style={{ background: 'rgba(255,255,255,0.03)', height: '4px' }}>
-                    <motion.div 
-                      className="gauge-fill" 
-                      style={{ 
-                        width: `${progress}%`, 
-                        background: 'linear-gradient(90deg, var(--violet), var(--cyan))',
-                        boxShadow: '0 0 10px var(--cyan)',
-                      }} 
+                  <div className="relative mb-[var(--space-8)]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                    <Input 
+                      className="pl-10 h-12 text-lg" 
+                      placeholder="Search thousands of verified roles..." 
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      autoFocus
                     />
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px' }}>
-                    <span className="label-xs" style={{ color: 'var(--cyan)' }}>{progress}%</span>
-                    <span className="label-xs">{currentStep}</span>
-                  </div>
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', width: '100%' }}>
-                  {[
-                    { icon: Cpu, label: 'Neural Synapse' },
-                    { icon: Activity, label: 'Risk Calibration' },
-                    { icon: Shield, label: 'Safety Protocol' }
-                  ].map((item, i) => (
-                    <div key={i} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-                      <item.icon size={16} style={{ margin: '0 auto 8px', color: i === 0 ? 'var(--cyan)' : i === 1 ? 'var(--violet)' : 'var(--emerald)' }} />
-                      <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', opacity: 0.6 }}>{item.label}</div>
+                  <div className="flex flex-col gap-[var(--space-2)] max-h-[320px] overflow-y-auto pr-[var(--space-2)] custom-scrollbar">
+                    {filteredRoles.map((role) => (
+                      <Button
+                        key={role.displayRole}
+                        variant="secondary"
+                        onClick={() => startAnalysis(role)}
+                        className="w-full justify-between h-auto py-[var(--space-4)] px-[var(--space-5)] text-left group"
+                      >
+                        <span className="font-bold">{role.displayRole}</span>
+                        <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 transition-all group-hover:translate-x-1" />
+                      </Button>
+                    ))}
+                    {filteredRoles.length === 0 && (
+                      <div className="text-center py-[var(--space-12)] text-muted-foreground opacity-60">
+                        No roles found. Try a different term.
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="analyzing"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="p-[var(--space-12)] md:p-[var(--space-16)] flex flex-col items-center text-center"
+                >
+                  <div className="relative mb-[var(--space-10)]">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                      className="w-[120px] h-[120px] rounded-full border-2 border-[var(--cyan)]/20 border-t-[var(--cyan)] flex items-center justify-center"
+                    >
+                      <Shield size={48} className="text-[var(--cyan)]" />
+                    </motion.div>
+                    <motion.div
+                      animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.3, 0.1] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="absolute inset-[-20px] rounded-full bg-radial-gradient from-[var(--cyan)]/20 to-transparent -z-10"
+                    />
+                  </div>
+
+                  <h2 className="h2 mb-[var(--space-6)] tracking-widest uppercase text-white">
+                    ANALYZING WITH FRONTIER AI...
+                  </h2>
+                  
+                  <div className="w-full max-w-[300px] mb-[var(--space-10)]">
+                    <Progress value={progress} className="h-1" />
+                    <div className="flex justify-between mt-[var(--space-4)]">
+                      <span className="label-xs text-[var(--cyan)] font-black">{progress}%</span>
+                      <span className="label-xs opacity-60 font-bold">{currentStep}</span>
                     </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-[var(--space-4)] w-full">
+                    {[
+                      { icon: Cpu, label: 'Neural Synapse', color: 'text-[var(--cyan)]' },
+                      { icon: Activity, label: 'Risk Calibration', color: 'text-purple-500' },
+                      { icon: Shield, label: 'Safety Protocol', color: 'text-[var(--emerald)]' }
+                    ].map((item, i) => (
+                      <Card key={i} className="p-[var(--space-4)] bg-white/3 border-white/5 flex flex-col items-center gap-[var(--space-2)]">
+                        <item.icon size={16} className={item.color} />
+                        <div className="text-[10px] font-black uppercase text-white/40 tracking-tighter">{item.label}</div>
+                      </Card>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Card>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

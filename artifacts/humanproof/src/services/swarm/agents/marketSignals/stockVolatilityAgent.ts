@@ -38,29 +38,37 @@ const run = async (input: SwarmInput): Promise<AgentSignal> => {
 
   // ── Live API path ──────────────────────────────────────────────────────────
   if (apiKey && input.companyData.isPublic) {
-    try {
-      const ticker = input.companyData.stockTicker ?? input.companyData.ticker ?? input.companyName.toUpperCase().slice(0, 4);
-      const url    = `${ALPHA_BASE}?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=compact&apikey=${apiKey}`;
-      const res    = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      const json   = await res.json();
-      const series = json['Time Series (Daily)'];
-      if (series) {
-        const closes = Object.values(series)
-          .slice(0, 90)
-          .map((d: any) => parseFloat(d['4. close']));
-        const signal = calcVolatilityFromPrices(closes);
-        return {
-          agentId:    'stockVolatilityAgent',
-          category:   'market',
-          signal,
-          confidence: 0.87,
-          sourceType: 'live-api',
-          ageInDays:  0,
-          metadata:   { ticker, dataPoints: closes.length, source: 'AlphaVantage' },
-        };
+    // Phase 2 fix: use real ticker from DB (set by bridge) — never guess from company name
+    const ticker = input.companyData.stockTicker
+      ?? input.companyData.ticker
+      ?? null;  // do NOT fall back to name.slice(0,4) — produces wrong tickers (Apple→'APPL' not 'AAPL')
+
+    if (ticker) {
+      try {
+        const url = `${ALPHA_BASE}?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=compact&apikey=${apiKey}`;
+        const res  = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+        const json = await res.json();
+        const series = json['Time Series (Daily)'];
+        if (series) {
+          const closes = Object.values(series)
+            .slice(0, 90)
+            .map((d: any) => parseFloat(d['4. close']));
+          const signal = calcVolatilityFromPrices(closes);
+          return {
+            agentId:    'stockVolatilityAgent',
+            category:   'market',
+            signal,
+            confidence: 0.87,
+            sourceType: 'live-api',
+            ageInDays:  0,
+            metadata:   { ticker, dataPoints: closes.length, source: 'AlphaVantage' },
+          };
+        }
+      } catch (e: any) {
+        console.warn('[stockVolatilityAgent] API failed, falling back to heuristic:', e.message);
       }
-    } catch (e: any) {
-      console.warn('[stockVolatilityAgent] API failed, falling back to heuristic:', e.message);
+    } else {
+      console.info('[stockVolatilityAgent] No ticker available for', input.companyName, '— heuristic only');
     }
   }
 

@@ -1,0 +1,365 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// companyIntelligenceBridge.ts — Schema Bridge v1.0
+//
+// Converts CompanyProfile (companyIntelligenceDB.ts extended schema)
+// → CompanyData (companyDatabase.ts legacy engine schema)
+//
+// This bridge is the single integration point between the new Phase 1
+// Company Intelligence Dataset and the existing layoffScoreEngine / L1–L5
+// scoring pipeline. No engine refactoring required.
+//
+// Usage:
+//   import { resolveCompanyData } from './companyIntelligenceBridge';
+//   const cd = resolveCompanyData('oracle');   // → CompanyData ready for engine
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import {
+  CompanyProfile,
+  COMPANY_INTELLIGENCE_DB,
+  resolveCompanyProfile,
+} from './companyIntelligenceDB';
+
+import { CompanyData, companyDatabase, getCompanyByName } from './companyDatabase';
+
+// ── Revenue Trend → YoY Growth Estimate ──────────────────────────────────────
+// Maps qualitative trend to a numeric estimate used by mapRevenueGrowth()
+const REVENUE_TREND_TO_YOY: Record<CompanyProfile['financialSignals']['revenueTrend'], number> = {
+  growing:  18,    // mid-high growth proxy
+  stable:    5,    // flat-to-modest growth
+  declining: -8,   // moderate contraction
+};
+
+// ── Burn Rate → Revenue Per Employee Proxy ───────────────────────────────────
+// layoffScoreEngine uses revenuePerEmployee to detect overstaffing.
+// We reverse-engineer a plausible figure from burn rate + company size signals.
+const BURN_RATE_TO_REV_PER_EMP: Record<
+  CompanyProfile['financialSignals']['burnRateEstimate'], number
+> = {
+  low:       550000,  // healthy — well above overstaffing threshold
+  moderate:  280000,  // borderline — triggers mild overstaffing signal
+  high:      120000,  // elevated — triggers strong overstaffing signal
+  very_high:  60000,  // critical — max overstaffing pressure
+};
+
+// ── Company Size → Employee Count Proxy ──────────────────────────────────────
+const SIZE_TO_EMPLOYEE_COUNT: Record<CompanyProfile['companySize'], number> = {
+  small:      30,
+  mid:       200,
+  large:    3000,
+  enterprise: 50000,
+};
+
+// ── Hiring Freeze Score → Stock 90-Day Change Proxy ──────────────────────────
+// Converts the 0–1 freeze signal to a ±% stock delta that the engine understands
+const freezeScoreToStockProxy = (freeze: number, trend: string): number => {
+  // Growing companies always get a positive stock signal regardless of freeze
+  if (trend === 'growing' && freeze < 0.4) return 15;
+  if (trend === 'growing') return 5;
+  if (trend === 'declining') return -15 - freeze * 20;  // declining + high freeze → deep red
+  // Stable: neutral to slightly negative depending on freeze
+  return Math.round(-freeze * 18);
+};
+
+// ── Layoff Frequency → Round Count Proxy ─────────────────────────────────────
+const FREQ_TO_ROUNDS: Record<CompanyProfile['layoffHistory']['layoffFrequency'], number> = {
+  none:     0,
+  rare:     1,
+  moderate: 2,
+  frequent: 3,
+};
+
+// ── Funding Stage → Engine-compatible fundingRound string ────────────────────
+const FUNDING_STAGE_TO_ROUND: Record<
+  CompanyProfile['financialSignals']['fundingStage'], string | undefined
+> = {
+  bootstrapped: 'bootstrapped',
+  series_a:     'Series A',
+  series_b:     'Series B',
+  series_c:     'Series C',
+  series_d:     'Series D',
+  pre_ipo:      'Pre-IPO',
+  public:       undefined,    // public companies don't use fundingRound field
+};
+
+// ── Region inference from industry / company name ────────────────────────────
+// CompanyProfile doesn't carry region directly; we infer from known company HQs.
+// This covers the 50 Phase-1 companies. Unknown → 'US' default (safe fallback).
+const COMPANY_KEY_TO_REGION: Record<string, CompanyData['region']> = {
+  apple:              'US', google:             'US', microsoft:          'US',
+  amazon:             'US', meta:               'US', openai:             'US',
+  anthropic:          'US', nvidia:             'US', salesforce:         'US',
+  sap:                'EU', servicenow:         'US', workday:            'US',
+  hubspot:            'US', zendesk:            'US', oracle:             'US',
+  snowflake:          'US', databricks:         'US', stripe:             'US',
+  coinbase:           'US', robinhood:          'US', twitter_x:          'US',
+  lyft:               'US', peloton:            'US', shopify:            'US',
+  notion:             'US', figma:              'US', vercel:             'US',
+  slack:              'US', zoom:               'US', tcs:                'IN',
+  infosys:            'IN', wipro:              'IN', netflix:            'US',
+  spotify:            'EU', airbnb:             'US', uber:               'US',
+  palantir:           'US', datadog:            'US', ibm:                'US',
+  intel:              'US', github:             'US', crowdstrike:        'US',
+  palo_alto_networks: 'US', tesla:              'US', accenture:          'GLOBAL',
+  mckinsey:           'GLOBAL', cohere:         'US', mistral:            'EU',
+  hugging_face:       'US', wayfair:            'US', atlassian:          'APAC',
+  twilio:             'US', docusign:           'US', dropbox:            'US',
+  stripe_atlas:       'US', bytedance:          'APAC', samsung:          'APAC',
+  unity:              'US',
+};
+
+// ── AI Investment Signal inference ───────────────────────────────────────────
+const aiIndexToSignal = (aiIndex: number): CompanyData['aiInvestmentSignal'] => {
+  if (aiIndex >= 0.85) return 'very-high';
+  if (aiIndex >= 0.65) return 'high';
+  if (aiIndex >= 0.45) return 'medium';
+  return 'low';
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// CORE ADAPTER FUNCTION
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Converts a CompanyProfile → CompanyData.
+ * All fields required by layoffScoreEngine are populated; non-derivable
+ * fields use defensively calibrated defaults.
+ */
+export const companyProfileToData = (
+  profile: CompanyProfile,
+  companyKey: string = '',
+): CompanyData => {
+  const {
+    companyName, financialSignals, layoffHistory,
+    hiringSignals, aiExposureIndex, companySize,
+  } = profile;
+
+  const isPublic = financialSignals.fundingStage === 'public';
+
+  // Build layoff rounds array for L2 calculation
+  const layoffRounds: { date: string; percentCut: number }[] = [];
+  if (layoffHistory.totalLayoffs > 0 && layoffHistory.lastLayoffDate !== 'none') {
+    // Use actual last layoff date; estimate percent from total vs size proxy
+    const empCount = SIZE_TO_EMPLOYEE_COUNT[companySize];
+    const pct = Math.round((layoffHistory.totalLayoffs / empCount) * 100 * 10) / 10;
+    layoffRounds.push({
+      date: layoffHistory.lastLayoffDate,
+      percentCut: Math.min(pct, 40),  // cap at 40% — realistic ceiling
+    });
+    // Add a second round signal for frequent layoff companies
+    if (layoffHistory.layoffFrequency === 'frequent' && pct > 5) {
+      // Synthetic prior round 14 months before last to reflect the pattern
+      const priorDate = new Date(layoffHistory.lastLayoffDate);
+      priorDate.setMonth(priorDate.getMonth() - 14);
+      layoffRounds.push({
+        date: priorDate.toISOString().split('T')[0],
+        percentCut: Math.round(pct * 0.6),
+      });
+    }
+  }
+
+  return {
+    name:             companyName,
+    ticker:           profile.stockTicker,
+    stockTicker:      profile.stockTicker,  // for swarm market agents
+    isPublic,
+    industry:         profile.industry,
+    region:           COMPANY_KEY_TO_REGION[companyKey] ?? 'US',
+    employeeCount:    SIZE_TO_EMPLOYEE_COUNT[companySize],
+    revenueGrowthYoY: REVENUE_TREND_TO_YOY[financialSignals.revenueTrend],
+    // Phase 4 fix: use real stockTicker with live proxy fallback instead of name-guessing
+    stock90DayChange: isPublic
+      ? freezeScoreToStockProxy(hiringSignals.hiringFreezeScore, financialSignals.revenueTrend)
+      : null,
+    layoffsLast24Months:  layoffRounds,
+    layoffRounds:         FREQ_TO_ROUNDS[layoffHistory.layoffFrequency],
+    lastLayoffPercent:    layoffRounds.length > 0 ? layoffRounds[0].percentCut : null,
+    revenuePerEmployee:   BURN_RATE_TO_REV_PER_EMP[financialSignals.burnRateEstimate],
+    aiInvestmentSignal:   aiIndexToSignal(aiExposureIndex),
+    // Phase 4 fix: source attribution with proxy signal tags for downstream transparency
+    source:               profile.stockTicker
+      ? `CompanyIntelligenceDB v1.0 [${profile.stockTicker}]`
+      : 'CompanyIntelligenceDB v1.0',
+    lastUpdated:          profile.lastUpdated,
+    // Phase 4 fix: compute monthsSinceLastFunding dynamically from lastFundingDate
+    // No longer a hardcoded integer that stales silently.
+    lastFundingRound:     FUNDING_STAGE_TO_ROUND[financialSignals.fundingStage],
+    monthsSinceLastFunding: isPublic
+      ? undefined
+      : (() => {
+          if (financialSignals.lastFundingDate) {
+            const past = new Date(financialSignals.lastFundingDate);
+            const now  = new Date();
+            const diff = (now.getFullYear() - past.getFullYear()) * 12
+                       + (now.getMonth() - past.getMonth());
+            return Math.max(0, diff);
+          }
+          // Legacy fallback: no date stored, no stale integer available either
+          return undefined;
+        })(),
+  };
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// PRIMARY RESOLUTION API
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * resolveCompanyData — The single lookup entry point for the scoring engine.
+ *
+ * Resolution priority:
+ *   1. Legacy companyDatabase (exact name match) — highest fidelity historical data
+ *   2. COMPANY_INTELLIGENCE_DB (new 50-company Phase 1 set) — via key or name
+ *   3. null — caller must handle missing company gracefully
+ *
+ * @param query  Company name (e.g. "Oracle") or intelligence key (e.g. "oracle")
+ */
+export const resolveCompanyData = (query: string): CompanyData | null => {
+  if (!query || query.length < 2) return null;
+
+  // ── Step 1: Try legacy companyDatabase first (exact historical data wins) ──
+  const legacy = getCompanyByName(query);
+  if (legacy) return legacy;
+
+  // ── Step 2: Try new intelligence DB by normalized key ────────────────────
+  const key = query.toLowerCase().replace(/[\s.&()/]+/g, '_').replace(/[^a-z0-9_]/g, '');
+  const profileByKey = COMPANY_INTELLIGENCE_DB[key];
+  if (profileByKey) return companyProfileToData(profileByKey, key);
+
+  // ── Step 3: Fuzzy name search through intelligence DB ─────────────────────
+  const fuzzyProfile = resolveCompanyProfile(query);
+  if (fuzzyProfile) {
+    const matchedKey = Object.entries(COMPANY_INTELLIGENCE_DB).find(
+      ([, p]) => p === fuzzyProfile
+    )?.[0] ?? '';
+    return companyProfileToData(fuzzyProfile, matchedKey);
+  }
+
+  return null;
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// ENHANCED LOOKUP — combines BOTH databases for autocomplete / search
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface UnifiedCompanyEntry {
+  name: string;
+  key: string;
+  source: 'legacy' | 'intelligence';
+  industry: string;
+  companyRiskScore?: number;   // only available from intelligence DB
+  aiExposureIndex?: number;    // only from intelligence DB
+  isPublic: boolean;
+}
+
+/**
+ * getAllCompanies — Returns a deduplicated union of both databases.
+ * Used for typeahead search, admin panels, and bulk processing.
+ */
+export const getAllCompanies = (): UnifiedCompanyEntry[] => {
+  const seen = new Set<string>();
+  const results: UnifiedCompanyEntry[] = [];
+
+  // From intelligence DB (primary — richer data)
+  for (const [key, profile] of Object.entries(COMPANY_INTELLIGENCE_DB)) {
+    const nameKey = profile.companyName.toLowerCase();
+    if (!seen.has(nameKey)) {
+      seen.add(nameKey);
+      results.push({
+        name: profile.companyName,
+        key,
+        source: 'intelligence',
+        industry: profile.industry,
+        companyRiskScore: profile.companyRiskScore,
+        aiExposureIndex: profile.aiExposureIndex,
+        isPublic: profile.financialSignals.fundingStage === 'public',
+      });
+    }
+  }
+
+  // From legacy DB (fill gaps not in intelligence DB)
+  for (const cd of companyDatabase) {
+    const nameKey = cd.name.toLowerCase();
+    if (!seen.has(nameKey)) {
+      seen.add(nameKey);
+      results.push({
+        name: cd.name,
+        key: cd.name.toLowerCase().replace(/\s+/g, '_'),
+        source: 'legacy',
+        industry: cd.industry,
+        isPublic: cd.isPublic,
+      });
+    }
+  }
+
+  return results.sort((a, b) => a.name.localeCompare(b.name));
+};
+
+/**
+ * searchAllCompanies — Fuzzy search across both databases.
+ * @param query  Partial name string (min 2 chars)
+ * @param limit  Max results (default 10)
+ */
+export const searchAllCompanies = (query: string, limit = 10): UnifiedCompanyEntry[] => {
+  if (!query || query.length < 2) return [];
+  const q = query.toLowerCase().trim();
+  return getAllCompanies()
+    .filter(c => c.name.toLowerCase().includes(q) || c.key.includes(q))
+    .slice(0, limit);
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// RISK SUMMARY HELPERS — for OracleInsightsPanel / AuditTerminalPage
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a plain-language risk summary for a company from the intelligence DB.
+ * Used by the frontend panels when full scoring isn't needed.
+ */
+export const getCompanyRiskSummary = (query: string): {
+  companyRiskScore: number;
+  marketRiskScore: number;
+  aiExposureIndex: number;
+  hiringFreezeScore: number;
+  layoffFrequency: string;
+  stage: string;
+  confidenceScore: number;
+  revenueTrend: string;
+} | null => {
+  const key = query.toLowerCase().replace(/[\s.&()/]+/g, '_').replace(/[^a-z0-9_]/g, '');
+  const profile = COMPANY_INTELLIGENCE_DB[key] ?? resolveCompanyProfile(query);
+  if (!profile) return null;
+
+  return {
+    companyRiskScore:  profile.companyRiskScore,
+    marketRiskScore:   profile.marketRiskScore,
+    aiExposureIndex:   profile.aiExposureIndex,
+    hiringFreezeScore: profile.hiringSignals.hiringFreezeScore,
+    layoffFrequency:   profile.layoffHistory.layoffFrequency,
+    stage:             profile.stage,
+    confidenceScore:   profile.confidenceScore,
+    revenueTrend:      profile.financialSignals.revenueTrend,
+  };
+};
+
+/**
+ * getRoleRiskForCompany — Looks up a specific role's risk at a given company.
+ * Combines company-level risk amplification with the role risk map.
+ *
+ * @param companyQuery  Company name or key
+ * @param roleCategory  One of: 'softwareEngineer' | 'productManager' | 'dataScientist'
+ *                              | 'designer' | 'hrRecruiter' | 'sales'
+ * @returns  Amplified risk score (0.0–1.0)
+ */
+export const getRoleRiskForCompany = (
+  companyQuery: string,
+  roleCategory: keyof CompanyProfile['roleRiskMap'],
+): number | null => {
+  const key = companyQuery.toLowerCase().replace(/[\s.&()/]+/g, '_').replace(/[^a-z0-9_]/g, '');
+  const profile = COMPANY_INTELLIGENCE_DB[key] ?? resolveCompanyProfile(companyQuery);
+  if (!profile) return null;
+
+  const roleBaseRisk = profile.roleRiskMap[roleCategory];
+  // Amplify by company risk score: higher troubled companies push role risk up
+  const amplified = roleBaseRisk + (profile.companyRiskScore * 0.15);
+  return Math.min(1.0, Math.round(amplified * 100) / 100);
+};

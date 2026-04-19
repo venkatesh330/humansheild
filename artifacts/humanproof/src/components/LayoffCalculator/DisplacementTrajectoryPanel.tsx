@@ -507,6 +507,8 @@ export const DisplacementTrajectoryPanel: React.FC<Props> = ({
         display:      'flex',
         alignItems:   'center',
         justifyContent: 'space-between',
+        flexWrap:     'wrap',
+        gap:          '16px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: '4px', height: '32px', background: color, borderRadius: '2px' }} />
@@ -596,7 +598,7 @@ export const DisplacementTrajectoryPanel: React.FC<Props> = ({
 
         {/* Stats row */}
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: '10px', marginBottom: '24px',
         }}>
           {[

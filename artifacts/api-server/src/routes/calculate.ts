@@ -75,7 +75,7 @@ router.post('/', async (req: Request, res: Response) => {
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     if (!geminiKey) return res.status(500).json({ error: "Missing GEMINI_API_KEY environment variable" });
 
-    const { roleKey, industry, experience = '5-10', country = 'usa' } = req.body;
+    const { roleKey, industry, experience = '5-10', country = 'usa', engineScores } = req.body;
     if (!roleKey) return res.status(400).json({ error: "roleKey is required" });
 
     // 1. Fetch grounded market data and career intelligence in parallel
@@ -122,38 +122,60 @@ INSTRUCTION: Use the above as your authoritative baseline. Personalize the reaso
 `;
     }
     
-    // --- 2. ADDITIVE SERVER-SIDE MATH ENGINE ---
-    const induMult = INDUSTRY_KEY_MULT[industry] || 1.0;
-    const d1_raw = TASK_AUTO[industry]?.[roleKey] || TASK_AUTO['default']?.[roleKey] || 50;
-    const calcD1 = Math.round(Math.min(d1_raw * (induMult > 1 ? 1.1 : 0.9), 100));
+    // --- 2. MULTI-LAYER MATH ENGINE OR OFFLOADED SCORES ---
+    let calcTotal = 50;
+    let fallbackDimensions: any[] = [];
     
-    const calcD2 = DISRUPTION_VELOCITY[roleKey] ?? 50;
-    
-    const rawAug = AUGMENTATION[roleKey] ?? 50;
-    const calcD3 = Math.round(100 * (1 - Math.pow(rawAug / 100, D3_CURVE_EXPONENT)));
-    
-    const sensFactor = EXP_SENSITIVITY[roleKey] ?? 0.42;
-    const baseRisk = EXP_RISK_BASE[experience] ?? 50;
-    let calcD4 = Math.round(baseRisk * (1 - sensFactor));
-    
-    // Architecture Upgrade: Experience Decay Penalty
-    // Highly experienced purely technical roles (non-leadership) face "Dinosaur Tooling" disruption velocity
-    if ((industry.startsWith('it_') || roleKey.startsWith('sw_') || roleKey.startsWith('web_')) && !roleKey.includes('lead') && !roleKey.includes('arch') && !roleKey.includes('pm')) {
-      if (experience === '20+') calcD4 = Math.min(100, Math.round(calcD4 * 1.35));
-      if (experience === '10-20') calcD4 = Math.min(100, Math.round(calcD4 * 1.15));
-    }
-    
-    const countryKey = country.toLowerCase().replace(/\s+/g, '_');
-    const [adoption, regulation] = COUNTRY_DATA[countryKey] ?? COUNTRY_DATA['other'] ?? [55, 40];
-    const calcD5 = Math.round((adoption - regulation * 0.6) / 1.4);
-    
-    const calcD6 = NETWORK_MOAT[roleKey] ?? 50;
+    if (engineScores) {
+      // Use the advanced L1-L5 Company-Specific Engine output passed from the frontend
+      calcTotal = engineScores.score;
+      fallbackDimensions = engineScores.breakdown.map((d: any) => ({
+        key: d.id,
+        label: d.label,
+        score: d.score,
+        weight: d.weight,
+        reason: "" // To be filled by LLM
+      }));
+    } else {
+      // Legacy D1-D6 Fallback Math
+      const induMult = INDUSTRY_KEY_MULT[industry] || 1.0;
+      const d1_raw = TASK_AUTO[industry]?.[roleKey] || TASK_AUTO['default']?.[roleKey] || 50;
+      const calcD1 = Math.round(Math.min(d1_raw * (induMult > 1 ? 1.1 : 0.9), 100));
+      
+      const calcD2 = DISRUPTION_VELOCITY[roleKey] ?? 50;
+      
+      const rawAug = AUGMENTATION[roleKey] ?? 50;
+      const calcD3 = Math.round(100 * (1 - Math.pow(rawAug / 100, D3_CURVE_EXPONENT)));
+      
+      const sensFactor = EXP_SENSITIVITY[roleKey] ?? 0.42;
+      const baseRisk = EXP_RISK_BASE[experience] ?? 50;
+      let calcD4 = Math.round(baseRisk * (1 - sensFactor));
+      
+      if ((industry.startsWith('it_') || roleKey.startsWith('sw_') || roleKey.startsWith('web_')) && !roleKey.includes('lead') && !roleKey.includes('arch') && !roleKey.includes('pm')) {
+        if (experience === '20+') calcD4 = Math.min(100, Math.round(calcD4 * 1.35));
+        if (experience === '10-20') calcD4 = Math.min(100, Math.round(calcD4 * 1.15));
+      }
+      
+      const countryKey = country.toLowerCase().replace(/\s+/g, '_');
+      const [adoption, regulation] = COUNTRY_DATA[countryKey] ?? COUNTRY_DATA['other'] ?? [55, 40];
+      const calcD5 = Math.round((adoption - regulation * 0.6) / 1.4);
+      
+      const calcD6 = NETWORK_MOAT[roleKey] ?? 50;
 
-    // Apply accurate dynamic weights mapping the server directly to the offline fallback engine.
-    const w = getDynamicWeights(roleKey, industry);
-    const calcTotal = Math.round(
-      calcD1 * w.d1 + calcD2 * w.d2 + calcD3 * w.d3 + calcD4 * w.d4 + calcD5 * w.d5 + calcD6 * w.d6
-    );
+      const w = getDynamicWeights(roleKey, industry);
+      calcTotal = Math.round(
+        calcD1 * w.d1 + calcD2 * w.d2 + calcD3 * w.d3 + calcD4 * w.d4 + calcD5 * w.d5 + calcD6 * w.d6
+      );
+
+      fallbackDimensions = [
+        { key: "D1", label: "Task Automatability", score: calcD1, weight: Math.round(w.d1 * 100), reason: "" },
+        { key: "D2", label: "AI Tool Maturity", score: calcD2, weight: Math.round(w.d2 * 100), reason: "" },
+        { key: "D3", label: "Human Amplification", score: calcD3, weight: Math.round(w.d3 * 100), reason: "" },
+        { key: "D4", label: "Experience Shield", score: calcD4, weight: Math.round(w.d4 * 100), reason: "" },
+        { key: "D5", label: "Country Exposure", score: calcD5, weight: Math.round(w.d5 * 100), reason: "" },
+        { key: "D6", label: "Social Capital Moat", score: calcD6, weight: Math.round(w.d6 * 100), reason: "" }
+      ];
+    }
 
     const prompt = `You are the HumanProof Grounded Risk Engine (Generator Agent).
 Your task is to generate qualitative risk assessment reasoning, skill obsolescence mapping, and a tactical roadmap.
@@ -163,6 +185,7 @@ User Profile:
 - Experience: ${experience}
 - Country: ${country}
 - Calculated Total Risk: ${calcTotal}/100
+- Custom Engine Active: ${engineScores ? 'Yes (Company Specific 5-Layer Math)' : 'No'}
 
 ${groundedContext}
 ${seededCareerContext}
@@ -257,17 +280,13 @@ Do not include markdown or preamble.`;
     const finalResult = {
       ...qualResult,
       total: calcTotal,
-      verdict: getVerdict(calcTotal),
+      verdict: engineScores ? engineScores.tier.label : getVerdict(calcTotal),
       urgency: getUrgency(calcTotal),
       timeline: getTimeline(calcTotal),
-      dimensions: [
-        { key: "D1", label: "Task Automatability", score: calcD1, weight: Math.round(w.d1 * 100), reason: qualResult.dimensions?.find((d: any) => d.key === "D1")?.reason || "" },
-        { key: "D2", label: "AI Tool Maturity", score: calcD2, weight: Math.round(w.d2 * 100), reason: qualResult.dimensions?.find((d: any) => d.key === "D2")?.reason || "" },
-        { key: "D3", label: "Human Amplification", score: calcD3, weight: Math.round(w.d3 * 100), reason: qualResult.dimensions?.find((d: any) => d.key === "D3")?.reason || "" },
-        { key: "D4", label: "Experience Shield", score: calcD4, weight: Math.round(w.d4 * 100), reason: qualResult.dimensions?.find((d: any) => d.key === "D4")?.reason || "" },
-        { key: "D5", label: "Country Exposure", score: calcD5, weight: Math.round(w.d5 * 100), reason: qualResult.dimensions?.find((d: any) => d.key === "D5")?.reason || "" },
-        { key: "D6", label: "Social Capital Moat", score: calcD6, weight: Math.round(w.d6 * 100), reason: qualResult.dimensions?.find((d: any) => d.key === "D6")?.reason || "" }
-      ]
+      dimensions: fallbackDimensions.map(d => ({
+        ...d,
+        reason: qualResult.dimensions?.find((qd: any) => qd.key === d.key)?.reason || ""
+      }))
     };
 
     return res.status(200).json(finalResult);

@@ -8,7 +8,7 @@ import {
   useNavigate,
   useLocation,
 } from "react-router-dom";
-import "./index.css";
+// import "./index.css"; // Removed to prevent PostCSS @import duplication
 import { LiquidAIBackground } from "./components/LiquidAIBackground";
 
 // Pages — critical loads

@@ -110,7 +110,7 @@ export default function DisplacementForecast({ onNavigate }: { onNavigate?: (tab
   };
 
   return (
-    <div style={{ padding: '40px 0', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: '40px 16px', maxWidth: 900, margin: '0 auto' }}>
       <div className="reveal" style={{ marginBottom: 32 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <div style={{ width: 4, height: 32, background: 'var(--violet)', borderRadius: 2 }} />
@@ -181,7 +181,7 @@ export default function DisplacementForecast({ onNavigate }: { onNavigate?: (tab
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={340}>
-            <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+            <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
               <XAxis dataKey="year" tick={{ fill: 'var(--text2)', fontSize: 12 }} axisLine={{ stroke: 'var(--border)' }} />
               <YAxis domain={[0, 100]} tick={{ fill: 'var(--text2)', fontSize: 12 }} axisLine={{ stroke: 'var(--border)' }} />

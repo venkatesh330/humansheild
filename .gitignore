@@ -61,3 +61,6 @@ Thumbs.db
 artifacts/humanproof/.env
 artifacts/api-server/.env
 lib/db/.env
+
+# Scratch data
+scratch/
