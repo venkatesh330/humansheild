@@ -110,11 +110,34 @@
   .pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
 
   .lift-card {
-    transition: transform 0.5s var(--transition-smooth), border-color 0.4s ease, box-shadow 0.5s ease;
+    transition: transform 0.6s var(--transition-smooth), border-color 0.4s ease, box-shadow 0.6s ease;
+    will-change: transform, box-shadow;
   }
   .lift-card:hover {
-    transform: translateY(-4px);
+    transform: translateY(-6px) scale(1.01);
     box-shadow: var(--shadow-elevated);
+  }
+
+  /* Semantic Glass Utilities */
+  .glass-critical {
+    background: color-mix(in oklab, var(--risk-critical) 4%, var(--surface-1));
+    border-color: color-mix(in oklab, var(--risk-critical) 35%, transparent) !important;
+    box-shadow: 0 1px 0 0 color-mix(in oklab, var(--risk-critical) 20%, transparent) inset, var(--shadow-card);
+  }
+  .glass-warning {
+    background: color-mix(in oklab, var(--risk-warning) 4%, var(--surface-1));
+    border-color: color-mix(in oklab, var(--risk-warning) 30%, transparent) !important;
+    box-shadow: 0 1px 0 0 color-mix(in oklab, var(--risk-warning) 15%, transparent) inset, var(--shadow-card);
+  }
+  .glass-stable {
+    background: color-mix(in oklab, var(--risk-stable) 4%, var(--surface-1));
+    border-color: color-mix(in oklab, var(--risk-stable) 30%, transparent) !important;
+    box-shadow: 0 1px 0 0 color-mix(in oklab, var(--risk-stable) 15%, transparent) inset, var(--shadow-card);
+  }
+  .glass-info {
+    background: color-mix(in oklab, var(--risk-info) 4%, var(--surface-1));
+    border-color: color-mix(in oklab, var(--risk-info) 30%, transparent) !important;
+    box-shadow: 0 1px 0 0 color-mix(in oklab, var(--risk-info) 15%, transparent) inset, var(--shadow-card);
   }
 
   .text-gradient-risk {

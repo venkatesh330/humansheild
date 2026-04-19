@@ -10,7 +10,7 @@ export function RiskAlertCard() {
         style={{ background: "var(--gradient-critical)" }}
       />
 
-      <div className="surface-1 shadow-card-elevated rounded-2xl border border-risk-critical/30 p-6 backdrop-blur-xl">
+      <div className="glass-critical shadow-card-elevated rounded-[2rem] border p-8 backdrop-blur-xl transition-all duration-500 hover:shadow-shadow-glow-critical">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-risk-critical/10 text-risk-critical">

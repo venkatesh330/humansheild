@@ -212,7 +212,7 @@ function ProblemReframe() {
           <div className="grid gap-3">
             {items.map((it, i) => (
               <Reveal key={it.label} delay={120 + i * 80}>
-                <div className="surface-1 lift-card flex items-center justify-between rounded-xl border border-border p-4">
+                <div className="glass-warning lift-card flex items-center justify-between rounded-[1.5rem] border p-6">
                   <span className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-risk-warning/10 text-risk-warning">
                       <it.icon className="h-4 w-4" />
@@ -280,7 +280,7 @@ function SystemIntro() {
         <div className="mt-14 grid gap-5 lg:grid-cols-3">
           {blocks.map((b, i) => (
             <Reveal key={b.title} delay={i * 100}>
-              <div className="surface-1 lift-card group relative h-full overflow-hidden rounded-2xl border border-border p-6 transition hover:border-foreground/20">
+              <div className="glass-info lift-card group relative h-full overflow-hidden rounded-[2rem] border p-8 transition hover:border-foreground/20">
                 <div
                   aria-hidden
                   className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-0 blur-3xl transition group-hover:opacity-60"
@@ -317,7 +317,7 @@ function SystemIntro() {
         {/* Prediction Engine highlight */}
         <div className="mt-8 grid items-stretch gap-5 lg:grid-cols-[1.2fr_1fr]">
           <Reveal>
-            <div className="surface-1 relative h-full overflow-hidden rounded-2xl border border-risk-critical/30 p-8 glow-critical">
+            <div className="glass-critical relative h-full overflow-hidden rounded-[2rem] border p-10 glow-critical transition-all duration-700 hover:shadow-shadow-glow-critical">
               <div
                 aria-hidden
                 className="pointer-events-none absolute inset-0 opacity-40"
@@ -396,7 +396,7 @@ function SystemIntro() {
           </Reveal>
 
           <Reveal delay={120}>
-            <div className="surface-1 flex h-full flex-col justify-center rounded-2xl border border-border p-8">
+            <div className="glass-info flex h-full flex-col justify-center rounded-[2rem] border p-10">
               <Sparkles className="h-5 w-5 text-risk-info" />
               <p className="mt-4 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 Why it matters
@@ -440,7 +440,7 @@ function OutputPreview() {
 
         <div className="mt-14 grid gap-5 lg:grid-cols-2">
           <Reveal>
-            <div className="surface-1 lift-card h-full rounded-2xl border border-risk-warning/30 p-7">
+            <div className="glass-warning lift-card h-full rounded-[2rem] border p-8">
               <div className="flex items-center justify-between">
                 <RiskBadge tone="warning" pulse>
                   <TrendingUp className="h-3 w-3" /> Trend increasing
@@ -479,7 +479,7 @@ function OutputPreview() {
           </Reveal>
 
           <Reveal delay={120}>
-            <div className="surface-1 lift-card h-full rounded-2xl border border-risk-stable/30 p-7">
+            <div className="glass-stable lift-card h-full rounded-[2rem] border p-8">
               <div className="flex items-center justify-between">
                 <RiskBadge tone="stable" pulse>
                   <ShieldCheck className="h-3 w-3" /> Stable
@@ -608,7 +608,7 @@ function Differentiation() {
 
         <div className="mt-12 grid gap-5 lg:grid-cols-2">
           <Reveal>
-            <div className="surface-1 lift-card h-full rounded-2xl border border-border p-7">
+            <div className="glass-info opacity-70 lift-card h-full rounded-[2rem] border p-8">
               <div className="flex items-center justify-between">
                 <h3 className="inline-flex items-center gap-2 text-lg font-semibold text-muted-foreground">
                   <EyeOff className="h-4 w-4" /> Traditional approach
@@ -630,7 +630,7 @@ function Differentiation() {
           </Reveal>
 
           <Reveal delay={120}>
-            <div className="surface-1 lift-card relative h-full overflow-hidden rounded-2xl border border-risk-stable/30 p-7">
+            <div className="glass-stable lift-card relative h-full overflow-hidden rounded-[2rem] border p-8 shadow-stable-glow">
               <div
                 aria-hidden
                 className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full blur-3xl"
@@ -718,10 +718,8 @@ function ActionEngine() {
           {actions.map((a, i) => (
             <Reveal key={a.action} delay={i * 120}>
               <div
-                className={`surface-1 lift-card rounded-2xl border p-7 ${
-                  a.tone === "critical"
-                    ? "border-risk-critical/30"
-                    : "border-risk-warning/30"
+                className={`lift-card rounded-[2rem] border p-8 ${
+                  a.tone === "critical" ? "glass-critical" : "glass-warning"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -792,7 +790,7 @@ function SocialProof() {
         <div className="mt-12 grid gap-5 sm:grid-cols-3">
           {stats.map((s, i) => (
             <Reveal key={s.label} delay={i * 100} variant="scale">
-              <div className="surface-1 lift-card h-full rounded-2xl border border-border p-8 text-center">
+              <div className="glass-info lift-card h-full rounded-[2.5rem] border p-10 text-center">
                 <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-risk-info/10 text-risk-info">
                   <s.icon className="h-5 w-5" />
                 </span>
@@ -858,7 +856,7 @@ function Pricing() {
 
         <div className="mx-auto mt-14 grid max-w-4xl gap-5 sm:grid-cols-2">
           <Reveal>
-            <div className="surface-1 lift-card h-full rounded-2xl border border-border p-7">
+            <div className="glass-info opacity-80 lift-card h-full rounded-[2rem] border p-8">
               <div className="flex items-center justify-between">
                 <h3 className="inline-flex items-center gap-2 text-lg font-semibold">
                   <Eye className="h-4 w-4" /> Free
@@ -891,7 +889,7 @@ function Pricing() {
           </Reveal>
 
           <Reveal delay={120}>
-            <div className="surface-1 lift-card relative h-full overflow-hidden rounded-2xl border border-risk-critical/30 p-7 glow-critical">
+            <div className="glass-critical lift-card relative h-full overflow-hidden rounded-[2rem] border p-8 glow-critical">
               <div
                 aria-hidden
                 className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full blur-3xl glow-drift"

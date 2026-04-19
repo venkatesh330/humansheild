@@ -28,7 +28,7 @@ export function RiskTrendChart() {
     .filter((p) => p.delta >= 6);
 
   return (
-    <div className="surface-1 shadow-card-elevated rounded-2xl border border-border p-6 lift-card">
+    <div className="glass-info shadow-card-elevated rounded-[2rem] border p-8 lift-card">
       <div className="flex items-end justify-between">
         <div>
           <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
