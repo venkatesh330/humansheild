@@ -3,6 +3,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { motion, AnimatePresence } from "framer-motion";
 import { HybridResult } from "../../types/hybridResult";
 import { CompanyData } from "../../data/companyDatabase";
+import { GlobalErrorBoundary } from "../GlobalErrorBoundary";
 
 // Lazy-loaded tab modules for performance
 const OverviewTab = lazy(() => import("../AuditTabs/OverviewTab"));
@@ -82,74 +83,51 @@ export const LayoffAuditDashboard: React.FC<Props> = ({
               }
             >
               <Tabs.Content value="overview">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <OverviewTab 
-                    result={result} 
-                    companyData={companyData} 
-                    onRecalculate={onRetake} 
-                    onDownload={onDownload}
-                  />
-                </motion.div>
+                <GlobalErrorBoundary>
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+                    <OverviewTab result={result} companyData={companyData} onRecalculate={onRetake} onDownload={onDownload} />
+                  </motion.div>
+                </GlobalErrorBoundary>
               </Tabs.Content>
 
               <Tabs.Content value="risk_breakdown">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <RiskBreakdownTab result={result} companyData={companyData} />
-                </motion.div>
+                <GlobalErrorBoundary>
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+                    <RiskBreakdownTab result={result} companyData={companyData} />
+                  </motion.div>
+                </GlobalErrorBoundary>
               </Tabs.Content>
 
               <Tabs.Content value="company_profile">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <CompanyProfileTab result={result} companyData={companyData} />
-                </motion.div>
+                <GlobalErrorBoundary>
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+                    <CompanyProfileTab result={result} companyData={companyData} />
+                  </motion.div>
+                </GlobalErrorBoundary>
               </Tabs.Content>
 
               <Tabs.Content value="career_skills">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <CareerSkillsTab result={result} companyData={companyData} />
-                </motion.div>
+                <GlobalErrorBoundary>
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+                    <CareerSkillsTab result={result} companyData={companyData} />
+                  </motion.div>
+                </GlobalErrorBoundary>
               </Tabs.Content>
 
               <Tabs.Content value="action_plan">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <ActionPlanTab result={result} companyData={companyData} />
-                </motion.div>
+                <GlobalErrorBoundary>
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+                    <ActionPlanTab result={result} companyData={companyData} />
+                  </motion.div>
+                </GlobalErrorBoundary>
               </Tabs.Content>
 
               <Tabs.Content value="transparency">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <TransparencyTab result={result} companyData={companyData} />
-                </motion.div>
+                <GlobalErrorBoundary>
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+                    <TransparencyTab result={result} companyData={companyData} />
+                  </motion.div>
+                </GlobalErrorBoundary>
               </Tabs.Content>
             </Suspense>
           </AnimatePresence>

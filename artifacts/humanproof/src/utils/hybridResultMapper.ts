@@ -16,7 +16,9 @@ export function mapToHybridResult(
     oracleKey?: string;
     experience?: string;
   },
-  dataQuality: "live" | "partial" | "fallback" = "live"
+  _dataQuality: "live" | "partial" | "fallback" = "live",
+  trueLiveSignals?: number,
+  trueHeuristicSignals?: number,
 ): HybridResult {
   const isEnsemble = (r: any): r is EnsembleResult => "ensembleScore" in r;
 
@@ -69,8 +71,9 @@ export function mapToHybridResult(
         severity: (c.severity.toLowerCase() as any) || "medium",
         conflictingSources: []
       })),
-      liveSignals: dataQuality === "live" ? result.signalQuality.liveSignals || 5 : 0,
-      heuristicSignals: dataQuality !== "live" ? 10 : 2
+      // Use pipeline-provided counts when available; fall back to engine's own count
+      liveSignals: trueLiveSignals ?? result.signalQuality.liveSignals ?? 0,
+      heuristicSignals: trueHeuristicSignals ?? result.signalQuality.heuristicSignals ?? 0,
     },
     recommendations,
     workTypeKey: inputs.oracleKey || "generic",
@@ -79,11 +82,11 @@ export function mapToHybridResult(
     experience: inputs.experience || "5-10",
     companyName: companyData.name,
     meta: {
-      usedLiveSignals: dataQuality === "live",
-      liveSignalCount: dataQuality === "live" ? 5 : 0,
+      usedLiveSignals: (trueLiveSignals ?? result.signalQuality.liveSignals ?? 0) > 0,
+      liveSignalCount: trueLiveSignals ?? result.signalQuality.liveSignals ?? 0,
       swarmAgentCount: 30,
       dbSource: companyData.source,
-      calculationMode: isEnsemble(result) ? "ENsemble_CORE" : "DETERMINISTIC_ENGINE",
+      calculationMode: isEnsemble(result) ? "ENSEMBLE_CORE" : "DETERMINISTIC_ENGINE",
       timestamp: result.calculatedAt
     },
     _engineResult: isEnsemble(result) ? undefined : result

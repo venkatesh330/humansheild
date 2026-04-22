@@ -25,6 +25,8 @@ export interface CompanyData {
   lastUpdated: string;
   lastFundingRound?: string;
   monthsSinceLastFunding?: number;
+  /** Company-specific role risk weights (0–1) from Supabase company_intelligence.role_risk_map */
+  roleRiskMap?: Record<string, number>;
 }
 
 export const companyDatabase: CompanyData[] = [

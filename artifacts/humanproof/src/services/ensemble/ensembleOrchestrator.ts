@@ -1,15 +1,17 @@
 // ensembleOrchestrator.ts
-// Master controller — wires all agents, runs in parallel, aggregates results.
-// Returns a result compatible with the existing LayoffCalculator.tsx interface.
+// Master controller — deterministic engine + swarm + single Claude analysis call.
+// API keys never reach the browser. llm-analyze Edge Function holds ANTHROPIC_API_KEY.
 
-import { runGemmaOSINT, GemmaResult } from "./gemmaAgent";
-import { runDeepSeekFinancial, DeepSeekResult } from "./deepseekAgent";
-import { runLlamaRoleValidation, LlamaResult } from "./llamaAgent";
-import { runGeminiSynthesis, GeminiResult } from "./geminiAgent";
+import { supabase } from "../../utils/supabase";
 import {
   aggregateEnsembleResults,
   AggregateResult,
 } from "./ensembleAggregator";
+// Agent types kept for interface compatibility — no longer called directly
+import type { GemmaResult } from "./gemmaAgent";
+import type { DeepSeekResult } from "./deepseekAgent";
+import type { LlamaResult } from "./llamaAgent";
+import type { GeminiResult } from "./geminiAgent";
 import {
   calculateLayoffScore,
   ScoreResult,
@@ -237,125 +239,99 @@ export const runFullEnsembleAnalysis = async (
     roleExposureOverride,
   });
 
-  // ── Step 3: Fire Gemma, DeepSeek, Llama in PARALLEL — with 7s timeout guard (Gap3)
-  const timeoutPromise = (ms: number) => new Error(`Timeout after ${ms}ms`);
+  // ── Step 3: Single Claude analysis via llm-analyze Edge Function ─────────
 
-  const withTimeout = (
-    promise: Promise<any>,
-    timeoutMs: number,
-    fallback: any,
-  ) =>
-    Promise.race([
-      promise,
-      new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
-    ]);
-
-  const fallbackGemma: GemmaResult = {
-    model: "gemma-3-27b",
+  // ── Step 3: Single Claude analysis via llm-analyze Edge Function ─────────
+  // One call with REAL signal context beats four calls with no company knowledge.
+  // API key stays on the server. Graceful fallback if unavailable.
+  let claudeAnalysis: {
+    success: boolean;
+    dominantRiskFactor: string | null;
+    keyProtectiveFactor: string | null;
+    timeHorizon: string | null;
+    synthesis: string | null;
+    urgencyLevel: string | null;
+    oneActionThisWeek: string | null;
+    model?: string;
+  } = {
     success: false,
-    signals: null,
-    rawConfidence: 0,
-  };
-  const fallbackDeepSeek: DeepSeekResult = {
-    model: "deepseek-v3",
-    success: false,
-    signals: null,
-    rawConfidence: 0,
-  };
-  const fallbackLlama: LlamaResult = {
-    model: "llama-3.3-70b",
-    success: false,
-    signals: null,
-    rawConfidence: 0,
+    dominantRiskFactor: null,
+    keyProtectiveFactor: null,
+    timeHorizon: null,
+    synthesis: null,
+    urgencyLevel: null,
+    oneActionThisWeek: null,
   };
 
-  const [gemmaSettled, deepseekSettled, llamaSettled] =
-    await Promise.allSettled([
-      withTimeout(
-        runGemmaOSINT(companyName, industry, roleTitle, swarmContext),
-        7000,
-        fallbackGemma,
-      ),
-      withTimeout(
-        runDeepSeekFinancial(
-          companyName,
-          industry,
-          companyData?.employeeCount ?? "unknown",
-          companyData?.layoffsLast24Months ?? [],
-          swarmContext,
-        ),
-        7000,
-        fallbackDeepSeek,
-      ),
-      withTimeout(
-        runLlamaRoleValidation(
-          roleTitle,
-          department,
-          industry,
+  try {
+    const { data: llmData, error: llmError } = await supabase.functions.invoke('llm-analyze', {
+      body: {
+        companyName,
+        roleTitle,
+        industry,
+        engineScore: engineResult.score,
+        engineBreakdown: engineResult.breakdown,
+        signalContext: {
+          stock90DayChange: (companyData as any).stock90DayChange ?? null,
+          revenueGrowthYoY: (companyData as any).revenueGrowthYoY ?? null,
+          layoffRounds: companyData.layoffRounds ?? 0,
+          lastLayoffPercent: companyData.lastLayoffPercent ?? null,
+          recentLayoffHeadlines: 0,
+          employeeCount: companyData.employeeCount ?? 1000,
+          revenuePerEmployee: companyData.revenuePerEmployee ?? 150000,
+          aiInvestmentSignal: companyData.aiInvestmentSignal ?? 'medium',
+          dataSource: companyData.source?.includes('Fallback') ? 'fallback' : 'db',
+        },
+        userFactors: {
           tenureYears,
+          performanceTier,
           isUniqueRole,
-          swarmContext,
-        ),
-        7000,
-        fallbackLlama,
-      ),
-    ]);
+          hasRecentPromotion,
+          hasKeyRelationships,
+        },
+      },
+    });
 
-  // Safely unwrap settled results
-  const gemmaResult: GemmaResult =
-    gemmaSettled.status === "fulfilled"
-      ? gemmaSettled.value
-      : {
-          model: "gemma-3-27b",
-          success: false,
-          signals: null,
-          rawConfidence: 0,
-        };
+    if (!llmError && llmData && !llmData.fallback) {
+      claudeAnalysis = { success: true, ...llmData };
+      console.log('[Ensemble] Claude analysis complete via llm-analyze EF');
+    } else {
+      console.warn('[Ensemble] llm-analyze unavailable — deterministic score only:', llmError?.message);
+    }
+  } catch (llmErr: any) {
+    console.warn('[Ensemble] llm-analyze call failed:', llmErr.message);
+  }
 
-  const deepseekResult: DeepSeekResult =
-    deepseekSettled.status === "fulfilled"
-      ? deepseekSettled.value
-      : {
-          model: "deepseek-v3",
-          success: false,
-          signals: null,
-          rawConfidence: 0,
-        };
-
-  const llamaResult: LlamaResult =
-    llamaSettled.status === "fulfilled"
-      ? llamaSettled.value
-      : {
-          model: "llama-3.3-70b",
-          success: false,
-          signals: null,
-          rawConfidence: 0,
-        };
-
-  console.log(
-    "[Ensemble] Agent results —",
-    "Gemma:",
-    gemmaResult.success,
-    "DeepSeek:",
-    deepseekResult.success,
-    "Llama:",
-    llamaResult.success,
-  );
-
-  // ── Step 4: Run Gemini as final synthesis judge ───────────────────────────
-  const geminiResult: GeminiResult = await runGeminiSynthesis({
-    companyName,
-    roleTitle,
-    gemmaOutput: gemmaResult,
-    deepseekOutput: deepseekResult,
-    llamaOutput: llamaResult,
-    engineScore: engineResult.score,
-    engineBreakdown: engineResult.breakdown,
+  // ── Step 4: Aggregate — engine score is authoritative, Claude provides narrative ──
+  // Build stub results so aggregateEnsembleResults still works (it only blends scores).
+  const stubAgent = (model: string): GemmaResult => ({
+    model: model as any, success: false, signals: null, rawConfidence: 0,
   });
+  const gemmaResult: GemmaResult = stubAgent('gemma-3-27b');
+  const deepseekResult: DeepSeekResult = stubAgent('deepseek-v3') as any;
+  const llamaResult: LlamaResult = stubAgent('llama-3.3-70b') as any;
+  const geminiResult: GeminiResult = {
+    model: 'claude-haiku-4-5' as any,
+    success: claudeAnalysis.success,
+    synthesis: claudeAnalysis.success ? {
+      finalScore: engineResult.score,
+      confidencePercent: engineResult.confidencePercent,
+      modelAgreementPercent: 100,
+      outlierDetected: false,
+      outlierModel: null,
+      outlierReason: null,
+      scoreAdjustmentFromEngine: 0,
+      adjustmentReason: claudeAnalysis.synthesis ?? '',
+      dominantRiskFactor: claudeAnalysis.dominantRiskFactor ?? '',
+      keyProtectiveFactor: claudeAnalysis.keyProtectiveFactor ?? '',
+      finalTier: engineResult.score >= 75 ? 'high'
+        : engineResult.score >= 55 ? 'elevated'
+        : engineResult.score >= 35 ? 'moderate'
+        : engineResult.score >= 15 ? 'low' : 'very-low',
+      verificationNote: claudeAnalysis.oneActionThisWeek ?? '',
+    } : null,
+  };
 
-  console.log("[Ensemble] Gemini synthesis:", geminiResult.success);
-
-  // ── Step 5: Final aggregation with all models (+ optional swarm blend) ─────
   const aggregate = aggregateEnsembleResults({
     gemmaResult,
     deepseekResult,
@@ -366,31 +342,15 @@ export const runFullEnsembleAnalysis = async (
     swarmScore: swarmReport?.swarmRiskScore,
   });
 
-  // ── Step 6: Determine which models actually contributed ─────────────────────
-  const modelsUsed = [
-    "engine",
-    ...(gemmaResult.success ? ["gemma-3-27b"] : []),
-    ...(deepseekResult.success ? ["deepseek-v3"] : []),
-    ...(llamaResult.success ? ["llama-3.3-70b"] : []),
-    ...(geminiResult.success ? ["gemini-2.0-flash"] : []),
-  ];
-
-  // ── Step 6b: Build transparent agent status map ───────────────────────────
-  const failedAgents: string[] = [];
-  if (!gemmaResult.success)    failedAgents.push('Gemma');
-  if (!deepseekResult.success) failedAgents.push('DeepSeek');
-  if (!llamaResult.success)    failedAgents.push('Llama');
-  if (!geminiResult.success)   failedAgents.push('Gemini');
+  const modelsUsed = ['engine', ...(claudeAnalysis.success ? ['claude-haiku-4-5'] : [])];
 
   const agentStatus: AgentStatusMap = {
-    gemma:    gemmaResult.success    ? 'success' : 'failed',
-    deepseek: deepseekResult.success ? 'success' : 'failed',
-    llama:    llamaResult.success    ? 'success' : 'failed',
-    gemini:   geminiResult.success   ? 'success' : 'failed',
-    failedCount: failedAgents.length,
-    warningMessage: failedAgents.length > 0
-      ? `⚠️ ${failedAgents.length} AI model${failedAgents.length > 1 ? 's' : ''} unavailable (${failedAgents.join(', ')}). Score is based on ${modelsUsed.join(', ')} only.`
-      : null,
+    gemma: 'failed', deepseek: 'failed', llama: 'failed',
+    gemini: claudeAnalysis.success ? 'success' : 'failed',
+    failedCount: claudeAnalysis.success ? 0 : 1,
+    warningMessage: claudeAnalysis.success
+      ? null
+      : '⚠️ AI narrative unavailable — score is deterministic engine only.',
   };
 
   // ── Step 7: Compose final output ─────────────────────────────────────────

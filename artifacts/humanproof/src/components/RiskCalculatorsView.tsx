@@ -122,7 +122,7 @@ export const RiskCalculatorsView: React.FC<Props> = ({ onSwitchTab }) => {
       </div>
 
       {/* Render Active Calculator */}
-      {activeCalculator === "risk-oracle" && <AuditTerminalPage embedded={true} />}
+      {activeCalculator === "risk-oracle" && <AuditTerminalPage />}
       {activeCalculator === "layoff-audit" && (
         <LayoffCalculator onSwitchTab={onSwitchTab} />
       )}

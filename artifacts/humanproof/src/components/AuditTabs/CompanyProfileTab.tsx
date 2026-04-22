@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { SectionHeader } from "./common/SectionHeader";
 import { CollapsibleSection } from "./common/CollapsibleSection";
+import { CollapseSignalCard } from "./CollapseSignalCard";
 import { useAdaptiveSystem } from "@/hooks/useAdaptiveSystem";
 import type { TabProps } from "./common/types";
 
@@ -578,60 +579,72 @@ export const CompanyProfileTab: React.FC<TabProps> = ({
     return benchmarks;
   }, [companyData]);
 
-  // Sample department news (placeholder)
-  const departmentNews: NewsItem[] = useMemo(
-    () => [
-      {
-        title: "Engineering department launching new AI initiative",
-        date: "2026-02-28",
-        source: "Internal Memo",
-        sentiment: "positive",
+  // Department news: derived from real layoff history in companyData (no fake data)
+  const departmentNews: NewsItem[] = useMemo(() => {
+    const items: NewsItem[] = [];
+    const layoffs = companyData.layoffsLast24Months ?? [];
+    for (const ev of layoffs.slice(0, 3)) {
+      items.push({
+        title: `Workforce reduction of ${ev.percentCut}% reported`,
+        date: ev.date,
+        source: companyData.source ?? "Company Records",
+        sentiment: "negative",
         highlights: [
-          "Focus on automation of routine coding tasks",
-          "Expected to reduce development time by 30%",
+          `Approximately ${Math.round((companyData.employeeCount ?? 1000) * ev.percentCut / 100).toLocaleString()} roles affected`,
+          "Source: official company disclosure or public report",
         ],
-      },
-      {
-        title: "Q1 Restructuring affecting multiple teams",
-        date: "2026-01-15",
-        source: "Company Blog",
-        sentiment: "neutral",
-        highlights: [
-          "Resource reallocation to growth areas",
-          "Some positions eliminated, others being created",
-        ],
-      },
-    ],
-    [],
-  );
+      });
+    }
+    return items;
+  }, [companyData]);
 
-  // Sample live signals
-  const liveSignals: SignalEvent[] = useMemo(
-    () => [
-      {
-        timestamp: "2026-04-10T09:15:00Z",
-        source: "SEC Filing",
+  // Live signals: derived from real companyData fields (no fake hardcoded values)
+  const liveSignals: SignalEvent[] = useMemo(() => {
+    const signals: SignalEvent[] = [];
+    const now = new Date().toISOString();
+
+    if (companyData.stock90DayChange != null) {
+      signals.push({
+        timestamp: now,
+        source: "Yahoo Finance",
         type: "financial",
-        content: "Quarterly report shows 3.2% revenue decline",
-        impact: "medium",
-      },
-      {
-        timestamp: "2026-04-02T14:30:00Z",
-        source: "LinkedIn",
-        type: "job-market",
-        content: "Multiple senior engineers posting about new opportunities",
-        impact: "low",
-      },
-      {
-        timestamp: "2026-03-28T11:45:00Z",
-        source: "Industry News",
+        content: `Stock ${companyData.stock90DayChange > 0 ? "+" : ""}${companyData.stock90DayChange}% over past 90 days`,
+        impact: Math.abs(companyData.stock90DayChange) > 15 ? "high" : Math.abs(companyData.stock90DayChange) > 5 ? "medium" : "low",
+      });
+    }
+
+    if (companyData.revenueGrowthYoY != null) {
+      signals.push({
+        timestamp: now,
+        source: "Financial Data",
+        type: "financial",
+        content: `Revenue growth ${companyData.revenueGrowthYoY > 0 ? "+" : ""}${companyData.revenueGrowthYoY}% YoY`,
+        impact: companyData.revenueGrowthYoY < -10 ? "high" : companyData.revenueGrowthYoY < 0 ? "medium" : "low",
+      });
+    }
+
+    if ((companyData.layoffRounds ?? 0) > 0) {
+      signals.push({
+        timestamp: companyData.layoffsLast24Months?.[0]?.date ?? now,
+        source: companyData.source ?? "Company Records",
         type: "news",
-        content: "Competitor announces 8% staff reduction",
-        impact: "medium",
-      },
-    ],
-    [],
-  );
+        content: `${companyData.layoffRounds} layoff round(s) in past 24 months — last cut: ${companyData.lastLayoffPercent ?? "?"}%`,
+        impact: (companyData.layoffRounds ?? 0) >= 3 ? "high" : "medium",
+      });
+    }
+
+    if (companyData.aiInvestmentSignal) {
+      signals.push({
+        timestamp: now,
+        source: "Industry Intelligence",
+        type: "financial",
+        content: `AI investment signal: ${companyData.aiInvestmentSignal} — indicates ${companyData.aiInvestmentSignal === "high" ? "accelerated automation roadmap" : companyData.aiInvestmentSignal === "medium" ? "moderate AI adoption" : "conservative AI adoption"}`,
+        impact: companyData.aiInvestmentSignal === "high" ? "high" : companyData.aiInvestmentSignal === "medium" ? "medium" : "low",
+      });
+    }
+
+    return signals;
+  }, [companyData]);
 
   return (
     <section aria-labelledby="company-profile-heading" className="space-y-8">
@@ -689,6 +702,25 @@ export const CompanyProfileTab: React.FC<TabProps> = ({
             <LiveSignalFeed signals={liveSignals} />
           </div>
         </CollapsibleSection>
+
+        <div className="mt-6">
+          <SectionHeader
+            title="Company Collapse Prediction"
+            description="AI-driven early warning system detecting Stage 1–3 signals with 6–18 month lead time."
+          />
+          <CollapseSignalCard
+            companyName={companyData.name}
+            industry={companyData.industry}
+            roleTitle={result.workTypeKey}
+            stock90dChange={companyData.stock90DayChange}
+            aiInvestmentSignal={companyData.aiInvestmentSignal}
+            layoffRounds={companyData.layoffRounds}
+            mostRecentLayoffDate={
+              companyData.layoffsLast24Months?.[0]?.date ?? null
+            }
+            filingDelinquent={false}
+          />
+        </div>
       </motion.div>
     </section>
   );

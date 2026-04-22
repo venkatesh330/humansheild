@@ -31,7 +31,7 @@ const SkillRiskGauge: React.FC<SkillRiskGaugeProps> = ({
   obsoleteSkills,
 }) => {
   const resilience = Math.max(100 - score, 30); // Inverse of risk score, min 30%
-  const scoreColor = getScoreColor(score / 100);
+  const scoreColor = getScoreColor(score);
 
   return (
     <div className="skill-risk-gauge glass-panel-heavy p-[var(--space-6)] flex flex-col items-center">
@@ -208,15 +208,22 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
     [result.workTypeKey],
   );
 
-  // Count of skills by type for the gauge
-  const safeCount = intel.skills.safe?.length || 0;
-  const atRiskCount = intel.skills.at_risk?.length || 0;
-  const obsoleteCount = intel.skills.obsolete?.length || 0;
+  // Count of skills by type for the gauge (safe with optional chaining for null intel)
+  const safeCount = intel?.skills?.safe?.length ?? 0;
+  const atRiskCount = intel?.skills?.at_risk?.length ?? 0;
+  const obsoleteCount = intel?.skills?.obsolete?.length ?? 0;
 
-  // State for simulated score
-  const [simulatedScore, setSimulatedScore] = useState<number>(
-    result.total * 100,
-  );
+  // State for simulated score — result.total is already 0-100
+  const [simulatedScore, setSimulatedScore] = useState<number>(result.total);
+
+  // Null guard — intel may be absent for unknown role keys
+  if (!intel) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Loading career intelligence for this role...
+      </div>
+    );
+  }
 
   return (
     <section aria-labelledby="career-skills-heading" className="space-y-8">
@@ -247,7 +254,7 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
 
             <div className="bg-muted border rounded-lg p-5">
               <SkillRiskGauge
-                score={result.total * 100}
+                score={result.total}
                 safeCriticalSkills={safeCount}
                 atRiskSkills={atRiskCount}
                 obsoleteSkills={obsoleteCount}
@@ -262,14 +269,14 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
                       fontWeight: "bold",
                     }}
                   >
-                    {(100 - result.total * 100).toFixed(0)}%
+                    {(100 - result.total).toFixed(0)}%
                   </span>
                 </p>
 
                 <p className="text-xs text-muted-foreground">
-                  {result.total < 0.4
+                  {result.total < 40
                     ? "Your skill profile shows strong resilience against AI automation."
-                    : result.total < 0.7
+                    : result.total < 70
                       ? "Your skill profile has moderate vulnerability to AI disruption."
                       : "Your skill profile has significant vulnerability to AI disruption."}
                 </p>
@@ -285,7 +292,7 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
 
             <WhatIfSkillSimulator
               roleKey={result.workTypeKey}
-              baseScore={result.total * 100}
+              baseScore={result.total}
               onScoreChange={setSimulatedScore}
             />
 
@@ -297,7 +304,7 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
                 <span
                   className="text-lg font-bold"
                   style={{
-                    color: getScoreColor(simulatedScore / 100),
+                    color: getScoreColor(simulatedScore),
                   }}
                 >
                   {(100 - simulatedScore).toFixed(0)}%
@@ -309,7 +316,7 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
                   className="h-full rounded-full"
                   style={{
                     width: `${100 - simulatedScore}%`,
-                    backgroundColor: getScoreColor(simulatedScore / 100),
+                    backgroundColor: getScoreColor(simulatedScore),
                   }}
                 />
               </div>
@@ -327,7 +334,7 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
             <StrategicRoadmap
               intel={intel}
               scoreColor={scoreColor}
-              score={result.total * 100}
+              score={result.total}
               experience={result.experience}
             />
           </div>

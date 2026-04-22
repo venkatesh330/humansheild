@@ -20,9 +20,10 @@ export type LayoffFrequency = 'none' | 'rare' | 'moderate' | 'frequent';
 export interface FinancialSignals {
   revenueTrend: RevenueTrend;
   fundingStage: FundingStage;
-  /** ISO date of last funding round (e.g. '2025-03-31'). Replaces the stale
-   *  static `monthsSinceLastFunding` integer — bridge computes months dynamically. */
+  /** ISO date of last funding round (e.g. '2025-03-31'). */
   lastFundingDate?: string;
+  /** Months since last funding round — kept for backward compat with existing DB entries. */
+  monthsSinceLastFunding?: number;
   burnRateEstimate: BurnRateEstimate;
 }
 

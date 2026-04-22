@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, CheckCircle, X, ThumbsUp, ThumbsDown } from 'lucide-react';
-import { recordOutcome } from '../../services/swarm/swarmLearningStore';
+import { recordOutcome } from '../services/swarm/swarmLearningStore';
 
 interface Props {
   companyRoleKey: string;

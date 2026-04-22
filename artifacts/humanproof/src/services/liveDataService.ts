@@ -1,9 +1,11 @@
 // liveDataService.ts
-// Central live data fetcher — single entry point for ALL real-time signals.
-// Hierarchy: Alpha Vantage (stock / financials) → NewsAPI (layoff news) → Supabase OSINT
-// Gracefully degrades to heuristic on any API failure.
+// Central live data fetcher — all API keys held server-side in Edge Functions.
+// Browser NEVER holds Alpha Vantage, NewsAPI, or OpenRouter keys.
+// Hierarchy: proxy-live-signals EF (stock+news) → free data connectors → heuristic fallback
 
 import { injectLayoffEvent, LayoffNewsEvent } from '../data/layoffNewsCache';
+import { enrichCompanySignals } from './dataConnectors/index';
+import { supabase as _supabase } from '../utils/supabase';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,7 +44,28 @@ export interface LiveDataResult {
   apiErrors: string[];           // non-fatal errors for transparency
 }
 
-// ── Alpha Vantage Live Stock + Financials ────────────────────────────────────
+// ── Server-side proxy call (Alpha Vantage + NewsAPI — keys never in browser) ──
+
+const fetchViaProxy = async (
+  companyName: string,
+  ticker: string | null,
+  action: 'stock' | 'news' | 'both',
+): Promise<{ stockData: any; newsData: any; errors: string[] }> => {
+  if (!_supabase) return { stockData: null, newsData: null, errors: ['Supabase client not initialised'] };
+
+  const { data, error } = await _supabase.functions.invoke('proxy-live-signals', {
+    body: { companyName, ticker, action },
+  });
+
+  if (error) throw new Error(`proxy-live-signals: ${error.message}`);
+  return {
+    stockData: data?.stockData ?? null,
+    newsData: data?.newsData ?? null,
+    errors: data?.errors ?? [],
+  };
+};
+
+// ── Alpha Vantage Live Stock + Financials (KEPT for localhost fallback) ───────
 
 const fetchAlphaVantageOverview = async (
   ticker: string,
@@ -210,51 +233,159 @@ export const fetchLiveCompanyData = async (
   let liveCount = 0;
   let heuristicCount = 0;
 
-  const alphaKey = (import.meta as any).env?.VITE_ALPHAVANTAGE_KEY as string | undefined;
-  const newsKey  = (import.meta as any).env?.VITE_NEWSAPI_KEY as string | undefined;
+  // Ticker resolution — no API keys in the browser
+  const TICKER_MAP: Record<string, string> = {
+    amazon: 'AMZN', google: 'GOOGL', alphabet: 'GOOGL',
+    microsoft: 'MSFT', apple: 'AAPL', meta: 'META', facebook: 'META',
+    tesla: 'TSLA', netflix: 'NFLX', nvidia: 'NVDA',
+    salesforce: 'CRM', oracle: 'ORCL', ibm: 'IBM',
+    intel: 'INTC', amd: 'AMD', qualcomm: 'QCOM', cisco: 'CSCO',
+    uber: 'UBER', airbnb: 'ABNB', lyft: 'LYFT', doordash: 'DASH',
+    spotify: 'SPOT', shopify: 'SHOP', adobe: 'ADBE', snap: 'SNAP',
+    palantir: 'PLTR', snowflake: 'SNOW', coinbase: 'COIN',
+    datadog: 'DDOG', cloudflare: 'NET', twilio: 'TWLO',
+    samsara: 'IOT', stripe: 'STRIP', rippling: 'RPLG',
+    okta: 'OKTA', crowdstrike: 'CRWD', zscaler: 'ZS',
+    servicenow: 'NOW', workday: 'WDAY', zendesk: 'ZEN',
+    zoom: 'ZM', slack: 'WORK', dropbox: 'DBX',
+    infosys: 'INFY', wipro: 'WIT', 'tata consultancy': 'TCS.NS', tcs: 'TCS.NS',
+    hcl: 'HCLTECH.NS', 'tech mahindra': 'TECHM.NS',
+  };
+  const resolvedTicker = ticker ?? (() => {
+    const lower = companyName.toLowerCase();
+    for (const [key, t] of Object.entries(TICKER_MAP)) {
+      if (lower.includes(key) || key.includes(lower)) return t;
+    }
+    return null;
+  })();
 
-  // ── Stock & Financials ───────────────────────────────────────────────────
+  // ── Stock + News via server-side proxy (API keys stay on server) ──────────
   let stockData: StockLiveData | null = null;
-  if (alphaKey && ticker) {
-    stockData = await fetchAlphaVantageOverview(ticker, alphaKey);
-    if (stockData?.source === 'alphavantage') {
-      liveCount += 2;  // price + fundamentals = 2 signals
+  let newsData: NewsLiveData | null = null;
+
+  try {
+    const proxyResult = await fetchViaProxy(companyName, resolvedTicker, 'both');
+    errors.push(...proxyResult.errors);
+
+    const ps = proxyResult.stockData;
+    if (ps && ps.price90DayChange !== undefined) {
+      stockData = {
+        price90DayChange: ps.price90DayChange ?? null,
+        revenueGrowthYoY: ps.revenueGrowthYoY ?? null,
+        marketCap: ps.marketCap ?? null,
+        peRatio: ps.peRatio ?? null,
+        source: 'alphavantage',
+        fetchedAt: new Date().toISOString(),
+      };
+      // Count only fields that are actually populated — price and revenue are separate signals
+      if (ps.price90DayChange != null) liveCount += 1; else heuristicCount += 1;
+      if (ps.revenueGrowthYoY != null) liveCount += 1; else heuristicCount += 1;
     } else {
-      errors.push('Alpha Vantage: unavailable — stock signals will use DB proxy');
+      if (resolvedTicker) errors.push(`Alpha Vantage: no data for ${resolvedTicker}`);
+      else errors.push('No ticker — stock signals unavailable (private/unknown company)');
       heuristicCount += 2;
     }
-  } else {
-    if (!ticker) errors.push('No ticker known — stock signals unavailable (private/unknown company)');
-    else if (!alphaKey) errors.push('VITE_ALPHAVANTAGE_KEY not set — add to .env for live stock data');
-    heuristicCount += 2;
+
+    const pn = proxyResult.newsData;
+    if (pn && pn.recentHeadlineCount !== undefined) {
+      newsData = {
+        latestLayoffEvent: pn.latestLayoffEvent ?? null,
+        recentHeadlineCount: pn.recentHeadlineCount,
+        sentimentSignal: pn.sentimentSignal,
+        source: 'newsapi',
+        fetchedAt: pn.fetchedAt ?? new Date().toISOString(),
+      };
+      if (pn.latestLayoffEvent) {
+        injectLayoffEvent(pn.latestLayoffEvent as LayoffNewsEvent);
+      }
+      liveCount += 1;
+    } else {
+      errors.push('NewsAPI: no results from proxy');
+      heuristicCount += 1;
+    }
+  } catch (proxyErr: any) {
+    errors.push(`proxy-live-signals: ${proxyErr.message}`);
+    heuristicCount += 3;
+    // Legacy localhost fallback for local dev
+    const alphaKey = (import.meta as any).env?.VITE_ALPHAVANTAGE_KEY as string | undefined;
+    const newsKey  = (import.meta as any).env?.VITE_NEWSAPI_KEY as string | undefined;
+    if (alphaKey && resolvedTicker) {
+      stockData = await fetchAlphaVantageOverview(resolvedTicker, alphaKey);
+      if (stockData?.source === 'alphavantage') { liveCount += 2; heuristicCount -= 2; }
+    }
+    if (newsKey) {
+      newsData = await fetchNewsAPIHeadlines(companyName, newsKey);
+      if (newsData?.source === 'newsapi') { liveCount += 1; heuristicCount -= 1; }
+    }
   }
 
-  // ── News & Layoff Events ─────────────────────────────────────────────────
-  let newsData: NewsLiveData | null = null;
-  if (newsKey) {
-    newsData = await fetchNewsAPIHeadlines(companyName, newsKey);
-    if (newsData?.source === 'newsapi') {
-      liveCount += 2;  // headline count + sentiment = 2 signals
-    } else {
-      errors.push('NewsAPI: unavailable — news signals will use static cache');
-      heuristicCount += 2;
+  // ── Free Data Connectors (BSE / NSE / layoffs.fyi / MCA / RSS / HN) ────────
+  // Only REAL network sources count as live signals.
+  // Naukri heuristic is always present but is NOT a live signal — it's a baseline.
+  let hiringData: HiringLiveData | null = null;
+  try {
+    const connectorSignals = await enrichCompanySignals(companyName, '', '');
+
+    // 'Naukri Heuristic' is unconditionally added by the connector — filter it out
+    // when deciding whether real connector data was returned.
+    const realSources = connectorSignals.sourcesUsed.filter(
+      s => s !== 'Naukri Heuristic',
+    );
+
+    // BSE/NSE stock signal (real network call)
+    if (stockData === null && connectorSignals.stock90DayChange !== null) {
+      stockData = {
+        price90DayChange: connectorSignals.stock90DayChange,
+        revenueGrowthYoY: connectorSignals.revenueYoY,
+        marketCap: connectorSignals.marketCapCr,
+        peRatio: connectorSignals.peRatio,
+        source: 'alphavantage',
+        fetchedAt: connectorSignals.fetchedAt,
+      };
+      liveCount += 1;
     }
-  } else {
-    errors.push('VITE_NEWSAPI_KEY not set — add to .env for live layoff news detection');
-    heuristicCount += 2;
+
+    // Hiring signal: live only when Serper API was used (not heuristic baseline)
+    const hiringIsLive = connectorSignals.sourcesUsed.includes('Serper API');
+    hiringData = {
+      freezeScore: connectorSignals.hiringFreezeScore,
+      postingTrend: connectorSignals.roleDemandTrend === 'rising' ? 'growing'
+        : connectorSignals.roleDemandTrend === 'falling' ? 'declining' : 'stable',
+      source: hiringIsLive ? 'supabase-osint' : 'heuristic',
+      fetchedAt: connectorSignals.fetchedAt,
+    };
+    if (hiringIsLive) liveCount += 1;
+
+    // RSS/HN layoff news (real network calls — count only if articles found)
+    if (connectorSignals.layoffNewsCount > 0 && newsData === null) {
+      newsData = {
+        latestLayoffEvent: null,
+        recentHeadlineCount: connectorSignals.layoffNewsCount,
+        sentimentSignal: connectorSignals.newsSentimentScore,
+        source: 'newsapi',
+        fetchedAt: connectorSignals.fetchedAt,
+      };
+      liveCount += 1;
+    }
+
+    if (realSources.length > 0) {
+      errors.push(`Connectors active: ${realSources.join(', ')}`);
+    }
+  } catch (e: any) {
+    errors.push(`Data connectors: ${e.message}`);
   }
 
   // ── Determine overall source quality ────────────────────────────────────
-  let overallSource: LiveDataResult['overallSource'];
-  if (liveCount >= 4) overallSource = 'full-live';
-  else if (liveCount >= 2) overallSource = 'partial-live';
-  else if (!ticker && !newsKey && !alphaKey) overallSource = 'unknown-company';
-  else overallSource = 'heuristic';
+  const overallSource: LiveDataResult['overallSource'] =
+    liveCount >= 4 ? 'full-live'
+    : liveCount >= 2 ? 'partial-live'
+    : !resolvedTicker ? 'unknown-company'
+    : 'heuristic';
 
   return {
     stockData,
     newsData,
-    hiringData: null,  // Hiring signals come from Supabase OSINT in auditDataPipeline
+    hiringData,
     overallSource,
     liveSignalCount: liveCount,
     heuristicSignalCount: heuristicCount,
@@ -273,23 +404,30 @@ export const patchCompanyDataWithLive = (
 ): Record<string, any> => {
   const patched = { ...base };
 
-  if (live.stockData?.source === 'alphavantage') {
-    if (live.stockData.price90DayChange !== null) {
+  if (live.stockData) {
+    if (live.stockData.price90DayChange !== null && patched.stock90DayChange == null) {
       patched.stock90DayChange = live.stockData.price90DayChange;
     }
-    if (live.stockData.revenueGrowthYoY !== null) {
+    if (live.stockData.revenueGrowthYoY !== null && patched.revenueGrowthYoY == null) {
       patched.revenueGrowthYoY = live.stockData.revenueGrowthYoY;
     }
-    // Upgrade source attribution
-    patched.source = `${base.source ?? 'DB'} + AlphaVantage Live`;
+    if (live.stockData.marketCap !== null && patched.marketCap == null) {
+      patched.marketCap = live.stockData.marketCap;
+    }
+    const srcLabel = live.stockData.source === 'alphavantage' ? 'AlphaVantage' : 'Market Data';
+    patched.source = `${base.source ?? 'DB'} + ${srcLabel} Live`;
     patched.lastUpdated = live.stockData.fetchedAt.slice(0, 10);
   }
 
-  if (live.newsData?.source === 'newsapi') {
-    // The news injection into layoffNewsCache has already happened in fetchNewsAPIHeadlines.
-    // We just need to flag that real news was fetched.
+  if (live.newsData) {
     patched._liveNewsChecked = true;
     patched._liveNewsSentiment = live.newsData.sentimentSignal;
+  }
+
+  // Apply hiring-freeze signal from connectors (Naukri)
+  if (live.hiringData?.freezeScore != null) {
+    patched._hiringFreezeScore = live.hiringData.freezeScore;
+    patched._hiringPostingTrend = live.hiringData.postingTrend;
   }
 
   return patched;

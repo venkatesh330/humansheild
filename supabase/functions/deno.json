@@ -1,13 +1,8 @@
 {
-<<<<<<< HEAD
   "compilerOptions": {
     "lib": ["deno.window"],
     "strict": true
   },
-  "imports": {
-    "std/": "https://deno.land/std@0.177.0/"
-=======
-  "importMap": "import_map.json",
   "lint": {
     "rules": {
       "tags": ["recommended"]
@@ -21,6 +16,5 @@
       "singleQuote": true,
       "proseWrap": "preserve"
     }
->>>>>>> audit-fixes-2026-04-07
   }
 }

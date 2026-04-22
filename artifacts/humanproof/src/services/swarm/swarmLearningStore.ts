@@ -1,10 +1,12 @@
 // swarmLearningStore.ts
 // Foundation for self-improving agent weights.
-// Phase 1: localStorage (per-device). Phase 2: Supabase (cross-user, upgradeable).
+// localStorage for per-device weights; Supabase for cross-user outcome aggregation.
 // Weight update formula: newWeight = oldWeight + (learningRate × accuracyScore)
 // Auto-penalty: agents with consistent error > 0.3 get 50% weight reduction.
 
 import { AgentSignal } from './swarmTypes';
+import { supabase } from '../../utils/supabase';
+import { updateCompanyConfidence } from '../companyIntelligenceService';
 
 const LEARNING_RATE   = 0.01;
 const PENALTY_THRESHOLD = 0.3;
@@ -73,7 +75,7 @@ export const recordAgentSignal = (
   saveAgentRecord(record);
 };
 
-/** Record actual outcome for a prediction (called by future feedback UI). */
+/** Record actual outcome for a prediction (called by feedback UI). */
 export const recordOutcome = (
   companyRole: string,
   actualOutcome: number  // 0–100, actual risk that materialized
@@ -86,10 +88,39 @@ export const recordOutcome = (
     pred.outcome = actualOutcome;
     localStorage.setItem(key, JSON.stringify(pred));
 
-    // Update agent weights based on outcome vs prediction
+    // Update local agent weights
     updateWeightsFromOutcome(pred);
+
+    // ── Phase 2: Supabase cross-user outcome persistence ─────────────────────
+    const [companyPart] = companyRole.split('::');
+    persistOutcomeToSupabase(pred, actualOutcome, companyPart).catch(() => {});
   } catch { /* ignore */ }
 };
+
+/** Fire-and-forget: write outcome to prediction_outcomes + update company confidence. */
+async function persistOutcomeToSupabase(
+  pred: PredictionRecord,
+  actualOutcome: number,
+  companyName: string,
+): Promise<void> {
+  const accuracy = Math.max(0, 1 - Math.abs(pred.swarmScore - actualOutcome) / 100);
+  const { error } = await supabase.from('prediction_outcomes').insert({
+    company_role:   pred.companyRole,
+    swarm_score:    pred.swarmScore,
+    engine_score:   pred.engineScore,
+    actual_outcome: actualOutcome,
+    accuracy_score: accuracy,
+    predicted_at:   pred.timestamp,
+    recorded_at:    new Date().toISOString(),
+  });
+  if (error) {
+    console.warn('[SwarmLearning] outcome persist failed:', error.message);
+    return;
+  }
+  // Nudge company confidence score: accurate predictions +0.02, inaccurate -0.05
+  const delta = accuracy >= 0.7 ? 0.02 : -0.05;
+  await updateCompanyConfidence(companyName, delta).catch(() => {});
+}
 
 /** Save a full prediction record (called by swarmOrchestrator). */
 export const savePrediction = (

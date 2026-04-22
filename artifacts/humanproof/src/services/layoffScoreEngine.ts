@@ -11,9 +11,12 @@ export {
   getCompanyRiskSummary,
   getRoleRiskForCompany,
 } from "../data/companyIntelligenceBridge";
+import { getCompanyRoleRisk } from "../data/companyIntelligenceBridge";
 import { IndustryRisk } from "../data/industryRiskData";
 import {
   calculateRoleExposureScore,
+  inferRoleRisk,
+  roleExposureData,
   RoleExposure,
 } from "../data/roleExposureData";
 import { layoffNewsCache } from "../data/layoffNewsCache";
@@ -92,11 +95,13 @@ export interface ScoreInputs {
 }
 
 export interface ScoreBreakdown {
-  L1: number;
-  L2: number;
-  L3: number;
-  L4: number;
-  L5: number;
+  L1: number; // Company Health (financial signals)
+  L2: number; // Layoff History
+  L3: number; // Role Displacement / Task Automatability (D1)
+  L4: number; // Market Conditions / Country-Market Context (D5)
+  L5: number; // Employee Factors / Experience Protection (D4)
+  D6?: number; // AI Agent Capability — autonomous agent coverage of role
+  D7?: number; // Company Health Risk — unified L1+L2+AI adoption signal
 }
 
 export interface ScoreTier {
@@ -441,6 +446,96 @@ export const calculateEmployeeFactorsScore = (
   return clamp(base + promotionBonus + relationshipBonus, 0.05, 0.95);
 };
 
+// ─── D6: AI Agent Capability (8%) ─────────────────────────────────────────────
+// How much of this role can autonomous AI agents handle end-to-end?
+
+const calculateAIAgentCapability = (
+  roleTitle: string,
+  aiRisk: number,
+): number => {
+  const t = roleTitle.toLowerCase();
+  if (/data entry|transcri|translate|bookkeep/i.test(t)) return 0.93;
+  if (/customer service|support|helpdesk|chat/i.test(t)) return 0.82;
+  if (/content|writer|copywriter|editor/i.test(t)) return 0.78;
+  if (/legal research|paralegal/i.test(t)) return 0.72;
+  if (/junior|intern|entry.level/i.test(t)) return 0.65;
+  if (/analyst/i.test(t)) return 0.55;
+  if (/qa|quality/i.test(t)) return 0.60;
+  if (/recruiter|hr/i.test(t)) return 0.50;
+  if (/engineer|developer|dev/i.test(t)) return 0.38;
+  if (/designer|ux|ui/i.test(t)) return 0.40;
+  if (/manager|director/i.test(t)) return 0.22;
+  if (/surgeon|physician|nurse|clinical/i.test(t)) return 0.06;
+  if (/ai|ml|machine learning/i.test(t)) return 0.10;
+  if (/cyber|security/i.test(t)) return 0.20;
+  // Fallback: scale from role's aiRisk proxy (more automatable → more agent-replaceable)
+  return clamp(aiRisk * 0.88);
+};
+
+// ─── D7: Unified Company Health Risk (7%) ─────────────────────────────────────
+// Combines L1 (financial), L2 (layoff history), L4 (market context), AI adoption
+
+const calculateD7CompanyHealthRisk = (
+  L1: number,
+  L2: number,
+  L4: number,
+  companyData: CompanyData,
+): number => {
+  const aiAdoptionMap: Record<string, number> = {
+    low: 0.25,
+    medium: 0.50,
+    high: 0.75,
+    very_high: 0.90,
+  };
+  const aiAdoption = aiAdoptionMap[companyData.aiInvestmentSignal ?? 'medium'] ?? 0.5;
+
+  // Leadership stability proxy: recent rounds = instability, no history = stable
+  const leadershipInstability = companyData.layoffRounds > 2
+    ? 0.75
+    : companyData.layoffRounds > 0
+      ? 0.45
+      : 0.20;
+
+  return clamp(
+    L1 * 0.30 +
+    L2 * 0.25 +
+    L4 * 0.20 +
+    aiAdoption * 0.15 +
+    leadershipInstability * 0.10,
+  );
+};
+
+// ─── D2: AI Tool Maturity (18%) ───────────────────────────────────────────────
+// How mature and production-deployed are AI tools in this role's domain?
+
+const calculateAIToolMaturity = (
+  companyData: CompanyData,
+  roleAIRisk: number,
+  demandTrend: 'rising' | 'stable' | 'falling',
+): number => {
+  const companyAIMap: Record<string, number> = {
+    low: 0.18,
+    medium: 0.48,
+    high: 0.72,
+    very_high: 0.88,
+  };
+  const companyAI = companyAIMap[companyData.aiInvestmentSignal ?? 'medium'] ?? 0.48;
+  // Higher AI risk role + falling demand = AI tools are mature in this domain
+  const domainMaturity = roleAIRisk * 0.6 + (demandTrend === 'falling' ? 0.15 : demandTrend === 'stable' ? 0.05 : 0.0);
+  return clamp(companyAI * 0.5 + domainMaturity * 0.5);
+};
+
+// ─── D3 Risk: Augmentation Potential risk (18%) — inverted ───────────────────
+// (1 - augmentation potential) = risk from low ability to leverage AI as partner
+
+const calculateAugmentationRisk = (
+  roleAIRisk: number,
+  demandTrend: 'rising' | 'stable' | 'falling',
+): number => {
+  const trendRisk = demandTrend === 'falling' ? 0.82 : demandTrend === 'stable' ? 0.42 : 0.15;
+  return clamp(trendRisk * 0.55 + roleAIRisk * 0.45);
+};
+
 // ─── Score Tier ───
 
 const getScoreTier = (score: number): ScoreTier => {
@@ -605,6 +700,8 @@ const analyzeSignalQuality = (
   L3: number,
   L4: number,
   L5: number,
+  D6?: number,
+  D7?: number,
 ) => {
   const conflicts: Array<{
     signal1: string;
@@ -657,13 +754,31 @@ const analyzeSignalQuality = (
   }
 
   // FIX: Real conflict #3 — high company health risk but no layoff history (leading indicator)
-  // Company is financially stressed but hasn't cut yet — first wave may be coming
   if (L1 > 0.68 && L2 < 0.25) {
     conflicts.push({
       signal1: `Company health critically stressed (${Math.round(L1 * 100)}/100)`,
       signal2: 'No documented layoff history — potential first-wave risk',
       severity: 'High',
     });
+  }
+
+  // D6 conflict — high agent capability but low AI tool maturity in company
+  if (D6 !== undefined && D7 !== undefined) {
+    if (D6 > 0.75 && D7 < 0.3) {
+      conflicts.push({
+        signal1: `AI agents can fully handle ${Math.round(D6 * 100)}% of role tasks`,
+        signal2: 'Company AI adoption is low — displacement may arrive with sudden investment',
+        severity: 'Medium',
+      });
+    }
+    // D7 conflict — company health risk high but D6 agent risk is low (role is protected)
+    if (D7 > 0.72 && D6 < 0.25) {
+      conflicts.push({
+        signal1: `Company health at risk (D7: ${Math.round(D7 * 100)}/100)`,
+        signal2: 'Role has low AI agent coverage — budget cuts rather than AI displacement is the threat',
+        severity: 'High',
+      });
+    }
   }
 
   // Count missing data (these are heuristic, not live signals)
@@ -707,7 +822,7 @@ const analyzeSignalQuality = (
     hasConflicts: conflicts.length > 0,
     conflictingSignals: conflicts,
     missingDataFallbacks: missingFallbacks,
-    liveSignals: 0, // Currently 0 since all data is static
+    liveSignals,
     heuristicSignals,
   };
 };
@@ -728,6 +843,8 @@ const generateRecommendations = (
   const L2pct = Math.round(breakdown.L2 * 100);
   const L3pct = Math.round(breakdown.L3 * 100);
   const L5pct = Math.round(breakdown.L5 * 100);
+  const D6pct = Math.round((breakdown.D6 ?? 0) * 100);
+  const D7pct = Math.round((breakdown.D7 ?? 0) * 100);
 
   // CRITICAL: Dual-signal high risk — company health AND layoff history both elevated
   if (breakdown.L1 > 0.7 && breakdown.L2 > 0.6) {
@@ -802,11 +919,37 @@ const generateRecommendations = (
     });
   }
 
+  // D6 — AI Agent Capability: role is highly automatable by autonomous agents
+  if ((breakdown.D6 ?? 0) > 0.65) {
+    plans.push({
+      id: "d6-high",
+      title: `Autonomous AI Agents Can Handle ${D6pct}% of Your Role`,
+      description: `Agentic AI (like Devin, AutoGPT, and domain-specific agents) can already automate a large share of ${role} tasks. Shift toward work that requires judgment, stakeholder relationships, and cross-functional coordination — areas AI agents cannot replicate. Add at least one AI collaboration skill to your profile this quarter.`,
+      priority: breakdown.D6 ?? 0 > 0.8 ? "Critical" : "High",
+      layerFocus: "AI Agent Capability",
+      riskReductionPct: 12,
+      deadline: "45 days",
+    });
+  }
+
+  // D7 — Unified Company Health Risk: employer is in distress across multiple signals
+  if ((breakdown.D7 ?? 0) > 0.6) {
+    plans.push({
+      id: "d7-high",
+      title: `${company}'s Overall Health Risk Is Elevated (${D7pct}/100)`,
+      description: `Combined signals — financial stress, layoff patterns, market position, and AI adoption pace — put ${company} in a risk zone. This is distinct from role-level AI risk: even low-AI-risk roles face cuts when employer health deteriorates. Build 3 months of emergency savings and activate two external conversations this week.`,
+      priority: breakdown.D7 ?? 0 > 0.75 ? "Critical" : "High",
+      layerFocus: "Company Health Risk",
+      riskReductionPct: 0,
+      deadline: "14 days",
+    });
+  }
+
   if (plans.length === 0) {
     plans.push({
       id: "all-good",
       title: "Keep Your Edge Sharp",
-      description: `Your risk across all 5 dimensions at ${company} is currently low. Stay ahead by setting a quarterly skills review and keeping your network warm so you hold the advantage if conditions shift.`,
+      description: `Your risk across all 7 dimensions at ${company} is currently low. Stay ahead by setting a quarterly skills review and keeping your network warm so you hold the advantage if conditions shift.`,
       priority: "Low",
       layerFocus: "General",
       riskReductionPct: 2,
@@ -857,23 +1000,50 @@ export const calculateLayoffScore = (inputs: ScoreInputs): ScoreResult => {
 
   const L1 = calculateCompanyHealthScore(companyData);
   const L2 = calculateLayoffHistoryScore(companyData, industryData, department);
-  const L3 = calculateRoleExposureScore(
-    roleTitle,
-    department,
-    inputs.roleExposureOverride,
-  );
+
+  // L3: blend global role exposure (70%) with company-specific risk from Supabase (30%)
+  const globalL3 = calculateRoleExposureScore(roleTitle, department, inputs.roleExposureOverride);
+  const companyRoleRisk = getCompanyRoleRisk(companyData, roleTitle);
+  const L3 = companyRoleRisk !== null
+    ? globalL3 * 0.70 + companyRoleRisk * 0.30
+    : globalL3;
   const L4 = calculateMarketConditionsScore(companyData.industry, industryData);
   const L5 = calculateEmployeeFactorsScore(userFactors);
 
-  // BUG-B8 FIX: Layer weights corrected — L4 was erroneously 5% (documented as 12%).
-  // Correct weights: L1=30%, L2=25%, L3=20%, L4=12%, L5=13% — sum = 100%
-  const rawScore = L1 * 0.3 + L2 * 0.25 + L3 * 0.2 + L4 * 0.12 + L5 * 0.13;
+  // Resolve raw role exposure for D2/D3/D6 sub-calculations
+  const rawRoleExposure: RoleExposure =
+    inputs.roleExposureOverride ??
+    roleExposureData[roleTitle] ??
+    inferRoleRisk(roleTitle);
+
+  // ── 7-Dimension formula (spec-aligned weights, sum = 100%) ─────────────────
+  // D1 (25%) Task Automatability     = L3 (role exposure blending aiRisk + layoffRisk)
+  // D2 (18%) AI Tool Maturity        = company AI signal × domain maturity
+  // D3 (18%) Augmentation Potential  = (1-D3) applied → low augmentation = high risk
+  // D4 (14%) Experience Protection   = L5 (employee factors, seniority-based)
+  // D5 (10%) Country/Market Context  = L4 (market conditions)
+  // D6 (08%) AI Agent Capability     = autonomous agent coverage for this role (new)
+  // D7 (07%) Company Health Risk     = unified L1+L2+AI adoption signal (new)
+  const D6 = calculateAIAgentCapability(roleTitle, rawRoleExposure.aiRisk);
+  const D7 = calculateD7CompanyHealthRisk(L1, L2, L4, companyData);
+  const D2 = calculateAIToolMaturity(companyData, rawRoleExposure.aiRisk, rawRoleExposure.demandTrend);
+  const D3risk = calculateAugmentationRisk(rawRoleExposure.aiRisk, rawRoleExposure.demandTrend);
+
+  const rawScore =
+    L3      * 0.25 +  // D1 — task automatability
+    D2      * 0.18 +  // D2 — AI tool maturity
+    D3risk  * 0.18 +  // D3 risk — low augmentation potential
+    L5      * 0.14 +  // D4 — experience protection
+    L4      * 0.10 +  // D5 — country/market context
+    D6      * 0.08 +  // D6 — AI agent capability
+    D7      * 0.07;   // D7 — unified company health risk
+
   const finalScore = Math.round(clamp(rawScore) * 100);
 
   const nextUpdate = new Date();
   nextUpdate.setDate(nextUpdate.getDate() + 7);
 
-  const breakdown = { L1, L2, L3, L4, L5 };
+  const breakdown = { L1, L2, L3, L4, L5, D6, D7 };
   const dataFreshness = calculateDataFreshness(companyData);
 
   // Calculate confidence percentage
@@ -892,7 +1062,7 @@ export const calculateLayoffScore = (inputs: ScoreInputs): ScoreResult => {
   );
 
   // Detect conflicting signals and missing data
-  const signalQuality = analyzeSignalQuality(companyData, L1, L2, L3, L4, L5);
+  const signalQuality = analyzeSignalQuality(companyData, L1, L2, L3, L4, L5, D6, D7);
 
   return {
     score: finalScore,

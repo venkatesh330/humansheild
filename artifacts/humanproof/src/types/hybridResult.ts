@@ -97,7 +97,7 @@ export interface ActionPlanItem {
  * UI-ready dimension entry (derived from ScoreBreakdown).
  */
 export interface UIDimension {
-  key: "L1" | "L2" | "L3" | "L4" | "L5" | "D1" | "D2" | "D3" | "D4" | "D5" | "D6";
+  key: "L1" | "L2" | "L3" | "L4" | "L5" | "D1" | "D2" | "D3" | "D4" | "D5" | "D6" | "D7";
   label: string;
   score: number; // 0–100 (derived from breakdown * 100)
 }
@@ -121,7 +121,7 @@ export interface UIDimension {
 export interface HybridResult {
   // ── Core Score ────────────────────────────────────────────────────────────
   total: number; // 0–100 composite risk index
-  breakdown: ScoreBreakdown | Record<string, number>; // raw L1–L5 or D1-D6 (0–1)
+  breakdown: ScoreBreakdown; // raw L1–L5 (0–1)
   tier: ScoreTier;
   confidence: "High" | "Medium" | "Low";
   confidencePercent: number; // 0–100
@@ -148,7 +148,18 @@ export interface HybridResult {
   industryKey: string;
   countryKey: string;
   experience: string; // e.g. "5-10"
+  tenureYears?: number;
   companyName?: string;
+
+  // ── Ensemble / agent transparency ────────────────────────────────────────
+  agentStatus?: {
+    gemma?:    'success' | 'failed' | 'rate_limited';
+    deepseek?: 'success' | 'failed' | 'rate_limited';
+    llama?:    'success' | 'failed' | 'rate_limited';
+    gemini?:   'success' | 'failed' | 'rate_limited';
+    failedCount: number;
+    warningMessage: string | null;
+  };
 
   // ── Metadata (optional) ──────────────────────────────────────────────────
   meta?: {

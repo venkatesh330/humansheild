@@ -54,7 +54,7 @@ export const AboutPage: React.FC = () => {
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.04em', marginBottom: '40px', textAlign: 'center' }}>
             Our Principles
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+          <div className="grid-3">
             {VALUES.map((v, i) => (
               <div key={v.title} className={`card card-hover reveal reveal-delay-${(i % 3) + 1}`} style={{ padding: '32px' }}>
                 <div style={{ width: 44, height: 44, borderRadius: '12px', background: v.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>

@@ -21,6 +21,8 @@ import { BlogPage } from "./pages/BlogPage";
 import { ContactPage } from "./pages/ContactPage";
 import AuditTerminalPage from "./pages/AuditTerminalPage";
 import NotFoundPage from "./pages/not-found";
+import SettingsPage from "./pages/SettingsPage";
+import TeamDashboardPage from "./pages/TeamDashboardPage";
 
 // Pages — lazy-loaded
 const ToolsPage = lazy(() => import("./pages/ToolsPage"));
@@ -43,6 +45,7 @@ const LearningHubPage = lazy(() =>
 const AuditLogPage = lazy(() =>
   import("./pages/AuditLogPage").then((m) => ({ default: m.AuditLogPage })),
 );
+const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
 
 // Context & Components
 import { HumanProofProvider } from "./context/HumanProofContext";
@@ -55,6 +58,11 @@ import { ToastProvider } from "./components/Toast";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { useCloudSync } from "./hooks/useCloudSync";
 import { getScoreHistory } from "./utils/scoreStorage";
+import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
+import { LanguageSelector } from "./components/LanguageSelector";
+import { applyWhiteLabelCssVars, getWhiteLabelConfig } from "./services/whiteLabelService";
+import { track, page as trackPage, identify } from "./services/analyticsService";
+import { getVariant, trackExposure } from "./services/experimentsService";
 
 // ─── Page Loader ──────────────────────────────────────────────────────────────
 function PageLoader() {
@@ -66,6 +74,15 @@ function PageLoader() {
       </div>
     </div>
   );
+}
+
+// ─── Scroll To Top on route change ───────────────────────────────────────────
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [pathname]);
+  return null;
 }
 
 // ─── Navigation Bridge ────────────────────────────────────────────────────────
@@ -122,6 +139,7 @@ function NavigationBridge() {
 const NAV_ITEMS = [
   { to: "/", label: "Research" },
   { to: "/terminal", label: "My Dashboard" },
+  { to: "/leaderboard", label: "Risk Index" },
   { to: "/safe-careers", label: "Safe List" },
   { to: "/learning-hub", label: "Upskill" },
 ];
@@ -185,97 +203,70 @@ function AppNav({
           ))}
         </ul>
 
-        <div
-          className="nav-actions"
-          style={{ display: "flex", alignItems: "center", gap: "10px" }}
-        >
-          {/* Theme Toggle */}
-          <button
-            onClick={toggleTheme}
-            className="theme-toggle"
-            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            aria-label="Toggle theme"
-          >
-            {isDark ? (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" />
-                <line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-            ) : (
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            )}
-          </button>
-
-          {user ? (
-            <>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.65rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
-                  color: "var(--text-3)",
-                  textTransform: "uppercase",
-                }}
-              >
-                {user.email?.split("@")[0]}
-              </span>
-              <button
-                onClick={() => signOut()}
-                className="btn btn-secondary btn-sm"
-              >
-                Sign out
-              </button>
-            </>
-          ) : (
-            <button onClick={onAuthOpen} className="btn btn-primary btn-sm">
-              Get Access
-            </button>
-          )}
-
-          {/* Mobile hamburger — visible via CSS at ≤768px */}
-          <button
-            className="theme-toggle"
-            id="mobile-menu-btn"
-            onClick={() => setMobileOpen((p) => !p)}
-            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={mobileOpen}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              {mobileOpen ? (
-                <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+        <div className="nav-actions">
+          {/* Desktop-only items */}
+          <div className="nav-desktop-actions">
+            <LanguageSelector />
+            <button
+              onClick={toggleTheme}
+              className="theme-toggle"
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label="Toggle theme"
+            >
+              {isDark ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="5" />
+                  <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
               ) : (
-                <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
               )}
-            </svg>
-          </button>
+            </button>
+            {user ? (
+              <>
+                <span className="nav-user-email">{user.email?.split("@")[0]}</span>
+                <Link to="/settings" className="btn btn-secondary btn-sm" style={{ textDecoration: "none" }}>Settings</Link>
+                <button onClick={() => signOut()} className="btn btn-secondary btn-sm">Sign out</button>
+              </>
+            ) : (
+              <button onClick={onAuthOpen} className="btn btn-primary btn-sm">Get Access</button>
+            )}
+          </div>
+
+          {/* Mobile: theme + hamburger only */}
+          <div className="nav-mobile-actions">
+            <button onClick={toggleTheme} className="theme-toggle" aria-label="Toggle theme">
+              {isDark ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              )}
+            </button>
+            <button
+              className="theme-toggle"
+              id="mobile-menu-btn"
+              onClick={() => setMobileOpen((p) => !p)}
+              aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileOpen}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                {mobileOpen ? (
+                  <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                ) : (
+                  <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -283,17 +274,20 @@ function AppNav({
       {mobileOpen && (
         <div className="mobile-drawer" role="navigation" aria-label="Mobile navigation">
           {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
-              style={{ textDecoration: 'none' }}
-            >
+            <Link key={item.to} to={item.to} className={`nav-link ${isActive(item.to) ? 'active' : ''}`} style={{ textDecoration: 'none' }}>
               {item.label}
             </Link>
           ))}
-          {/* Auth in mobile drawer too */}
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+          <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {user ? (
+              <>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0 4px' }}>{user.email}</span>
+                <Link to="/settings" className="nav-link" style={{ textDecoration: 'none' }} onClick={() => setMobileOpen(false)}>Settings</Link>
+                <button onClick={() => { signOut(); setMobileOpen(false); }} className="nav-link" style={{ textAlign: 'left', cursor: 'pointer' }}>Sign out</button>
+              </>
+            ) : (
+              <button onClick={() => { onAuthOpen(); setMobileOpen(false); }} className="btn btn-primary btn-sm" style={{ width: '100%' }}>Get Access</button>
+            )}
           </div>
         </div>
       )}
@@ -554,6 +548,21 @@ function AppContent() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
 
+  useEffect(() => {
+    applyWhiteLabelCssVars(getWhiteLabelConfig());
+  }, []);
+
+  useEffect(() => {
+    if (user?.id) {
+      identify(user.id, { email: user.email });
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    const location = window.location.pathname;
+    trackPage(location, { path: location });
+  }, []);
+
   // Background cloud sync for scores
   useCloudSync({
     userId: user?.id,
@@ -573,6 +582,7 @@ function AppContent() {
     <div style={{ minHeight: '100vh', color: 'var(--text)', position: 'relative' }}>
       {/* Background: static CSS gradient — no animation, no WebGL */}
       <LiquidAIBackground />
+      <ScrollToTop />
       <NavigationBridge />
 
       <AppNav
@@ -599,12 +609,16 @@ function AppContent() {
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/terms" element={<TermsPage />} />
               <Route path="/blog" element={<BlogPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/team" element={<TeamDashboardPage />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
         </GlobalErrorBoundary>
       </main>
 
+      <PWAInstallPrompt />
       <AppFooter />
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />

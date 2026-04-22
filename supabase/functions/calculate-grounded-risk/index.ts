@@ -1,4 +1,4 @@
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 import { TASK_AUTO, DISRUPTION_VELOCITY, AUGMENTATION, NETWORK_MOAT, EXP_SENSITIVITY, EXP_RISK_BASE, COUNTRY_DATA, INDUSTRY_KEY_MULT, D3_CURVE_EXPONENT } from './riskData.ts';
 
@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

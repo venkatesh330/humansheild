@@ -2,7 +2,7 @@
 // Server-side orchestration: fetch live signals → run swarm → consensus → hybrid score
 // This replaces the old calculate-grounded-risk with conflict-aware real-time scoring.
 
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import {
   calculateHybridLayoffScore,
@@ -28,7 +28,7 @@ const CONFIDENCE_LABELS: Record<string, string> = {
   "0.1": "Minimal",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       headers: {

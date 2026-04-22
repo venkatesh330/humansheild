@@ -310,15 +310,11 @@ export const RiskBreakdownTab: React.FC<TabProps> = ({
       const dimInfo: Record<string, string> = {
         L1: "Financial",
         L2: "Layoffs",
-        L3: "Industry",
-        L4: "Role",
+        L3: "Task Automatability",
+        L4: "Market Headwinds",
         L5: "Regional",
-        D1: "Automatability",
-        D2: "AI Maturity",
-        D3: "Human Moat",
-        D4: "Experience",
-        D5: "Country",
-        D6: "Social",
+        D6: "AI Agent Capability",
+        D7: "Company Health Risk",
       };
 
       return {
@@ -401,7 +397,7 @@ export const RiskBreakdownTab: React.FC<TabProps> = ({
 
         <CollapsibleSection title="Key Risk Drivers Analysis">
           <KeyRiskDriversPanel
-            breakdown={result.breakdown as any}
+            breakdown={result.breakdown}
             roleTitle={result.workTypeKey}
             companyName={result.companyName}
             dataQuality={

@@ -482,13 +482,7 @@ export const SafeCareersPage: React.FC = () => {
 
         {/* Career Grid */}
         {loading ? (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: "20px",
-            }}
-          >
+          <div className="grid-3">
             {[1, 2, 3, 4, 5, 6].map((n) => (
               <div
                 key={n}
@@ -514,13 +508,7 @@ export const SafeCareersPage: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: "20px",
-            }}
-          >
+          <div className="grid-3">
             {visibleCareers.map((career, i) => {
               const r =
                 RESISTANCE_MAP[career.ai_resistance] || RESISTANCE_MAP["High"];

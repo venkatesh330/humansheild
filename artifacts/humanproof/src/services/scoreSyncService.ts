@@ -101,3 +101,35 @@ class ScoreSyncService {
 }
 
 export const scoreSyncService = new ScoreSyncService();
+
+// ── Prediction feedback — self-improving loop ─────────────────────────────────
+// Call this when a user reports whether the prediction was accurate or not.
+// Records to prediction_outcomes and adjusts company confidence score.
+
+export async function submitPredictionFeedback(params: {
+  companyName: string;
+  roleKey: string;
+  engineScore: number;
+  swarmScore: number;
+  outcome: 'correct' | 'incorrect';
+}): Promise<void> {
+  const client = getSupabase();
+  if (!client) return;
+
+  const companyRole = `${params.companyName.toLowerCase().replace(/\s+/g, '_')}::${params.roleKey}`;
+  const actualOutcome = params.outcome === 'correct' ? params.engineScore : (100 - params.engineScore);
+  const accuracy = Math.max(0, 1 - Math.abs(params.swarmScore - actualOutcome) / 100);
+
+  // Fire-and-forget — non-blocking
+  client.from('prediction_outcomes').insert({
+    company_role: companyRole,
+    swarm_score: params.swarmScore,
+    engine_score: params.engineScore,
+    actual_outcome: actualOutcome,
+    accuracy_score: accuracy,
+    predicted_at: new Date().toISOString(),
+    recorded_at: new Date().toISOString(),
+  }).then(({ error }) => {
+    if (error) console.warn('[feedback] prediction_outcomes insert failed:', error.message);
+  });
+}

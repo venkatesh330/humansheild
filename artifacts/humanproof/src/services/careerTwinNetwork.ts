@@ -1,0 +1,303 @@
+// careerTwinNetwork.ts
+// Career Twin Network — stores transitions + Euclidean distance matching.
+// Spec: distance = sqrt( (role_similarity*0.35)^2 + (experience_delta*0.25)^2 +
+//                        (risk_score_delta*0.20)^2 + (geography_match*0.20)^2 )
+
+export interface CareerTransition {
+  id: string;
+  fromRole: string;
+  fromIndustry: string;
+  fromRiskScore: number;       // 0-100
+  fromExperienceYears: number;
+  fromCountry: string;
+  toRole: string;
+  toIndustry: string;
+  incomeChangePct: number | null;  // % change (positive = increase)
+  monthsToTransition: number;
+  whatWorked: string;          // brief description
+  addedAt: string;
+  isVerified: boolean;         // user-confirmed post-transition
+}
+
+export interface CareerTwinMatch {
+  twin: CareerTransition;
+  distanceScore: number;       // 0 = perfect match, higher = less similar
+  similarityPct: number;       // 0-100 (inverted distance, for display)
+  matchReasons: string[];
+}
+
+const STORAGE_KEY = 'hp_career_twin_db';
+const SUPABASE_TABLE = 'career_transitions';
+
+// ── Seed data — real-world-inspired transitions for cold start ────────────────
+
+const SEED_TRANSITIONS: CareerTransition[] = [
+  {
+    id: 'seed-001',
+    fromRole: 'QA Engineer',
+    fromIndustry: 'IT Services',
+    fromRiskScore: 74,
+    fromExperienceYears: 7,
+    fromCountry: 'India',
+    toRole: 'AI Quality Strategist',
+    toIndustry: 'Product',
+    incomeChangePct: 80,
+    monthsToTransition: 4,
+    whatWorked: 'Built prompt evaluation frameworks, got certified in LLM testing, joined AI-first startup',
+    addedAt: '2025-11-15',
+    isVerified: true,
+  },
+  {
+    id: 'seed-002',
+    fromRole: 'Business Analyst',
+    fromIndustry: 'Banking',
+    fromRiskScore: 68,
+    fromExperienceYears: 5,
+    fromCountry: 'India',
+    toRole: 'Product Manager',
+    toIndustry: 'Fintech',
+    incomeChangePct: 45,
+    monthsToTransition: 6,
+    whatWorked: 'Built 2 side projects demonstrating PM skills, got referral from LinkedIn connection',
+    addedAt: '2025-09-20',
+    isVerified: true,
+  },
+  {
+    id: 'seed-003',
+    fromRole: 'Data Analyst',
+    fromIndustry: 'E-commerce',
+    fromRiskScore: 62,
+    fromExperienceYears: 4,
+    fromCountry: 'India',
+    toRole: 'Data Scientist',
+    toIndustry: 'AI/ML',
+    incomeChangePct: 55,
+    monthsToTransition: 8,
+    whatWorked: 'Completed fast.ai course, contributed to open-source ML project, got into an AI startup',
+    addedAt: '2025-08-10',
+    isVerified: true,
+  },
+  {
+    id: 'seed-004',
+    fromRole: 'Content Writer',
+    fromIndustry: 'Media',
+    fromRiskScore: 78,
+    fromExperienceYears: 3,
+    fromCountry: 'India',
+    toRole: 'AI Content Strategist',
+    toIndustry: 'SaaS',
+    incomeChangePct: 70,
+    monthsToTransition: 3,
+    whatWorked: 'Learned to use Claude + Midjourney for content pipelines, showcased AI-augmented portfolio',
+    addedAt: '2026-01-05',
+    isVerified: true,
+  },
+  {
+    id: 'seed-005',
+    fromRole: 'Recruiter',
+    fromIndustry: 'IT Services',
+    fromRiskScore: 72,
+    fromExperienceYears: 6,
+    fromCountry: 'India',
+    toRole: 'People Analytics Manager',
+    toIndustry: 'HR Tech',
+    incomeChangePct: 35,
+    monthsToTransition: 9,
+    whatWorked: 'Self-taught SQL and Tableau, built attrition prediction model using company data',
+    addedAt: '2025-10-18',
+    isVerified: true,
+  },
+  {
+    id: 'seed-006',
+    fromRole: 'Software Engineer',
+    fromIndustry: 'IT Services',
+    fromRiskScore: 45,
+    fromExperienceYears: 8,
+    fromCountry: 'India',
+    toRole: 'AI Engineer',
+    toIndustry: 'AI/ML',
+    incomeChangePct: 90,
+    monthsToTransition: 5,
+    whatWorked: 'Fine-tuned open-source LLMs, built RAG system on GitHub, got referral from ex-colleague',
+    addedAt: '2026-02-12',
+    isVerified: true,
+  },
+  {
+    id: 'seed-007',
+    fromRole: 'Marketing Coordinator',
+    fromIndustry: 'Retail',
+    fromRiskScore: 71,
+    fromExperienceYears: 3,
+    fromCountry: 'India',
+    toRole: 'Growth Manager',
+    toIndustry: 'D2C',
+    incomeChangePct: 40,
+    monthsToTransition: 7,
+    whatWorked: 'Ran performance marketing experiments on own budget (₹5K), documented results in case study',
+    addedAt: '2025-12-03',
+    isVerified: true,
+  },
+];
+
+// ── Role similarity matrix (0-1, higher = more similar) ──────────────────────
+
+const ROLE_GROUPS: Record<string, string[]> = {
+  engineering:   ['software engineer', 'frontend', 'backend', 'full stack', 'developer', 'sde'],
+  ai_ml:         ['ai engineer', 'ml engineer', 'data scientist', 'ai researcher', 'llm', 'prompt'],
+  data:          ['data analyst', 'business analyst', 'data engineer', 'bi analyst'],
+  qa:            ['qa engineer', 'quality assurance', 'test engineer', 'sdet'],
+  product:       ['product manager', 'program manager', 'product owner', 'cpo'],
+  design:        ['ux designer', 'ui designer', 'product designer', 'design lead'],
+  content:       ['content writer', 'copywriter', 'technical writer', 'content strategist'],
+  marketing:     ['marketing manager', 'growth manager', 'marketing coordinator', 'seo', 'performance'],
+  hr:            ['recruiter', 'hr business partner', 'talent acquisition', 'people ops', 'people analytics'],
+  finance:       ['financial analyst', 'accountant', 'finance manager', 'bookkeeper', 'cfo'],
+  leadership:    ['manager', 'director', 'vp', 'head of', 'cto', 'ceo', 'executive'],
+  ops:           ['operations manager', 'supply chain', 'project manager', 'program manager'],
+};
+
+function getRoleGroup(role: string): string {
+  const lower = role.toLowerCase();
+  for (const [group, keywords] of Object.entries(ROLE_GROUPS)) {
+    if (keywords.some(kw => lower.includes(kw))) return group;
+  }
+  return 'other';
+}
+
+function roleSimilarity(roleA: string, roleB: string): number {
+  if (roleA.toLowerCase() === roleB.toLowerCase()) return 1.0;
+  const gA = getRoleGroup(roleA);
+  const gB = getRoleGroup(roleB);
+  if (gA === gB && gA !== 'other') return 0.7;
+  // Adjacent groups (e.g. data → ai_ml)
+  const adjacent: Record<string, string[]> = {
+    data: ['ai_ml', 'engineering'],
+    qa: ['engineering', 'ai_ml'],
+    content: ['marketing'],
+    hr: ['ops', 'leadership'],
+    finance: ['data', 'ops'],
+  };
+  if (adjacent[gA]?.includes(gB) || adjacent[gB]?.includes(gA)) return 0.4;
+  return 0.1;
+}
+
+// ── Euclidean distance (spec-aligned) ────────────────────────────────────────
+
+function computeDistance(
+  userRole: string, userExp: number, userRisk: number, userCountry: string,
+  twin: CareerTransition,
+): number {
+  const roleSim = roleSimilarity(userRole, twin.fromRole);
+  const roleComponent = (1 - roleSim) * 0.35;
+
+  const expDelta = Math.min(1, Math.abs(userExp - twin.fromExperienceYears) / 10);
+  const expComponent = expDelta * 0.25;
+
+  const riskDelta = Math.abs(userRisk - twin.fromRiskScore) / 100;
+  const riskComponent = riskDelta * 0.20;
+
+  const geoMatch = userCountry.toLowerCase() === twin.fromCountry.toLowerCase() ? 0 : 1;
+  const geoComponent = geoMatch * 0.20;
+
+  return Math.sqrt(
+    roleComponent ** 2 +
+    expComponent ** 2 +
+    riskComponent ** 2 +
+    geoComponent ** 2,
+  );
+}
+
+// ── Storage: localStorage + optional Supabase sync ───────────────────────────
+
+function loadLocalDB(): CareerTransition[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const local: CareerTransition[] = raw ? JSON.parse(raw) : [];
+    // Merge with seeds (seeds are overridden if same id exists in local)
+    const localIds = new Set(local.map(t => t.id));
+    const seeds = SEED_TRANSITIONS.filter(s => !localIds.has(s.id));
+    return [...seeds, ...local];
+  } catch {
+    return SEED_TRANSITIONS;
+  }
+}
+
+export function addTransition(transition: Omit<CareerTransition, 'id' | 'addedAt' | 'isVerified'>): CareerTransition {
+  const record: CareerTransition = {
+    ...transition,
+    id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    addedAt: new Date().toISOString(),
+    isVerified: false,
+  };
+
+  const all = loadLocalDB();
+  all.push(record);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all.filter(t => !t.id.startsWith('seed-'))));
+  } catch { /* quota */ }
+
+  window.dispatchEvent(new CustomEvent('twin-network-updated', { detail: record }));
+  return record;
+}
+
+// ── Matching ──────────────────────────────────────────────────────────────────
+
+export function findCareerTwins(
+  userRole: string,
+  userExperience: number,
+  userRiskScore: number,
+  userCountry: string,
+  topN = 5,
+): CareerTwinMatch[] {
+  const db = loadLocalDB();
+
+  const scored = db.map(twin => {
+    const dist = computeDistance(userRole, userExperience, userRiskScore, userCountry, twin);
+    const similarityPct = Math.round(Math.max(0, (1 - dist) * 100));
+
+    const reasons: string[] = [];
+    if (roleSimilarity(userRole, twin.fromRole) > 0.6) reasons.push(`Similar role: ${twin.fromRole}`);
+    if (Math.abs(userExperience - twin.fromExperienceYears) <= 2) reasons.push(`Similar experience (${twin.fromExperienceYears} yrs)`);
+    if (Math.abs(userRiskScore - twin.fromRiskScore) <= 15) reasons.push(`Similar risk score (${twin.fromRiskScore}%)`);
+    if (userCountry.toLowerCase() === twin.fromCountry.toLowerCase()) reasons.push(`Same country (${twin.fromCountry})`);
+
+    return { twin, distanceScore: dist, similarityPct, matchReasons: reasons };
+  });
+
+  return scored
+    .sort((a, b) => a.distanceScore - b.distanceScore)
+    .slice(0, topN);
+}
+
+export function getTransitionStats(): {
+  totalTransitions: number;
+  avgIncomeChange: number;
+  avgMonthsToTransition: number;
+  topDestinationRoles: string[];
+} {
+  const db = loadLocalDB();
+  const verified = db.filter(t => t.isVerified);
+
+  const incomeChanges = verified.filter(t => t.incomeChangePct !== null).map(t => t.incomeChangePct!);
+  const avgIncome = incomeChanges.length
+    ? Math.round(incomeChanges.reduce((a, b) => a + b, 0) / incomeChanges.length)
+    : 0;
+
+  const avgMonths = verified.length
+    ? Math.round(verified.reduce((a, t) => a + t.monthsToTransition, 0) / verified.length)
+    : 0;
+
+  const roleCounts: Record<string, number> = {};
+  verified.forEach(t => { roleCounts[t.toRole] = (roleCounts[t.toRole] ?? 0) + 1; });
+  const topRoles = Object.entries(roleCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([role]) => role);
+
+  return {
+    totalTransitions: db.length,
+    avgIncomeChange: avgIncome,
+    avgMonthsToTransition: avgMonths,
+    topDestinationRoles: topRoles,
+  };
+}

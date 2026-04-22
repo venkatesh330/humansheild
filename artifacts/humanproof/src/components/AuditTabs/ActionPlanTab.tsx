@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { RecommendationPanel } from "@/components/LayoffCalculator/RecommendationPanel";
 import { SectionHeader } from "./common/SectionHeader";
+import { CareerTwinCard } from "@/components/CareerTwinCard";
 import { useAdaptiveSystem } from "@/hooks/useAdaptiveSystem";
 import type { TabProps } from "./common/types";
 import type { ActionPlanItem } from "@/types/hybridResult";
@@ -443,6 +444,15 @@ export const ActionPlanTab: React.FC<TabProps> = ({
             </ul>
           </div>
         </div>
+
+        {/* Career Twin Network — people who made this same transition */}
+        <CareerTwinCard
+          userRole={result.workTypeKey}
+          userExperience={result.tenureYears ?? 5}
+          userRiskScore={result.total}
+          userCountry={result.countryKey ?? "global"}
+          topN={3}
+        />
       </motion.div>
     </section>
   );

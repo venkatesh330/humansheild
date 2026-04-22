@@ -193,11 +193,50 @@ export const companyProfileToData = (
                        + (now.getMonth() - past.getMonth());
             return Math.max(0, diff);
           }
-          // Legacy fallback: no date stored, no stale integer available either
           return undefined;
         })(),
+    // Pass through roleRiskMap from Supabase record so L3 can blend it
+    roleRiskMap: profile.roleRiskMap as unknown as Record<string, number>,
   };
 };
+
+// ── Role risk lookup helper — used by layoffScoreEngine for L3 blending ──────
+
+// Maps roleRiskMap keys → search keywords for fuzzy role-title matching
+const ROLE_KEY_ALIASES: Record<string, string[]> = {
+  softwareEngineer: ['software engineer', 'sde', 'developer', 'frontend', 'backend', 'full stack'],
+  productManager:   ['product manager', 'pm', 'product owner', 'cpo'],
+  dataScientist:    ['data scientist', 'ml engineer', 'ai engineer', 'data analyst'],
+  designer:         ['designer', 'ux', 'ui', 'product design'],
+  hrRecruiter:      ['recruiter', 'hr', 'people ops', 'talent acquisition'],
+  sales:            ['sales', 'account executive', 'business development', 'account manager'],
+};
+
+/**
+ * Returns a 0–1 company-specific risk score for the given role title,
+ * matched against roleRiskMap via fuzzy alias lookup.
+ * Returns null if companyData has no roleRiskMap or no match found.
+ */
+export function getCompanyRoleRisk(companyData: CompanyData, roleTitle: string): number | null {
+  const map = companyData.roleRiskMap;
+  if (!map || Object.keys(map).length === 0) return null;
+
+  const lower = roleTitle.toLowerCase();
+
+  for (const [mapKey, aliases] of Object.entries(ROLE_KEY_ALIASES)) {
+    if (aliases.some(alias => lower.includes(alias))) {
+      const val = map[mapKey];
+      if (typeof val === 'number') return val;
+    }
+  }
+
+  // Direct key match fallback
+  for (const [k, v] of Object.entries(map)) {
+    if (lower.includes(k.toLowerCase())) return typeof v === 'number' ? v : null;
+  }
+
+  return null;
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // PRIMARY RESOLUTION API

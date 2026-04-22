@@ -2,7 +2,7 @@
 // Executive snapshot — answers "How risky is my situation?" in ≤3 seconds.
 // Displays: verdict badge, score ring, timeline/urgency card, quick stats, conflicts.
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Shield,
@@ -11,7 +11,10 @@ import {
   Clock,
   ShieldCheck,
   Activity,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
+import { submitPredictionFeedback } from "@/services/scoreSyncService";
 import { useAdaptiveSystem } from "@/hooks/useAdaptiveSystem";
 import { ScoreRing } from "@/components/ScoreRing";
 import { DataQualityBanner } from "../../../components/DataQualityBanner";
@@ -193,6 +196,19 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 }) => {
   const isMobile = useAdaptiveSystem().width < 768;
   const scoreColor = getScoreColor(result.total);
+  const [feedbackSent, setFeedbackSent] = useState<'correct' | 'incorrect' | null>(null);
+
+  const handleFeedback = (outcome: 'correct' | 'incorrect') => {
+    if (feedbackSent) return;
+    setFeedbackSent(outcome);
+    submitPredictionFeedback({
+      companyName: result.companyName,
+      roleKey: result.workTypeKey,
+      engineScore: result.total,
+      swarmScore: result.total,
+      outcome,
+    });
+  };
 
   // Prepare quick stats
   const quickStats = useMemo<QuickStat[]>(
@@ -351,6 +367,33 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             >
               Pulse New Audit
             </button>
+          )}
+        </div>
+
+        {/* Prediction Feedback — self-improving loop */}
+        <div className="mt-6 pt-6 border-t border-white/5">
+          <p className="text-xs text-muted-foreground mb-3 opacity-60 uppercase tracking-widest font-mono">
+            Was this prediction accurate?
+          </p>
+          {feedbackSent ? (
+            <p className="text-xs text-emerald-400 font-mono">
+              ✓ Thanks — your feedback improves future accuracy.
+            </p>
+          ) : (
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleFeedback('correct')}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-colors text-xs font-semibold"
+              >
+                <ThumbsUp className="w-3.5 h-3.5" /> Yes, accurate
+              </button>
+              <button
+                onClick={() => handleFeedback('incorrect')}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-red-500/10 hover:border-red-500/30 transition-colors text-xs font-semibold"
+              >
+                <ThumbsDown className="w-3.5 h-3.5" /> No, off the mark
+              </button>
+            </div>
           )}
         </div>
       </motion.div>

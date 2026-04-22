@@ -14,6 +14,7 @@ import waitlistRoutes from './routes/waitlist';
 import roadmapRoutes from './routes/roadmap';
 import forecastRoutes from './routes/forecast';
 import calculateRoutes from './routes/calculate';
+import layoffRoutes from './routes/layoff';
 
 import { errorHandler } from './middlewares/errorHandler';
 
@@ -96,6 +97,7 @@ app.use('/api/v1/waitlist', waitlistRoutes);
 app.use('/api/v1/roadmap', roadmapRoutes);
 app.use('/api/v1/forecast', forecastRoutes);
 app.use('/api/v1/grounded-risk', calculateRoutes);
+app.use('/api/v1/layoff', layoffRoutes);
 
 // Legacy unversioned routes (backward compat — keep until frontend migrated)
 app.use('/api/assessments', assessmentRoutes);
@@ -108,6 +110,7 @@ app.use('/api/digest', digestRoutes);
 app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/roadmap', roadmapRoutes);
 app.use('/api/forecast', forecastRoutes);
+app.use('/api/layoff', layoffRoutes);
 
 // ── Error Handling ──────────────────────────────────────────────
 app.use(errorHandler);

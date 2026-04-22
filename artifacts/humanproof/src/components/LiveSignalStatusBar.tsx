@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Network, Database, AlertTriangle, ShieldAlert } from 'lucide-react';
-import type { LiveSignalStatus } from '../../services/liveSignalBanner';
+import type { LiveSignalStatus } from '../services/liveSignalBanner';
 
 interface Props {
   status: LiveSignalStatus;

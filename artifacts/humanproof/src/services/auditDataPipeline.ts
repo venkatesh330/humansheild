@@ -3,18 +3,17 @@
 // Phase 1 Fix 4: liveSignalCount is now truthful (was hardcoded 5 even when source was DB).
 // Phase 2: Integrates fetchLiveCompanyData for Alpha Vantage + NewsAPI enrichment.
 
-import { COMPANY_INTELLIGENCE_DB } from "../data/companyIntelligenceDB";
-import { companyProfileToData } from "../data/companyIntelligenceBridge";
 import { CompanyData, getCompanyByName } from "../data/companyDatabase";
 import { HybridResult, DEFAULT_HYBRID_RESULT } from "../types/hybridResult";
-import { 
-  calculateLayoffScore, 
-  ScoreInputs, 
-  UserFactors, 
+import {
+  calculateLayoffScore,
+  ScoreInputs,
+  UserFactors,
   ScoreResult,
-  createUnknownCompanyFallback 
+  createUnknownCompanyFallback
 } from "./layoffScoreEngine";
 import { fetchLiveCompanyData, patchCompanyDataWithLive } from "./liveDataService";
+import { queryCompanyIntelligence, saveToDiscoveryQueue } from "./companyIntelligenceService";
 import { supabase } from "../utils/supabase";
 
 export interface AuditInputs {
@@ -84,11 +83,13 @@ function mapToHybridResult(
   trueHeuristicSignals: number,
 ): HybridResult {
   const dimensions = [
-    { key: "L1" as const, label: "Company Health", score: Math.round(engineResult.breakdown.L1 * 100) },
-    { key: "L2" as const, label: "Layoff History", score: Math.round(engineResult.breakdown.L2 * 100) },
-    { key: "L3" as const, label: "Role Displacement", score: Math.round(engineResult.breakdown.L3 * 100) },
-    { key: "L4" as const, label: "Market Headwinds", score: Math.round(engineResult.breakdown.L4 * 100) },
-    { key: "L5" as const, label: "Your Exposure", score: Math.round(engineResult.breakdown.L5 * 100) },
+    { key: "L1" as const, label: "Company Health",         score: Math.round(engineResult.breakdown.L1 * 100) },
+    { key: "L2" as const, label: "Layoff History",         score: Math.round(engineResult.breakdown.L2 * 100) },
+    { key: "L3" as const, label: "Task Automatability",    score: Math.round(engineResult.breakdown.L3 * 100) },
+    { key: "L4" as const, label: "Market Headwinds",       score: Math.round(engineResult.breakdown.L4 * 100) },
+    { key: "L5" as const, label: "Experience Protection",  score: Math.round(engineResult.breakdown.L5 * 100) },
+    { key: "D6" as const, label: "AI Agent Capability",    score: Math.round((engineResult.breakdown.D6 ?? 0) * 100) },
+    { key: "D7" as const, label: "Company Health Risk",    score: Math.round((engineResult.breakdown.D7 ?? 0) * 100) },
   ];
 
   const reasoning = engineResult.recommendations.map(r => r.description).join(" ");
@@ -181,60 +182,90 @@ export async function fetchAuditData(inputs: AuditInputs): Promise<{
     });
 
     if (fetchRes && !error && fetchRes.data) {
-       companyData = mapOsintToCompanyData(fetchRes.data, fetchRes.source);
-       dataSource = 'live';
-       trueLiveSignals = 5;
-       trueHeuristicSignals = 2;
+      // A 'fallback' provenance means the company isn't in company_intelligence.
+      // Don't treat it as 'live' — let subsequent DB steps try before giving up.
+      const isFallback = (fetchRes.source ?? '').toLowerCase().includes('fallback');
+      if (!isFallback) {
+        companyData = mapOsintToCompanyData(fetchRes.data, fetchRes.source);
+        dataSource = 'live';
+        const d = fetchRes.data;
+        trueLiveSignals =
+          (d.stock_90d_change        != null ? 1 : 0) +
+          (d.revenue_growth_yoy      != null ? 1 : 0) +
+          (d.recent_layoff_news               ? 1 : 0) +
+          (d.employee_count          != null ? 1 : 0) +
+          (d.revenue_per_employee    != null ? 1 : 0);
+        trueHeuristicSignals = Math.max(0, 7 - trueLiveSignals);
+      }
     }
   } catch (err) {
     console.warn("[AuditPipeline] Live OSINT failed", err);
   }
 
-  // Step 2: Try COMPANY_INTELLIGENCE_DB
+  // Step 2: Supabase company_intelligence table (2000+ companies)
   if (!companyData) {
-    const key = inputs.companyName.toLowerCase().replace(/[\s.&()/]+/g, '_').replace(/[^a-z0-9_]/g, '');
-    const profile = COMPANY_INTELLIGENCE_DB[key];
-    if (profile) {
-      companyData = companyProfileToData(profile, key);
-      dataSource = 'db';
-    } else {
-      const fuzzyKey = Object.keys(COMPANY_INTELLIGENCE_DB).find(k => 
-        k.includes(inputs.companyName.toLowerCase()) || inputs.companyName.toLowerCase().includes(k)
-      );
-      if (fuzzyKey) {
-        companyData = companyProfileToData(COMPANY_INTELLIGENCE_DB[fuzzyKey], fuzzyKey);
+    try {
+      const supabaseResult = await queryCompanyIntelligence(inputs.companyName);
+      if (supabaseResult) {
+        companyData = supabaseResult;
         dataSource = 'db';
       }
+    } catch (err) {
+      console.warn('[AuditPipeline] Supabase intelligence lookup failed:', err);
     }
   }
 
-  // Step 3: Legacy DB + unknown fallback
+  // Step 3: Legacy companyDatabase (18 companies) — final code-side fallback
   if (!companyData) {
-    companyData = getCompanyByName(inputs.companyName) || createUnknownCompanyFallback(inputs.companyName);
-    dataSource = companyData.source?.includes('Unknown') ? 'fallback' : 'db';
+    const legacy = getCompanyByName(inputs.companyName);
+    if (legacy) {
+      companyData = legacy;
+      dataSource = 'db';
+    }
   }
 
-  // Step 4: Enrich DB/fallback data with live Alpha Vantage + NewsAPI signals
-  if (dataSource !== 'live') {
-    try {
-      const ticker = (companyData as any).ticker ?? (companyData as any).stockTicker ?? null;
-      const liveData = await fetchLiveCompanyData(inputs.companyName, ticker);
+  // Step 4: Unknown fallback — honest ±30pt warning; capture to discovery queue
+  if (!companyData) {
+    companyData = createUnknownCompanyFallback(inputs.companyName);
+    dataSource = 'fallback';
+    // Fire-and-forget — never blocks the audit
+    saveToDiscoveryQueue(
+      inputs.companyName,
+      companyData.industry ?? 'unknown',
+      inputs.roleTitle,
+    ).catch(() => {});
+  }
 
-      if (liveData.liveSignalCount > 0) {
-        companyData = patchCompanyDataWithLive(companyData as any, liveData) as CompanyData;
-        if (liveData.liveSignalCount >= 3) dataSource = 'live';
-        trueLiveSignals    = liveData.liveSignalCount;
-        trueHeuristicSignals = liveData.heuristicSignalCount;
-      } else {
-        trueLiveSignals      = 0;
-        trueHeuristicSignals = 7;
-      }
+  // Step 5: Always enrich with live market signals — Alpha Vantage, NewsAPI, connectors.
+  // The prior guard `if (dataSource !== 'live')` was the root cause of 0% live signals:
+  // any company found in the edge function DB was marked 'live' and this block was
+  // permanently skipped, so Alpha Vantage / Naukri / RSS were never called.
+  // patchCompanyDataWithLive uses == null checks, so DB data is never overwritten.
+  try {
+    const ticker = (companyData as any).ticker ?? (companyData as any).stockTicker ?? null;
+    const liveData = await fetchLiveCompanyData(inputs.companyName, ticker);
 
-      if (liveData.apiErrors.length > 0) {
-        console.info('[AuditPipeline] Live data gaps:', liveData.apiErrors);
+    if (liveData.liveSignalCount > 0) {
+      companyData = patchCompanyDataWithLive(companyData as any, liveData) as CompanyData;
+      // Add live enrichment signals on top of any already counted from the edge function
+      trueLiveSignals    = trueLiveSignals + liveData.liveSignalCount;
+      trueHeuristicSignals = Math.max(0, 7 - trueLiveSignals);
+      if (trueLiveSignals >= 3) dataSource = 'live';
+      // Upgrade fallback source string when connectors found real signals
+      if (companyData.source?.includes('Fallback')) {
+        companyData.source = `Partial Signals (${trueLiveSignals} live)`;
       }
-    } catch (liveErr) {
-      console.warn('[AuditPipeline] Live enrichment failed:', liveErr);
+    } else if (dataSource !== 'live') {
+      trueLiveSignals      = 0;
+      trueHeuristicSignals = 7;
+    }
+
+    if (liveData.apiErrors.length > 0) {
+      console.info('[AuditPipeline] Live data gaps:', liveData.apiErrors);
+    }
+  } catch (liveErr) {
+    console.warn('[AuditPipeline] Live enrichment failed:', liveErr);
+    if (dataSource !== 'live') {
       trueLiveSignals      = 0;
       trueHeuristicSignals = 7;
     }

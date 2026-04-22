@@ -7,10 +7,10 @@ import type { HybridResult } from '../types/hybridResult';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AgentStatusMap {
-  gemma: 'success' | 'failed' | 'rate_limited' | 'unknown';
-  deepseek: 'success' | 'failed' | 'rate_limited' | 'unknown';
-  llama: 'success' | 'failed' | 'rate_limited' | 'unknown';
-  gemini: 'success' | 'failed' | 'rate_limited' | 'unknown';
+  gemma?:    'success' | 'failed' | 'rate_limited' | 'unknown';
+  deepseek?: 'success' | 'failed' | 'rate_limited' | 'unknown';
+  llama?:    'success' | 'failed' | 'rate_limited' | 'unknown';
+  gemini?:   'success' | 'failed' | 'rate_limited' | 'unknown';
   failedCount: number;
   warningMessage: string | null;
 }
@@ -32,7 +32,7 @@ export interface LiveSignalStatus {
 // ── Main computation ──────────────────────────────────────────────────────────
 
 export const computeLiveSignalStatus = (
-  result: HybridResult & { agentStatus?: AgentStatusMap; swarmReport?: any },
+  result: HybridResult,
 ): LiveSignalStatus => {
   const liveCount   = result.signalQuality?.liveSignals   ?? 0;
   const heuristicCount = result.signalQuality?.heuristicSignals ?? 0;
@@ -48,13 +48,13 @@ export const computeLiveSignalStatus = (
     dbSource === 'Fallback';
 
   // Collect agent failures from agentStatus if available
-  const agentStatus = (result as any).agentStatus as AgentStatusMap | undefined;
+  const agentStatus = result.agentStatus;
   const agentFailures: string[] = [];
   if (agentStatus) {
-    if (agentStatus.gemma    !== 'success') agentFailures.push('Gemma');
-    if (agentStatus.deepseek !== 'success') agentFailures.push('DeepSeek');
-    if (agentStatus.llama    !== 'success') agentFailures.push('Llama');
-    if (agentStatus.gemini   !== 'success') agentFailures.push('Gemini');
+    if (agentStatus.gemma    && agentStatus.gemma    !== 'success') agentFailures.push('Gemma');
+    if (agentStatus.deepseek && agentStatus.deepseek !== 'success') agentFailures.push('DeepSeek');
+    if (agentStatus.llama    && agentStatus.llama    !== 'success') agentFailures.push('Llama');
+    if (agentStatus.gemini   && agentStatus.gemini   !== 'success') agentFailures.push('Gemini');
   }
 
   // Determine overall status

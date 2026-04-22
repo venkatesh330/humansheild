@@ -39,6 +39,7 @@ import { RecommendationPanel } from "./RecommendationPanel";
 import { MissionBriefing, recommendationsToMissions } from "./MissionBriefing";
 import { SpyLoadingState } from "./SpyLoadingState";
 import { supabase } from "../../utils/supabase";
+import { scoreSyncService } from "../../services/scoreSyncService";
 import {
   getCareerIntelligence,
   CareerIntelligence,
@@ -121,6 +122,9 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
   const [dataQuality, setDataQuality] = useState<
     "live" | "partial" | "fallback"
   >("live");
+  // Truthful signal counts tracked from OSINT + liveDataService
+  const [liveSignalCount, setLiveSignalCount] = useState(0);
+  const [heuristicSignalCount, setHeuristicSignalCount] = useState(0);
   // ── [TRAJECTORY] Oracle result for Displacement Trajectory panel ──────────
   const [oracleResult, setOracleResult] = useState<OracleResult | null>(null);
   // ── [INTEL] Local CareerIntelligence for OracleInsightsPanel ─────────────
@@ -169,38 +173,6 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── ARCHITECTURE: Circuit breaker for Oracle fetch ─────────────────────────
-  // Retries up to 2 times with 500ms backoff before returning null (silent fallback).
-  const fetchOracleWithRetry = async (
-    url: string,
-    body: object,
-    retries = 2,
-  ): Promise<Response | null> => {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(8000), // 8s timeout per attempt
-        });
-        if (res.ok) return res;
-        if (res.status >= 400 && res.status < 500) return null; // Client error — don't retry
-        throw new Error(`HTTP ${res.status}`);
-      } catch (err) {
-        if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 500 * (attempt + 1))); // 500ms, 1000ms
-          continue;
-        }
-        console.warn(
-          `[Oracle] All ${retries + 1} attempts failed — using fallback`,
-          err,
-        );
-        return null;
-      }
-    }
-    return null;
-  };
 
   const handleCalculate = async () => {
     // ── BUG FIX: Prevent concurrent submissions ────────────────────────────
@@ -319,6 +291,17 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
             companyData.layoffsLast24Months.length > 0;
           computedQuality = hasRichData ? "live" : "partial";
           setDataQuality(computedQuality);
+
+          // Count actual live fields returned by the edge function
+          const osint = data.data;
+          const osintLiveCount =
+            (osint.stock_90d_change     != null ? 1 : 0) +
+            (osint.revenue_growth_yoy   != null ? 1 : 0) +
+            (osint.recent_layoff_news            ? 1 : 0) +
+            (osint.employee_count       != null ? 1 : 0) +
+            (osint.revenue_per_employee != null ? 1 : 0);
+          setLiveSignalCount(osintLiveCount);
+          setHeuristicSignalCount(Math.max(0, 7 - osintLiveCount));
 
           dispatch({
             type: "SHOW_TOAST",
@@ -452,19 +435,15 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
       // ── BUG FIX: Stage 1 — Swarm + engine firing ─────────────────────────
       setEnsembleStage(1);
 
-      // ── [TRAJECTORY] Fire Oracle + Ensemble in PARALLEL ──────────────────
-      const apiBase =
-        import.meta.env.VITE_API_BASE_URL || "http://localhost:8787";
+      // ── [TRAJECTORY] Fire Oracle via compute-oracle Edge Function ────────
       const oracleBody = {
         roleKey: oracleRoleKey,
         industry: companyData.industry,
         experience: oracleExp,
-        // BUG-M1 FIX: Send the normalised D5 country key (e.g. 'india', 'uk')
-        // not the raw region string ('IN', 'EU') which doesn't match COUNTRY_RISK_PROFILES
         country: d5CountryKey,
       };
 
-      // ── ARCHITECTURE: Check session cache before firing API ──────────────────
+      // Check session cache first
       const cacheKey = buildCacheKey(
         companyData.name,
         oracleRoleKey,
@@ -478,35 +457,24 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
           const { value, ts } = JSON.parse(rawCache);
           if (Date.now() - ts < CACHE_TTL_MS) cachedOracleResult = value;
         }
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
 
       const oraclePromise = cachedOracleResult
         ? Promise.resolve(cachedOracleResult)
-        : fetchOracleWithRetry(`${apiBase}/api/v1/grounded-risk`, oracleBody)
-            .then((res) => (res ? res.json() : null))
-            .then((data) => {
-              if (data && Array.isArray(data.dimensions)) {
-                // Store in session cache for this input combination
-                try {
-                  sessionStorage.setItem(
-                    cacheKey,
-                    JSON.stringify({ value: data, ts: Date.now() }),
-                  );
-                } catch {
-                  /* quota exceeded — ignore */
-                }
-                setOracleResult(data as OracleResult);
-                return data as OracleResult;
+        : supabase.functions.invoke('compute-oracle', { body: oracleBody })
+            .then(({ data, error }) => {
+              if (error || !data || !Array.isArray(data.dimensions)) {
+                console.warn('[Oracle] compute-oracle failed:', error?.message);
+                return null;
               }
-              return null;
+              try {
+                sessionStorage.setItem(cacheKey, JSON.stringify({ value: data, ts: Date.now() }));
+              } catch { /* quota exceeded */ }
+              setOracleResult(data as OracleResult);
+              return data as OracleResult;
             })
             .catch((err) => {
-              console.warn(
-                "[Trajectory] Oracle circuit breaker exhausted — using fallback:",
-                err,
-              );
+              console.warn('[Oracle] Edge Function unreachable:', err);
               return null;
             });
 
@@ -632,9 +600,25 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
             confidence: ensembleResult.confidence,
             breakdown: ensembleResult.breakdown,
             models_used: ensembleResult.modelsUsed,
-            data_quality: finalQuality, // ← local const, not stale state
+            data_quality: finalQuality,
             calculated_at: new Date().toISOString(),
           });
+
+          // Non-blocking score_history sync via scoreSyncService
+          scoreSyncService.setUserId(session.user.id);
+          scoreSyncService.syncFromLocal([{
+            source: "layoff",
+            score: ensembleResult.score,
+            plot_score: ensembleResult.score,
+            data_version: "v2",
+            app_version: "2.0",
+            metadata: {
+              company: state.companyName,
+              role: state.roleTitle,
+              tier: ensembleResult.tier.label,
+              dataQuality: finalQuality,
+            },
+          }]).catch(() => {});
         }
       } catch (syncError) {
         console.warn("[Layoff] Server score sync failed:", syncError);
@@ -796,7 +780,9 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
                 oracleKey: state.oracleKey,
                 experience: deriveExperience(state.userFactors?.careerYears ?? state.userFactors?.tenureYears ?? 3)
               },
-              dataQuality
+              dataQuality,
+              liveSignalCount,
+              heuristicSignalCount,
             )}
             companyData={
               state.companyData || (state.scoreResult as any).companyData || { name: state.companyName || "Unknown", industry: "Technology", region: "GLOBAL", employeeCount: 500, isPublic: false, revenuePerEmployee: 150000, aiInvestmentSignal: "medium", source: "Fallback", lastUpdated: new Date().toISOString() }
