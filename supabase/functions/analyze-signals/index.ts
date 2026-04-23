@@ -60,16 +60,27 @@ Respond ONLY with valid JSON:
 }
 Do not include markdown or preamble.`;
 
-    const gemmaResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${gemmaKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" }
-      }),
-    });
+    // Use a real Google Generative Language API model. The previous code targeted
+    // "gemma-4-31b-it" which does not exist on the v1beta endpoint, so every call
+    // here was 404'ing in production. Gemma 2 9B-IT is the closest equivalent in
+    // the public Gemma family that is actually served via this API surface.
+    const GEMMA_MODEL = Deno.env.get("GEMMA_MODEL") || "gemma-2-9b-it";
+    const gemmaResp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMMA_MODEL}:generateContent?key=${encodeURIComponent(gemmaKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        }),
+      },
+    );
 
-    if (!gemmaResp.ok) throw new Error(await gemmaResp.text());
+    if (!gemmaResp.ok) {
+      const errBody = await gemmaResp.text();
+      throw new Error(`Gemma ${GEMMA_MODEL} HTTP ${gemmaResp.status}: ${errBody.slice(0, 300)}`);
+    }
     const aiData = await gemmaResp.json();
     const rawText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
@@ -113,7 +124,7 @@ Do not include markdown or preamble.`;
       confidence_pct: result.confidencePct,
       computed_at: new Date().toISOString(),
       valid_until: validUntil.toISOString(),
-      sources_used: rawSignals?.length ? [...new Set(rawSignals.map(s => s.source_name))] : ['training_data']
+      sources_used: rawSignals?.length ? [...new Set(rawSignals.map((s: { source_name: string }) => s.source_name))] : ['training_data']
     };
 
     const { data: validated, error: upsertError } = await supabaseClient

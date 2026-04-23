@@ -300,12 +300,26 @@ async function getRedditLayoffs(companyName: string) {
   const data = await res.json();
   const posts = data?.data?.children ?? [];
 
+  // Reuse the same word-boundary match the news pipeline uses. A naive
+  // substring like `.includes("apple")` matches "Snapple", "pineapple",
+  // "Apple Cider Co", and r/layoffs has plenty of unrelated chatter that
+  // mentions a company name in passing. Also require the company token to
+  // be ≥4 chars to avoid matching tickers like "HP" or "GE" against random
+  // English words.
   const companyLower = companyName.toLowerCase();
+  if (companyLower.length < 4) {
+    // Too-short query produces too many false positives on Reddit; bail out.
+    return parseArticles([], companyName, "reddit-layoffs");
+  }
   const articles = posts
-    .filter((p: any) =>
-      (p.data?.title || "").toLowerCase().includes(companyLower) ||
-      (p.data?.selftext || "").toLowerCase().includes(companyLower)
-    )
+    .filter((p: any) => {
+      const title = (p.data?.title || "");
+      const selftext = (p.data?.selftext || "");
+      return (
+        companyWordBoundaryMatch(title, companyLower) ||
+        companyWordBoundaryMatch(selftext, companyLower)
+      );
+    })
     .map((p: any) => ({
       title: p.data.title,
       description: p.data.selftext?.slice(0, 300) ?? "",

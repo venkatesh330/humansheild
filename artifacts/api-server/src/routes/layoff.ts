@@ -71,12 +71,19 @@ router.get('/company/search', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Query must be at least 2 characters' });
     }
 
-    const query = (q as string).toLowerCase().trim();
+    // Sanitize the user input before passing to PostgREST .or() — commas, parens,
+    // and double-quotes act as filter-grammar metacharacters and would let an
+    // attacker break out of the ilike clause. Whitelist alphanumerics + a few
+    // safe symbols (space, dot, dash, underscore) which cover real company names.
+    const safeQuery = (q as string).toLowerCase().trim().replace(/[^a-z0-9 \.\-_]/g, '');
+    if (safeQuery.length < 2) {
+      return res.status(400).json({ error: 'Query must contain at least 2 valid characters' });
+    }
 
     const { data, error } = await supabase
       .from('company_intelligence')
       .select('*')
-      .or(`company_name.ilike.%${query}%,ticker.ilike.${query}`)
+      .or(`company_name.ilike.%${safeQuery}%,ticker.ilike.${safeQuery}`)
       .order('confidence_score', { ascending: false })
       .limit(Number(limit));
 
@@ -96,8 +103,11 @@ router.get('/company/search', async (req: Request, res: Response) => {
 // Fetch live stock price change from AlphaVantage + recent news from NewsAPI
 // and return an enriched CompanyData snapshot.
 router.get('/company/:name/live', async (req: Request, res: Response) => {
-  const { name } = req.params;
-  if (!name) return res.status(400).json({ error: 'Company name is required' });
+  const nameParam = req.params.name;
+  const name: string = Array.isArray(nameParam) ? nameParam[0] : nameParam;
+  if (!name || typeof name !== 'string') {
+    return res.status(400).json({ error: 'Company name is required' });
+  }
 
   try {
     // 1. Load base data from company_intelligence
@@ -109,22 +119,32 @@ router.get('/company/:name/live', async (req: Request, res: Response) => {
 
     const base = dbRows?.[0] ? mapDbRowToCompanyData(dbRows[0]) : null;
 
-    // 2. Enrich with live stock data (AlphaVantage)
+    // 2. Enrich with live stock data (AlphaVantage TIME_SERIES_DAILY for true 90d change)
+    //    Previous implementation extrapolated daily % × 60 — mathematically invalid;
+    //    a 1% intraday move is not equivalent to a 60% quarterly trend. Use the daily
+    //    series and compute the actual 90-day return.
     let stockChange: number | null = null;
+    let stockSource: 'alpha_vantage_90d' | null = null;
     const ticker = base?.ticker || null;
 
     if (ticker && ALPHAVANTAGE_KEY) {
       try {
-        const avUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(ticker)}&apikey=${ALPHAVANTAGE_KEY}`;
-        const avRes = await fetch(avUrl, { signal: AbortSignal.timeout(4000) });
+        const avUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(ticker)}&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`;
+        const avRes = await fetch(avUrl, { signal: AbortSignal.timeout(8000) });
         if (avRes.ok) {
-          const avData = await avRes.json();
-          const quote = avData['Global Quote'];
-          // AlphaVantage returns 1-day change %; scale to approximate 90-day
-          const dailyChange = parseFloat(quote?.['10. change percent']?.replace('%', '') || 'NaN');
-          if (!isNaN(dailyChange)) {
-            // Rough approximation: 90-day ≈ 60 × daily (high variance, disclosed as estimate)
-            stockChange = Math.round(dailyChange * 60 * 10) / 10;
+          const avData = (await avRes.json()) as Record<string, any>;
+          const series = avData?.['Time Series (Daily)'] as Record<string, any> | undefined;
+          if (series) {
+            const dates = Object.keys(series).sort((a, b) => (a < b ? 1 : -1));
+            if (dates.length >= 2) {
+              const latest = Number(series[dates[0]]?.['4. close']);
+              const olderIdx = Math.min(89, dates.length - 1);
+              const older = Number(series[dates[olderIdx]]?.['4. close']);
+              if (Number.isFinite(latest) && Number.isFinite(older) && older > 0) {
+                stockChange = Math.round(((latest - older) / older) * 1000) / 10;
+                stockSource = 'alpha_vantage_90d';
+              }
+            }
           }
         }
       } catch (e) {
@@ -132,29 +152,49 @@ router.get('/company/:name/live', async (req: Request, res: Response) => {
       }
     }
 
-    // 3. Fetch recent layoff news (NewsAPI)
-    let newsItems: any[] = [];
+    // 3. Fetch recent layoff news (NewsAPI). Parse the actual percent_cut from the
+    //    headline/description — never default to a hardcoded percentage, because
+    //    that fabricates a layoff event from a single news mention.
+    interface LiveNewsItem {
+      headline: string;
+      date: string;
+      source: string;
+      url: string;
+      percentCut: number | null;
+    }
+    let newsItems: LiveNewsItem[] = [];
     if (NEWSAPI_KEY) {
       try {
-        const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(name + ' layoff OR laid off OR job cuts')}&sortBy=publishedAt&pageSize=5&language=en&apiKey=${NEWSAPI_KEY}`;
-        const newsRes = await fetch(newsUrl, { signal: AbortSignal.timeout(4000) });
+        const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(`"${name}" layoff OR "laid off" OR "job cuts"`)}&sortBy=publishedAt&pageSize=5&language=en&apiKey=${NEWSAPI_KEY}`;
+        const newsRes = await fetch(newsUrl, { signal: AbortSignal.timeout(6000) });
         if (newsRes.ok) {
-          const newsData = await newsRes.json();
-          newsItems = (newsData.articles || []).slice(0, 3).map((a: any) => ({
-            headline: a.title,
-            date: a.publishedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-            source: a.source?.name || 'NewsAPI',
-            url: a.url,
-          }));
+          const newsData = (await newsRes.json()) as { articles?: Array<Record<string, any>> };
+          const articles = Array.isArray(newsData.articles) ? newsData.articles : [];
+          newsItems = articles.slice(0, 3).map((a) => {
+            const text = `${a.title ?? ''} ${a.description ?? ''}`;
+            const pctMatch = text.match(/(\d+(?:\.\d+)?)\s*%/);
+            return {
+              headline: a.title ?? '',
+              date: typeof a.publishedAt === 'string'
+                ? a.publishedAt.split('T')[0]
+                : new Date().toISOString().split('T')[0],
+              source: a.source?.name ?? 'NewsAPI',
+              url: a.url ?? '',
+              percentCut: pctMatch ? parseFloat(pctMatch[1]) : null,
+            };
+          });
         }
       } catch (e) {
         console.warn('[layoff/live] NewsAPI fetch failed:', (e as Error).message);
       }
     }
 
-    // 4. Cache fresh news events in Supabase layoff_news_events
+    // 4. Cache fresh news events in Supabase layoff_news_events.
+    //    Drop `.throwOnError().catch()` — Postgrest builders don't expose `.catch`
+    //    and the previous code silently swallowed errors as a side-effect of TS
+    //    coercion. await + try/catch is honest about success/failure.
     if (newsItems.length > 0) {
-      const newsRows = newsItems.map(n => ({
+      const newsRows = newsItems.map((n) => ({
         company_name: name,
         headline: n.headline,
         event_date: n.date,
@@ -162,13 +202,21 @@ router.get('/company/:name/live', async (req: Request, res: Response) => {
         source_url: n.url,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       }));
-      await supabase.from('layoff_news_events').upsert(newsRows, { onConflict: 'headline' }).throwOnError().catch(() => {});
+      try {
+        await supabase
+          .from('layoff_news_events')
+          .upsert(newsRows, { onConflict: 'headline' });
+      } catch (e) {
+        console.warn('[layoff/live] news cache upsert failed:', (e as Error).message);
+      }
     }
 
     // 5. Assemble enriched response
     const enriched = {
       ...(base || { name, source: 'Live Fetch', lastUpdated: new Date().toISOString().split('T')[0] }),
-      ...(stockChange !== null ? { stock90DayChange: stockChange, _stockIsLive: true } : {}),
+      ...(stockChange !== null
+        ? { stock90DayChange: stockChange, _stockIsLive: true, _stockSource: stockSource }
+        : {}),
       _liveNews: newsItems,
       _enrichedAt: new Date().toISOString(),
     };

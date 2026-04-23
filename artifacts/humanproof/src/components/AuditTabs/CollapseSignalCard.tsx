@@ -84,6 +84,17 @@ export const CollapseSignalCard: React.FC<CollapseSignalCardProps> = ({
   if (!report) return null;
 
   const stageConf = report.stage ? STAGE_CONFIG[report.stage] : null;
+  // Fallback colour for the score badge when overallRisk > 0 but no Stage
+  // 1–3 was assigned (e.g. signals tripped sub-threshold totals). Previously
+  // the code used `stageConf!.color` which crashed with "Cannot read
+  // properties of null (reading 'color')". We pick a colour from overallRisk
+  // so the badge stays informative even outside the named stages.
+  const fallbackColor =
+    report.overallRisk >= 70 ? "var(--red, #ef4444)"
+    : report.overallRisk >= 40 ? "var(--orange, #f59e0b)"
+    : report.overallRisk >= 15 ? "var(--amber, #fbbf24)"
+    : "var(--green, #10b981)";
+  const badgeColor = stageConf?.color ?? fallbackColor;
   const allSignals = [...report.stage1Signals, ...report.stage2Signals, ...report.stage3Signals];
   const activeSignals = allSignals.filter(s => s.detected);
 
@@ -94,13 +105,13 @@ export const CollapseSignalCard: React.FC<CollapseSignalCardProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {report.stage ? (
-              <AlertTriangle className="w-5 h-5" style={{ color: stageConf!.color }} />
+              <AlertTriangle className="w-5 h-5" style={{ color: badgeColor }} />
             ) : (
               <ShieldCheck className="w-5 h-5 text-emerald-500" />
             )}
             <div>
               <div className="font-bold text-sm tracking-tight">
-                {report.stage ? stageConf!.label : "No Collapse Signals Detected"}
+                {stageConf?.label ?? "No Collapse Signals Detected"}
               </div>
               {report.stage && (
                 <div className="text-xs text-muted-foreground mt-0.5">
@@ -111,11 +122,12 @@ export const CollapseSignalCard: React.FC<CollapseSignalCardProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Risk score badge */}
+            {/* Risk score badge — uses badgeColor so it renders even when no
+                Stage 1–3 has been assigned but overallRisk is still > 0. */}
             {report.overallRisk > 0 && (
               <span
                 className="text-xs font-black px-2 py-0.5 rounded"
-                style={{ backgroundColor: `${stageConf!.color}22`, color: stageConf!.color }}
+                style={{ backgroundColor: `${badgeColor}22`, color: badgeColor }}
               >
                 {report.overallRisk}/100
               </span>

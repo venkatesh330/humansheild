@@ -87,11 +87,17 @@ export const calculateHybridLayoffScore = async (
   const overrides: string[] = [];
 
   // Kill-switch A: Confirmed live layoff event
+  // CONVENTION: recentLayoffRecency.value is 0 (recent) → 1 (distant). See
+  // ConsensusSignalSet definition. The previous comparison used `> 0.8`, which
+  // fired when the most recent layoff was *distant* — the exact opposite of the
+  // intended "layoff confirmed within 14 days" semantics. The override was
+  // therefore (a) silent on real recent events and (b) firing on companies with
+  // clean recent histories, polluting their scores. Compare against the low end.
   if (
-    consensus.recentLayoffRecency.value > 0.8 &&
+    consensus.recentLayoffRecency.value < 0.2 &&
     consensus.recentLayoffRecency.primarySource === "live"
   ) {
-    // Layoff news confirmed within 14 days — elevate to high risk regardless of other factors
+    // Layoff news confirmed within ~14 days — elevate regardless of other factors
     rawScore = Math.max(rawScore, 0.7);
     overrides.push("Live layoff confirmed: overriding to Elevated+ risk");
   }
@@ -108,10 +114,19 @@ export const calculateHybridLayoffScore = async (
   }
 
   // Kill-switch C: Pre-layoff precursor (financial stress + hiring freeze, no layoffs yet)
+  // "No layoffs yet" means the most recent layoff is *distant* (recency.value
+  // close to 1) AND frequency is low. The previous code compared recency to
+  // `< 0.3`, which is "very recent" — the inverse of what the comment claims —
+  // so this branch fired on companies that had *just* laid people off, where
+  // the heavier kill-switch A should already be active. Compare against the
+  // distant end of the scale.
+  // (Note: `revenueGrowth.value < 0.7` keeps original semantics — that signal
+  // uses 1 = declining, so `< 0.7` is "growth is reasonable", which combined
+  // with funding stress is the precursor pattern. Left as-is intentionally.)
   if (
     consensus.revenueGrowth.value < 0.7 &&
     consensus.fundingHealth.value > 0.5 &&
-    consensus.recentLayoffRecency.value < 0.3 &&
+    consensus.recentLayoffRecency.value > 0.7 &&
     consensus.layoffFrequency.value < 0.3
   ) {
     // High financial stress but no actual layoffs yet — suspicious
@@ -173,15 +188,18 @@ export const calculateHybridLayoffScore = async (
   };
 
   // ── STEP 8: SIGNAL QUALITY (exposed to UI) ──────────────────────────────
+  // Use the authoritative counts emitted by the consensus engine instead of
+  // multiplying a percentage by a magic 17. The old approximation drifted
+  // every time a signal was added or removed from `ConsensusSignalSet`, and
+  // surfaced fractional rounding artefacts to the UI ("9 live signals" when
+  // only 8 actually were live).
   const signalQuality = {
     hasConflicts: consensus.conflictLevel !== "none",
     // Use full SignalConflict objects for detailed disclosure
     conflictingSignals: consensus.allConflicts,
     missingDataFallbacks: [] as string[], // TODO: detect when heuristics used
-    liveSignals: Math.round(consensus.freshnessReport.percentLive * 17), // approximate count
-    heuristicSignals: Math.round(
-      consensus.freshnessReport.percentHeuristic * 17,
-    ),
+    liveSignals: consensus.freshnessReport.liveSignalCount,
+    heuristicSignals: consensus.freshnessReport.heuristicSignalCount,
   };
 
   // ── STEP 9: ACTIONABLE RECOMMENDATIONS ──────────────────────────────────

@@ -57,55 +57,29 @@ export async function fetchMCACompanyInfo(companyName: string): Promise<MCACompa
     };
   }
 
-  try {
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 5000);
-    // MCA public data endpoint
-    const res = await fetch(
-      `https://api.mca.gov.in/MCAservices/rest/companymasterdata?companyCIN=${cin}`,
-      { signal: controller.signal },
-    );
-    clearTimeout(tid);
-
-    if (!res.ok) throw new Error('MCA fetch failed');
-    const json = await res.json();
-    const d = json?.companyMasterData ?? {};
-
-    const lastFiling = d.lastFilingDate ?? null;
-    const filingDelinquent = lastFiling
-      ? monthsSince(lastFiling) > 24
-      : false;
-
-    const data: MCACompanyInfo = {
-      cin,
-      companyName: d.companyName ?? companyName,
-      status: mapStatus(d.companyStatus),
-      dateOfIncorporation: d.dateOfIncorporation ?? null,
-      authorizedCapital: d.authorisedCapital ? parseFloat(d.authorisedCapital) : null,
-      paidUpCapital: d.paidUpCapital ? parseFloat(d.paidUpCapital) : null,
-      lastFilingDate: lastFiling,
-      filingDelinquent,
-      source: 'MCA India',
-    };
-
-    cache.set(key, { data, ts: Date.now() });
-    return data;
-  } catch {
-    // Return CIN-resolved stub on network error
-    const stub: MCACompanyInfo = {
-      cin,
-      companyName,
-      status: 'Active',
-      dateOfIncorporation: null,
-      authorizedCapital: null,
-      paidUpCapital: null,
-      lastFilingDate: null,
-      filingDelinquent: false,
-      source: 'MCA India',
-    };
-    cache.set(key, { data: stub, ts: Date.now() });
-    return stub;
-  }
+  // The previous implementation called `https://api.mca.gov.in/MCAservices/...`
+  // which is not a real public endpoint — MCA21 master-data lookups require a
+  // session-based form-POST against the portal and are not directly usable
+  // from a browser. On every call this 4xx'd, fell into the catch block, and
+  // returned a hardcoded `status: 'Active'` stub — which then fed the scoring
+  // engine as if MCA had confirmed the company was healthy. That's data
+  // fabrication, not graceful degradation.
+  //
+  // Until a backend MCA scraper is deployed, return a CIN-only record with
+  // `status: 'Unknown'` so downstream code knows it has no live signal.
+  const stub: MCACompanyInfo = {
+    cin,
+    companyName,
+    status: 'Unknown',
+    dateOfIncorporation: null,
+    authorizedCapital: null,
+    paidUpCapital: null,
+    lastFilingDate: null,
+    filingDelinquent: false,
+    source: 'MCA India',
+  };
+  cache.set(key, { data: stub, ts: Date.now() });
+  return stub;
 }
 
 function mapStatus(raw: string | undefined): MCACompanyInfo['status'] {

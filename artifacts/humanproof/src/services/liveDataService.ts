@@ -29,6 +29,10 @@ export interface NewsLiveData {
 export interface HiringLiveData {
   freezeScore: number | null;   // 0–1, higher = more frozen
   postingTrend: 'growing' | 'stable' | 'declining' | 'frozen' | 'unknown';
+  /** Estimated open postings for the user's role at this company. Only
+   *  populated when a live API actually returned a count (Serper); null
+   *  for heuristic baselines so the UI does not present a fake number. */
+  estimatedOpenings: number | null;
   source: 'supabase-osint' | 'heuristic';
   fetchedAt: string;
 }
@@ -42,6 +46,16 @@ export interface LiveDataResult {
   heuristicSignalCount: number;  // number of static/inferred signals
   fetchedAt: string;
   apiErrors: string[];           // non-fatal errors for transparency
+  /**
+   * High-confidence layoff events derived from regulatory or news sources
+   * (SEC EDGAR 8-K, WARN Act, India press) — surfaced separately so
+   * `patchCompanyDataWithLive` can backfill `layoffsLast24Months` when the
+   * base CompanyData record is missing it. The previous flow only injected
+   * into `layoffNewsCache`, which is consulted by L2's `newsRisk` (10% of
+   * L2) but not by `recentLayoffRisk` (30% of L2) — so a confirmed SEC 8-K
+   * laid almost no weight on the score. This field closes that gap.
+   */
+  derivedLayoffEvents: { date: string; percentCut: number; source: string }[];
 }
 
 // ── Server-side proxy call (Alpha Vantage + NewsAPI — keys never in browser) ──
@@ -232,6 +246,7 @@ export const fetchLiveCompanyData = async (
   const errors: string[] = [];
   let liveCount = 0;
   let heuristicCount = 0;
+  const derivedLayoffEvents: { date: string; percentCut: number; source: string }[] = [];
 
   // Ticker resolution — no API keys in the browser
   const TICKER_MAP: Record<string, string> = {
@@ -351,6 +366,10 @@ export const fetchLiveCompanyData = async (
       freezeScore: connectorSignals.hiringFreezeScore,
       postingTrend: connectorSignals.roleDemandTrend === 'rising' ? 'growing'
         : connectorSignals.roleDemandTrend === 'falling' ? 'declining' : 'stable',
+      // Only forward the openings count when it was a live API response;
+      // heuristic baselines have no count and we'd rather show "—" than a
+      // misleading number.
+      estimatedOpenings: hiringIsLive ? connectorSignals.estimatedOpenings : null,
       source: hiringIsLive ? 'supabase-osint' : 'heuristic',
       fetchedAt: connectorSignals.fetchedAt,
     };
@@ -366,6 +385,76 @@ export const fetchLiveCompanyData = async (
         fetchedAt: connectorSignals.fetchedAt,
       };
       liveCount += 1;
+    }
+
+    // ── New high-signal sources: India press, SEC EDGAR, WARN Act ─────────────
+    // Each is an independent live source. We increment liveCount when the
+    // source was reachable AND returned at least one company-matched signal.
+    // When the source confirms a layoff event with a date, we inject it into
+    // the runtime layoffNewsCache so downstream scoring picks it up via the
+    // standard `layoffsLast24Months` path.
+
+    if (connectorSignals.indiaPressReachable && connectorSignals.indiaPressLayoffCount > 0) {
+      liveCount += 1;
+      // Backfill newsData when no global-news source produced a hit.
+      if (newsData === null) {
+        newsData = {
+          latestLayoffEvent: null,
+          recentHeadlineCount: connectorSignals.indiaPressLayoffCount,
+          sentimentSignal: connectorSignals.indiaPressSentimentScore,
+          source: 'newsapi',
+          fetchedAt: connectorSignals.fetchedAt,
+        };
+      }
+    }
+
+    if (connectorSignals.secEdgarReachable && connectorSignals.secEdgar8kLayoffFilings > 0) {
+      liveCount += 1;
+      // SEC 8-Ks are the highest-confidence layoff signal we have for US public
+      // companies — material disclosure required by federal law. Surface the
+      // most recent filing date as a confirmed layoff event.
+      if (connectorSignals.secEdgarMostRecentFiling) {
+        injectLayoffEvent({
+          companyName,
+          date: connectorSignals.secEdgarMostRecentFiling,
+          headline: `SEC 8-K filing referencing workforce reduction (${connectorSignals.secEdgar8kLayoffFilings} match${connectorSignals.secEdgar8kLayoffFilings === 1 ? '' : 'es'})`,
+          // Percent unknown from EDGAR full-text search alone — leave NaN→null.
+          // Downstream layoff-recency scoring uses date primarily; pct is
+          // refined by news/WARN sources when available.
+          percentCut: 0,
+          source: 'SEC EDGAR 8-K',
+          url: 'https://efts.sec.gov/LATEST/search-index',
+          affectedDepartments: [],
+        });
+        derivedLayoffEvents.push({
+          date: connectorSignals.secEdgarMostRecentFiling,
+          percentCut: 0,
+          source: 'SEC EDGAR 8-K',
+        });
+      }
+    }
+
+    if (connectorSignals.warnDatasetReachable && connectorSignals.warnNoticeCount > 0) {
+      liveCount += 1;
+      // WARN Act notices are *legally required* layoff disclosures with hard
+      // affected-employee counts. Inject as a confirmed event with computed
+      // percentCut when both totalAffected and a baseline employee count exist.
+      if (connectorSignals.warnMostRecentFiling) {
+        injectLayoffEvent({
+          companyName,
+          date: connectorSignals.warnMostRecentFiling,
+          headline: `WARN Act notice (${connectorSignals.warnAffectedTotal || 'count undisclosed'} workers across ${connectorSignals.warnNoticeCount} filing${connectorSignals.warnNoticeCount === 1 ? '' : 's'})`,
+          percentCut: 0,
+          source: 'WARN Act',
+          url: '',
+          affectedDepartments: [],
+        });
+        derivedLayoffEvents.push({
+          date: connectorSignals.warnMostRecentFiling,
+          percentCut: 0,
+          source: 'WARN Act',
+        });
+      }
     }
 
     if (realSources.length > 0) {
@@ -391,6 +480,7 @@ export const fetchLiveCompanyData = async (
     heuristicSignalCount: heuristicCount,
     fetchedAt: new Date().toISOString(),
     apiErrors: errors,
+    derivedLayoffEvents,
   };
 };
 
@@ -428,6 +518,30 @@ export const patchCompanyDataWithLive = (
   if (live.hiringData?.freezeScore != null) {
     patched._hiringFreezeScore = live.hiringData.freezeScore;
     patched._hiringPostingTrend = live.hiringData.postingTrend;
+    patched._hiringSource = live.hiringData.source;
+    // Only forwarded when the source was a live API; null otherwise so the
+    // UI can show "—" rather than fabricating a count.
+    if (live.hiringData.estimatedOpenings != null) {
+      patched._estimatedRoleOpenings = live.hiringData.estimatedOpenings;
+    }
+  }
+
+  // Backfill layoffsLast24Months from regulatory-grade live signals (SEC 8-K,
+  // WARN Act). recentLayoffRisk is 30% of L2 and reads from layoffsLast24Months
+  // — without this merge, the highest-confidence sources would only flow
+  // through the 10%-weighted newsRisk path. Only backfill when base is empty;
+  // never overwrite curated DB rows that may include percentCut data EDGAR
+  // can't surface.
+  if (live.derivedLayoffEvents.length > 0) {
+    const existing = Array.isArray(patched.layoffsLast24Months) ? patched.layoffsLast24Months : [];
+    if (existing.length === 0) {
+      patched.layoffsLast24Months = live.derivedLayoffEvents.map(e => ({
+        date: e.date,
+        percentCut: e.percentCut,
+        source: e.source,
+      }));
+      patched.layoffRounds = (patched.layoffRounds ?? 0) + live.derivedLayoffEvents.length;
+    }
   }
 
   return patched;

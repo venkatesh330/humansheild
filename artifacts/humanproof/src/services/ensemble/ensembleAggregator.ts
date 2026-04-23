@@ -135,8 +135,29 @@ export const aggregateEnsembleResults = ({
   const hasOutlier = outliers.length > 0;
 
   // ── Model agreement ──────────────────────────────────────────────────────
-  // Higher stdDev relative to mean = lower agreement
-  const agreementPercent = Math.max(0, Math.min(100, Math.round(100 - (stdDev / Math.max(mean, 1)) * 100)));
+  // Higher stdDev relative to mean = lower agreement.
+  //
+  // Honesty guard: "agreement" only has meaning when ≥2 *independent* scorers
+  // disagree-or-agree. With <2 LLMs, stdDev collapses to 0 (or to a one-source
+  // delta against the engine alone), which the old formula reported as ~100%
+  // — the UI then surfaced "4 AI models in strong agreement" even when every
+  // LLM had failed and only the deterministic engine ran. Floor agreement to
+  // engine-confidence-equivalent in those cases instead of fabricating it.
+  const llmScoreCount = scores.filter(s => s.model !== 'engine').length;
+  let agreementPercent: number;
+  if (llmScoreCount === 0) {
+    // Engine-only: no agreement to measure. Surface engine confidence
+    // (already 0–100) so the downstream "accuracy label" reflects the single
+    // source we actually have, instead of fabricating ~100% from stdDev=0.
+    agreementPercent = Math.max(0, Math.min(100, Math.round(engineConfidence)));
+  } else if (llmScoreCount === 1) {
+    // One LLM + engine: at most we can compare two sources. Cap perceived
+    // agreement so the UI doesn't claim multi-model consensus.
+    const rawAgreement = Math.max(0, Math.min(100, Math.round(100 - (stdDev / Math.max(mean, 1)) * 100)));
+    agreementPercent = Math.min(rawAgreement, 70);
+  } else {
+    agreementPercent = Math.max(0, Math.min(100, Math.round(100 - (stdDev / Math.max(mean, 1)) * 100)));
+  }
 
   // ── Weighted consensus ───────────────────────────────────────────────────
   // Outlier models get halved weight to reduce their distorting influence
@@ -188,15 +209,17 @@ export const aggregateEnsembleResults = ({
   // If fewer than 3 LLM models succeeded, the "agreement" metric is meaningless
   // (you can't have agreement between 1 or 2 sources). Cap confidence to prevent
   // inflated "High accuracy — 4 models agree" labels when only the engine ran.
-  const llmCount = scores.filter(s => s.model !== 'engine').length;
-  if (llmCount === 0) {
-    // Only deterministic engine — pure fallback
-    finalConfidence = Math.min(finalConfidence, 55);
-    console.log('[Ensemble] Confidence capped at 55% — engine-only result (all LLM agents failed)');
-  } else if (llmCount === 1) {
+  if (llmScoreCount === 0) {
+    // Only deterministic engine — pure fallback. Mirror engine confidence
+    // directly (already 0–100) instead of capping at a fixed 55%, which both
+    // *under*-reported confidence for high-quality deterministic runs and
+    // *over*-reported it for the failure case.
+    finalConfidence = Math.min(finalConfidence, Math.round(engineConfidence));
+    console.log('[Ensemble] Engine-only result — confidence pinned to engine value');
+  } else if (llmScoreCount === 1) {
     // Single LLM + engine — limited consensus
     finalConfidence = Math.min(finalConfidence, 68);
-  } else if (llmCount === 2) {
+  } else if (llmScoreCount === 2) {
     // Two LLMs + engine — moderate consensus
     finalConfidence = Math.min(finalConfidence, 82);
   }

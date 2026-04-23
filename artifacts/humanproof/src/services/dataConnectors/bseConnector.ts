@@ -10,7 +10,17 @@ export interface BSECompanyData {
   revenueYoY: number | null;      // % change year-over-year
   stock52wHigh: number | null;
   stock52wLow: number | null;
-  stock90DayChange: number | null; // % change
+  /**
+   * 90-day stock change in % — BSE's quote endpoint does not expose a true
+   * 90-day return, so this is null unless we have an actual price series.
+   * The previous implementation extrapolated from 52-week range position and
+   * called the result `stock90DayChange`, which mislabeled a different metric.
+   */
+  stock90DayChange: number | null;
+  /** Position vs upper-quartile of 52-week range (-1..1). Different signal — kept
+   *  separately so downstream code can use it without it being mistaken for a
+   *  90-day return. */
+  stock52wRangePosition: number | null;
   peRatio: number | null;
   isPublic: true;
   source: 'BSE India';
@@ -53,7 +63,14 @@ export async function fetchBSECompanyData(
       revenueYoY: null, // requires separate earnings call
       stock52wHigh: quote['52WeekHigh'] ? parseFloat(quote['52WeekHigh']) : null,
       stock52wLow: quote['52WeekLow'] ? parseFloat(quote['52WeekLow']) : null,
-      stock90DayChange: deriveChange90d(quote.CurrRate, quote['52WeekLow'], quote['52WeekHigh']),
+      // True 90-day change is not in this BSE response — leave null so the
+      // scoring engine can decide whether to back-fill from another source.
+      stock90DayChange: null,
+      stock52wRangePosition: derive52wRangePosition(
+        quote.CurrRate,
+        quote['52WeekLow'],
+        quote['52WeekHigh'],
+      ),
       peRatio: quote.PE ? parseFloat(quote.PE) : null,
       isPublic: true,
       source: 'BSE India',
@@ -82,16 +99,21 @@ export async function findBSEScripCode(companyName: string): Promise<string | nu
   }
 }
 
-// Derive approx 90-day change from 52w range + current price
-function deriveChange90d(
+// Where the current price sits inside the 52-week range, normalised to [-1, +1]
+// (-1 = at 52w low, 0 = midpoint, +1 = at 52w high). This is *not* a 90-day
+// return — exposing it under that name was misleading callers.
+function derive52wRangePosition(
   current: string | undefined,
   low52w: string | undefined,
   high52w: string | undefined,
 ): number | null {
   if (!current || !low52w || !high52w) return null;
   const cur = parseFloat(current);
+  const lo = parseFloat(low52w);
   const hi = parseFloat(high52w);
-  if (!cur || !hi || hi === 0) return null;
-  // Rough proxy: position in 52w range vs upper quartile
-  return Math.round(((cur - hi * 0.75) / (hi * 0.75)) * 100);
+  if (!Number.isFinite(cur) || !Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  if (hi <= lo) return null;
+  const mid = (hi + lo) / 2;
+  const halfRange = (hi - lo) / 2;
+  return Math.max(-1, Math.min(1, (cur - mid) / halfRange));
 }

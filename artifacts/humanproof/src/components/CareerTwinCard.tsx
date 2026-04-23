@@ -35,7 +35,7 @@ export const CareerTwinCard: React.FC<CareerTwinCardProps> = ({
   userRole,
   userExperience,
   userRiskScore,
-  userCountry = "India",
+  userCountry = "global",
   topN = 3,
 }) => {
   const twins: CareerTwinMatch[] = useMemo(

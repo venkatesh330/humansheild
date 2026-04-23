@@ -1,9 +1,9 @@
 // CareerSkillsTab.tsx
 // Career trajectory and skills analysis — Answers "What should I focus on?"
-// Displays: AI skill analysis, skill risk gauge, upskilling roadmap, skill simulator.
+// Displays: AI skill risk matrix, at-risk skills, human-durable skills, roadmap, simulator.
 
 import React, { useState, useMemo, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import AIRiskSkillMatrix from "@/components/AIRiskSkillMatrix";
 import StrategicRoadmap from "@/components/StrategicRoadmap";
 import { SectionHeader } from "./common/SectionHeader";
@@ -12,9 +12,63 @@ import { useAdaptiveSystem } from "@/hooks/useAdaptiveSystem";
 import { getCareerIntelligence } from "@/data/intelligence";
 import { getScoreColor } from "@/data/riskEngine";
 import type { TabProps } from "./common/types";
+import type { CareerIntelligence } from "@/data/intelligence/types";
+import {
+  Shield, AlertTriangle, TrendingUp, TrendingDown, Cpu,
+  Brain, Heart, Lightbulb, Users, Zap, Target, ChevronRight,
+  ArrowRight, BarChart3, Clock,
+} from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// SkillRiskGauge - Circular gauge showing risk/resilience
+// FALLBACK INTEL — used when role has no seeded data
+// ---------------------------------------------------------------------------
+
+const buildFallbackIntel = (roleKey: string, score: number): CareerIntelligence => {
+  const isHighRisk = score >= 65;
+  const isMedRisk = score >= 40 && score < 65;
+
+  return {
+    displayRole: roleKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
+    summary: isHighRisk
+      ? `This role has significant AI displacement exposure. Many task categories are automatable with current enterprise AI platforms. Strategic upskilling is recommended within 6–12 months.`
+      : isMedRisk
+        ? `This role carries moderate AI exposure. Some repetitive tasks are automatable, but judgment, stakeholder management, and domain expertise create meaningful protection.`
+        : `This role has strong structural resilience against AI displacement. The core value lies in human judgment, relationships, and cross-context reasoning.`,
+    skills: {
+      safe: [
+        { skill: "Stakeholder Communication", whySafe: "Trust-based human relationships AI cannot replicate", longTermValue: 92, difficulty: "Medium" },
+        { skill: "Strategic Decision Making", whySafe: "Requires contextual judgment + accountability", longTermValue: 90, difficulty: "High" },
+        { skill: "Cross-functional Collaboration", whySafe: "Nuanced organizational dynamics are human-native", longTermValue: 88, difficulty: "Medium" },
+        { skill: "Creative Problem Solving", whySafe: "Novel situation handling with incomplete information", longTermValue: 85, difficulty: "High" },
+        { skill: "Emotional Intelligence", whySafe: "Empathy, rapport, and interpersonal trust are irreplaceable", longTermValue: 95, difficulty: "High" },
+      ],
+      at_risk: isHighRisk ? [
+        { skill: "Routine Data Processing", riskScore: 88, riskType: "Automatable", horizon: "1-3yr", reason: "RPA and ML models process structured data 10-100x faster", aiReplacement: "Full", aiTool: "UiPath / Copilot" },
+        { skill: "Template Report Generation", riskScore: 82, riskType: "Automatable", horizon: "1-3yr", reason: "AI generates reports from structured inputs with no human needed", aiReplacement: "Full", aiTool: "Claude / GPT-4o" },
+        { skill: "Standard Research Compilation", riskScore: 75, riskType: "Augmented", horizon: "1-3yr", reason: "AI can do 80% of synthesis; human adds editorial judgment", aiReplacement: "Partial", aiTool: "Perplexity / NotebookLM" },
+      ] : isMedRisk ? [
+        { skill: "Routine Scheduling & Coordination", riskScore: 65, riskType: "Augmented", horizon: "3-5yr", reason: "AI agents handle calendaring and logistics", aiReplacement: "Partial", aiTool: "Reclaim AI / Copilot" },
+        { skill: "Basic Email Drafting", riskScore: 60, riskType: "Augmented", horizon: "1-3yr", reason: "AI drafts most emails; human approves and personalizes", aiReplacement: "Partial", aiTool: "Claude / Gmail AI" },
+      ] : [],
+    },
+    careerPaths: [
+      { role: "AI Collaboration Specialist", riskReduction: 35, skillGap: "Prompt engineering, AI workflow design", transitionDifficulty: "Medium", industryMapping: ["Technology", "Consulting"], salaryDelta: "+15–25%", timeToTransition: "6-12 months" },
+      { role: "Strategic Advisor", riskReduction: 45, skillGap: "Executive presence, board-level communication", transitionDifficulty: "Hard", industryMapping: ["Consulting", "Finance", "Any"], salaryDelta: "+25–40%", timeToTransition: "12-24 months" },
+    ],
+    riskTrend: [
+      { year: 2025, riskScore: score, label: "Current" },
+      { year: 2027, riskScore: Math.min(95, score + (isHighRisk ? 12 : 6)), label: "+2yr" },
+      { year: 2030, riskScore: Math.min(97, score + (isHighRisk ? 22 : 10)), label: "+5yr" },
+    ],
+    contextTags: isHighRisk ? ["high-risk", "urgent-upskill"] : isMedRisk ? ["moderate-risk", "augment-first"] : ["resilient", "low-risk"],
+    inactionScenario: isHighRisk
+      ? `Without action, AI systems will automate 60–75% of your current task portfolio within 24 months. Roles will restructure; survivors will manage AI outputs, not produce them.`
+      : `The risk is manageable but cumulative. Without strategic upskilling, gradual task erosion will reduce leverage and salary growth trajectory over 3–5 years.`,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// SkillRiskGauge - Circular gauge showing resilience
 // ---------------------------------------------------------------------------
 
 interface SkillRiskGaugeProps {
@@ -30,33 +84,17 @@ const SkillRiskGauge: React.FC<SkillRiskGaugeProps> = ({
   atRiskSkills,
   obsoleteSkills,
 }) => {
-  const resilience = Math.max(100 - score, 30); // Inverse of risk score, min 30%
+  const resilience = Math.max(100 - score, 20);
   const scoreColor = getScoreColor(score);
 
   return (
     <div className="skill-risk-gauge glass-panel-heavy p-[var(--space-6)] flex flex-col items-center">
-      <div
-        className="relative w-full aspect-square"
-        style={{ maxWidth: "200px" }}
-      >
+      <div className="relative w-full aspect-square" style={{ maxWidth: "180px" }}>
         <svg viewBox="0 0 100 100" className="drop-shadow-2xl">
-          <circle
-            cx="50"
-            cy="50"
-            r="44"
-            fill="none"
-            stroke="rgba(255,255,255,0.05)"
-            strokeWidth="8"
-          />
+          <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
           <motion.circle
-            cx="50"
-            cy="50"
-            r="44"
-            fill="none"
-            stroke={scoreColor}
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray="276.5"
+            cx="50" cy="50" r="44" fill="none" stroke={scoreColor}
+            strokeWidth="8" strokeLinecap="round" strokeDasharray="276.5"
             initial={{ strokeDashoffset: 276.5 }}
             animate={{ strokeDashoffset: 276.5 * (1 - resilience / 100) }}
             transition={{ duration: 2, ease: [0.34, 1.56, 0.64, 1] }}
@@ -66,7 +104,7 @@ const SkillRiskGauge: React.FC<SkillRiskGaugeProps> = ({
         </svg>
 
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <motion.span 
+          <motion.span
             className="text-4xl font-black tracking-tighter"
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -74,20 +112,22 @@ const SkillRiskGauge: React.FC<SkillRiskGaugeProps> = ({
           >
             {resilience.toFixed(0)}%
           </motion.span>
-          <span className="label-xs text-muted-foreground opacity-50 font-black" style={{ fontSize: '8px' }}>RESILIENCE INDEX</span>
+          <span className="label-xs text-muted-foreground opacity-50 font-black" style={{ fontSize: '8px' }}>
+            RESILIENCE
+          </span>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-[var(--space-6)] w-full mt-[var(--space-8)] pt-[var(--space-6)] border-t border-white/5">
-        <div className="flex flex-col items-center gap-[var(--space-1)]">
+      <div className="grid grid-cols-3 gap-4 w-full mt-6 pt-4 border-t border-white/5">
+        <div className="flex flex-col items-center gap-1">
           <span className="text-xl font-black tracking-tight text-[var(--emerald)]">{safeCriticalSkills}</span>
           <span className="label-xs text-muted-foreground opacity-60">IMMUNE</span>
         </div>
-        <div className="flex flex-col items-center gap-[var(--space-1)]">
+        <div className="flex flex-col items-center gap-1">
           <span className="text-xl font-black tracking-tight text-[var(--amber)]">{atRiskSkills}</span>
           <span className="label-xs text-muted-foreground opacity-60">EXPOSED</span>
         </div>
-        <div className="flex flex-col items-center gap-[var(--space-1)]">
+        <div className="flex flex-col items-center gap-1">
           <span className="text-xl font-black tracking-tight text-[var(--red)]">{obsoleteSkills}</span>
           <span className="label-xs text-muted-foreground opacity-60">CRITICAL</span>
         </div>
@@ -97,92 +137,294 @@ const SkillRiskGauge: React.FC<SkillRiskGaugeProps> = ({
 };
 
 // ---------------------------------------------------------------------------
-// WhatIfSkillSimulator - Skill adjustment simulator
+// AtRiskSkillsPanel — detailed at-risk skills with AI replacement context
+// ---------------------------------------------------------------------------
+
+const AtRiskSkillsPanel: React.FC<{ intel: CareerIntelligence }> = ({ intel }) => {
+  const atRisk = intel.skills.at_risk ?? [];
+  const obsolete = intel.skills.obsolete ?? [];
+  const combined = [...obsolete, ...atRisk].slice(0, 8);
+
+  if (combined.length === 0) {
+    return (
+      <div className="glass-panel p-5 text-center text-sm text-muted-foreground">
+        <Shield className="w-6 h-6 text-emerald-500 mx-auto mb-2 opacity-50" />
+        No high-risk skills flagged for this role profile.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {combined.map((s, i) => {
+        const risk = s.riskScore ?? 70;
+        const color = risk >= 80 ? "var(--red)" : risk >= 60 ? "var(--orange)" : "var(--amber)";
+        const isObsolete = obsolete.includes(s as any);
+        return (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: i * 0.05 }}
+            className="glass-panel p-4 rounded-xl"
+            style={{ borderLeft: `3px solid ${color}` }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-sm font-bold">{s.skill}</span>
+                  {isObsolete && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest"
+                      style={{ background: `${color}22`, color }}>
+                      OBSOLETING
+                    </span>
+                  )}
+                  {s.aiTool && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-muted-foreground border border-white/10">
+                      <Cpu className="w-2.5 h-2.5 inline mr-0.5" />{s.aiTool}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{s.reason}</p>
+                <div className="flex items-center gap-3 mt-2 text-[10px] font-mono text-muted-foreground">
+                  <span><Clock className="w-2.5 h-2.5 inline mr-1" />{s.horizon ?? "1-3yr"}</span>
+                  <span>Replacement: <span style={{ color }} className="font-bold">{s.aiReplacement ?? "Partial"}</span></span>
+                </div>
+              </div>
+              <div className="flex-shrink-0 text-right">
+                <div className="text-xl font-black" style={{ color }}>{risk}</div>
+                <div className="text-[9px] text-muted-foreground font-mono">RISK</div>
+                <div className="mt-1 w-12 h-1 bg-white/5 rounded-full overflow-hidden">
+                  <div style={{ width: `${risk}%`, background: color }} className="h-full rounded-full" />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// HumanDurableSkillsPanel — skills that resist AI displacement
+// ---------------------------------------------------------------------------
+
+const SKILL_ICONS: Record<string, React.ReactNode> = {
+  empathy: <Heart className="w-3.5 h-3.5 text-pink-400" />,
+  leadership: <Users className="w-3.5 h-3.5 text-violet-400" />,
+  strategy: <Target className="w-3.5 h-3.5 text-cyan-400" />,
+  creative: <Lightbulb className="w-3.5 h-3.5 text-amber-400" />,
+  judgment: <Brain className="w-3.5 h-3.5 text-emerald-400" />,
+};
+
+const getSkillIcon = (skill: string): React.ReactNode => {
+  const lower = skill.toLowerCase();
+  for (const [key, icon] of Object.entries(SKILL_ICONS)) {
+    if (lower.includes(key)) return icon;
+  }
+  return <Shield className="w-3.5 h-3.5 text-emerald-400" />;
+};
+
+const getDifficultyColor = (diff: string) => {
+  if (diff === "Low") return "text-emerald-400";
+  if (diff === "Medium") return "text-amber-400";
+  if (diff === "High") return "text-orange-400";
+  return "text-red-400";
+};
+
+const HumanDurableSkillsPanel: React.FC<{ intel: CareerIntelligence }> = ({ intel }) => {
+  const safe = intel.skills.safe.slice(0, 8);
+
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      {safe.map((s, i) => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 0, x: 8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: i * 0.04 }}
+          className="glass-panel p-4 rounded-xl hover:border-[var(--border-cyan)] transition-colors"
+          style={{ borderLeft: "3px solid var(--emerald)" }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 flex-shrink-0 mt-0.5">
+              {getSkillIcon(s.skill)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-sm font-bold">{s.skill}</span>
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                  HUMAN-DURABLE
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">{s.whySafe}</p>
+              <div className="flex items-center gap-3 mt-2 text-[10px]">
+                <span className="text-muted-foreground">Long-term value:</span>
+                <div className="flex items-center gap-1">
+                  <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div
+                      style={{ width: `${s.longTermValue}%`, background: 'var(--emerald)' }}
+                      className="h-full rounded-full"
+                    />
+                  </div>
+                  <span className="font-bold text-emerald-400 font-mono">{s.longTermValue}%</span>
+                </div>
+                {s.difficulty && (
+                  <span className={`font-mono font-bold text-[10px] ${getDifficultyColor(s.difficulty)}`}>
+                    {s.difficulty} to master
+                  </span>
+                )}
+              </div>
+              {s.resource && (
+                <div className="mt-1.5 text-[10px] text-cyan-400 font-mono">
+                  <ArrowRight className="w-2.5 h-2.5 inline mr-1" />
+                  {s.resource}
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// WhatIfSkillSimulator - Enhanced with realistic delta display
 // ---------------------------------------------------------------------------
 
 interface SkillAdjustment {
   skill: string;
-  proficiency: number; // 0-100
-  impact: number; // Effect on resilience score
+  proficiency: number;
+  impact: number;
+  isSafe: boolean;
+  baselineProf: number;
 }
 
 const WhatIfSkillSimulator: React.FC<{
-  roleKey: string;
+  intel: CareerIntelligence;
   baseScore: number;
   onScoreChange: (newScore: number) => void;
-}> = ({ roleKey, baseScore, onScoreChange }) => {
-  const intel = getCareerIntelligence(roleKey);
-  const initialSkills: SkillAdjustment[] = useMemo(() => {
-    const safe = intel.skills.safe.map((s) => ({
+}> = ({ intel, baseScore, onScoreChange }) => {
+  const initialSkills = useMemo<SkillAdjustment[]>(() => {
+    const safeSkills = (intel.skills.safe ?? []).slice(0, 3).map(s => ({
       skill: s.skill,
-      proficiency: 50,
-      impact: 0.5,
+      proficiency: 40,
+      baselineProf: 40,
+      impact: -(s.longTermValue / 200), // safe skills REDUCE risk when you develop them
+      isSafe: true,
     }));
-    const atRisk = intel.skills.at_risk?.map((s) => ({
+    const atRiskSkills = (intel.skills.at_risk ?? []).slice(0, 3).map(s => ({
       skill: s.skill,
-      proficiency: 30,
-      impact: -0.3,
-    })) || [];
-    return [...safe, ...atRisk].slice(0, 6);
+      proficiency: 70,
+      baselineProf: 70,
+      impact: (s.riskScore ?? 60) / 600, // at-risk skills ADD to risk if you keep them
+      isSafe: false,
+    }));
+    return [...safeSkills, ...atRiskSkills];
   }, [intel]);
 
   const [skills, setSkills] = useState<SkillAdjustment[]>(initialSkills);
 
-  const calculateSimulatedScore = useCallback(
-    (adjustedSkills: SkillAdjustment[]) => {
-      const impactSum = adjustedSkills.reduce((sum, skill) => {
-        const scaledImpact = skill.impact * (skill.proficiency / 100);
-        return sum + scaledImpact;
-      }, 0);
-      return Math.max(0, Math.min(100, baseScore + impactSum * 10));
-    },
-    [baseScore],
-  );
+  const calculateSimulatedScore = useCallback((s: SkillAdjustment[]): number => {
+    let delta = 0;
+    for (const skill of s) {
+      const profDiff = skill.proficiency - skill.baselineProf; // e.g. +30 means you improved
+      if (skill.isSafe) {
+        // More safe skill proficiency = lower risk
+        delta += skill.impact * profDiff; // impact is negative, so delta goes negative
+      } else {
+        // At-risk skills: if you reduce dependence (lower proficiency), risk drops
+        delta += skill.impact * (-profDiff); // lower proficiency → less risk
+      }
+    }
+    return Math.max(3, Math.min(98, Math.round(baseScore + delta * 100)));
+  }, [baseScore]);
 
   const handleSkillChange = (index: number, value: number) => {
-    const newSkills = [...skills];
-    newSkills[index].proficiency = value;
-    setSkills(newSkills);
-    onScoreChange(calculateSimulatedScore(newSkills));
+    const updated = [...skills];
+    updated[index].proficiency = value;
+    setSkills(updated);
+    onScoreChange(calculateSimulatedScore(updated));
   };
+
+  const simulatedScore = calculateSimulatedScore(skills);
+  const delta = simulatedScore - baseScore;
+  const deltaColor = delta < 0 ? "var(--emerald)" : delta > 0 ? "var(--red)" : "var(--text-3)";
+
+  if (skills.length === 0) {
+    return (
+      <div className="glass-panel p-6 text-center text-sm text-muted-foreground">
+        No skill simulation data available for this role.
+      </div>
+    );
+  }
 
   return (
     <div className="what-if-simulator glass-panel p-[var(--space-6)] shadow-inner">
-      <div className="space-y-[var(--space-6)]">
-        {skills.map((skill, index) => (
-          <div key={index} className="space-y-3">
-            <div className="flex justify-between items-center px-1">
-              <span className="text-xs font-bold uppercase tracking-tight opacity-70">{skill.skill}</span>
-              <span
-                className="font-mono text-[10px] font-black px-2 py-0.5 rounded"
-                style={{
-                  backgroundColor: skill.impact > 0 ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
-                  color: skill.impact > 0 ? "var(--green)" : "var(--red)",
-                }}
-              >
-                {skill.proficiency}% PROFICIENCY
-              </span>
-            </div>
-
-            <div className="relative group p-1 bg-white/5 rounded-full">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={skill.proficiency}
-                onChange={(e) => handleSkillChange(index, parseInt(e.target.value))}
-                className="premium-range w-full"
-                style={{
-                  accentColor: skill.impact > 0 ? "var(--emerald)" : "var(--rose)",
-                }}
-              />
-            </div>
-          </div>
-        ))}
+      {/* Delta display */}
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
+        <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
+          Simulated Risk Change
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-2xl font-black tracking-tighter" style={{ color: deltaColor }}>
+            {delta > 0 ? "+" : ""}{delta} pts
+          </span>
+          {delta < 0 && <TrendingDown className="w-4 h-4 text-emerald-400" />}
+          {delta > 0 && <TrendingUp className="w-4 h-4 text-red-400" />}
+        </div>
       </div>
 
-      <div className="mt-8 pt-4 border-t border-white/5 text-[10px] uppercase font-mono tracking-widest text-muted-foreground text-center opacity-40">
-        Live Resilience Correlation Simulator
+      <div className="space-y-5">
+        {skills.map((skill, index) => {
+          const sliderColor = skill.isSafe ? "var(--emerald)" : "var(--red)";
+          const label = skill.isSafe
+            ? `${skill.proficiency}% — Build this ↑`
+            : `${skill.proficiency}% — Reduce reliance ↓`;
+          return (
+            <div key={index} className="space-y-2">
+              <div className="flex justify-between items-center px-1">
+                <div className="flex items-center gap-2">
+                  {skill.isSafe
+                    ? <Shield className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                    : <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />}
+                  <span className="text-xs font-bold opacity-80">{skill.skill}</span>
+                </div>
+                <span
+                  className="font-mono text-[10px] font-black px-2 py-0.5 rounded"
+                  style={{ background: `${sliderColor}15`, color: sliderColor }}
+                >
+                  {label}
+                </span>
+              </div>
+              <div className="relative p-1 bg-white/5 rounded-full">
+                <input
+                  type="range" min="0" max="100" value={skill.proficiency}
+                  onChange={(e) => handleSkillChange(index, parseInt(e.target.value))}
+                  className="premium-range w-full"
+                  style={{ accentColor: sliderColor }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between">
+        <span className="text-[10px] uppercase font-mono tracking-widest text-muted-foreground opacity-40">
+          Live Resilience Simulator
+        </span>
+        <button
+          onClick={() => {
+            setSkills(initialSkills);
+            onScoreChange(baseScore);
+          }}
+          className="text-[10px] text-muted-foreground hover:text-[var(--cyan)] transition-colors font-mono"
+        >
+          RESET
+        </button>
       </div>
     </div>
   );
@@ -195,35 +437,23 @@ const WhatIfSkillSimulator: React.FC<{
 export const CareerSkillsTab: React.FC<TabProps> = ({
   result,
   companyData,
-  onDownload,
-  onRecalculate,
 }) => {
   const { width } = useAdaptiveSystem();
   const isMobile = width < 768;
   const scoreColor = getScoreColor(result.total);
 
-  // Get career intelligence data for the role
+  const rawIntel = useMemo(() => getCareerIntelligence(result.workTypeKey), [result.workTypeKey]);
   const intel = useMemo(
-    () => getCareerIntelligence(result.workTypeKey),
-    [result.workTypeKey],
+    () => rawIntel ?? buildFallbackIntel(result.workTypeKey, result.total),
+    [rawIntel, result.workTypeKey, result.total],
   );
 
-  // Count of skills by type for the gauge (safe with optional chaining for null intel)
-  const safeCount = intel?.skills?.safe?.length ?? 0;
-  const atRiskCount = intel?.skills?.at_risk?.length ?? 0;
-  const obsoleteCount = intel?.skills?.obsolete?.length ?? 0;
+  const safeCount = intel.skills.safe?.length ?? 0;
+  const atRiskCount = intel.skills.at_risk?.length ?? 0;
+  const obsoleteCount = intel.skills.obsolete?.length ?? 0;
 
-  // State for simulated score — result.total is already 0-100
   const [simulatedScore, setSimulatedScore] = useState<number>(result.total);
-
-  // Null guard — intel may be absent for unknown role keys
-  if (!intel) {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        Loading career intelligence for this role...
-      </div>
-    );
-  }
+  const simulatedDelta = simulatedScore - result.total;
 
   return (
     <section aria-labelledby="career-skills-heading" className="space-y-8">
@@ -232,53 +462,60 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
+        {/* ── AI Risk to Skill Analysis ── */}
         <div className="mb-6">
           <SectionHeader
             title="AI Risk to Skill Analysis"
-            description="Analysis of your current skills and their vulnerability to AI automation."
+            description="Granular analysis of every skill in your profile — which are automatable, augmented, or structurally irreplaceable."
           />
-
-          <AIRiskSkillMatrix
-            intel={intel}
-            scoreColor={scoreColor}
-            roleKey={result.workTypeKey}
-          />
+          <AIRiskSkillMatrix intel={intel} scoreColor={scoreColor} roleKey={result.workTypeKey} />
         </div>
 
+        {/* ── At-Risk Skills + Human-Durable Skills ── */}
+        <div className="grid md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <SectionHeader
+              title="At-Risk Skills"
+              description="Skills facing AI displacement within 1–5 years. Reducing dependence on these or transitioning to their AI-management layer lowers your risk."
+            />
+            <AtRiskSkillsPanel intel={intel} />
+          </div>
+          <div>
+            <SectionHeader
+              title="Human-Durable Skills"
+              description="Skills that AI cannot replicate due to trust, empathy, contextual judgment, or physical presence. Prioritize building depth in these."
+            />
+            <HumanDurableSkillsPanel intel={intel} />
+          </div>
+        </div>
+
+        {/* ── Resilience Gauge + What-If Simulator ── */}
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           <div>
             <SectionHeader
               title="Skill Resilience Score"
-              description="A measure of how future-proof your current skill set is against AI disruption."
+              description="Overall measure of how future-proof your current skill portfolio is against AI disruption trajectories."
             />
-
-            <div className="bg-muted border rounded-lg p-5">
+            <div className="glass-panel p-5 rounded-xl">
               <SkillRiskGauge
                 score={result.total}
                 safeCriticalSkills={safeCount}
                 atRiskSkills={atRiskCount}
                 obsoleteSkills={obsoleteCount}
               />
-
-              <div className="mt-4 text-center space-y-2">
+              <div className="mt-4 text-center space-y-1">
                 <p className="text-sm">
-                  <span className="font-medium">Current Resilience:</span>{" "}
-                  <span
-                    style={{
-                      color: scoreColor,
-                      fontWeight: "bold",
-                    }}
-                  >
+                  <span className="font-medium">Current Resilience: </span>
+                  <span style={{ color: scoreColor, fontWeight: "bold" }}>
                     {(100 - result.total).toFixed(0)}%
                   </span>
                 </p>
-
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {result.total < 40
-                    ? "Your skill profile shows strong resilience against AI automation."
-                    : result.total < 70
-                      ? "Your skill profile has moderate vulnerability to AI disruption."
-                      : "Your skill profile has significant vulnerability to AI disruption."}
+                    ? "Strong skill moat. Focus on deepening uniquely human capabilities."
+                    : result.total < 65
+                      ? "Moderate exposure. Shift effort toward AI-adjacent and human-only skills."
+                      : "High vulnerability. Immediate portfolio restructuring recommended."}
                 </p>
               </div>
             </div>
@@ -287,49 +524,95 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
           <div>
             <SectionHeader
               title="What-If Skill Simulator"
-              description="Adjust your proficiency in various skills to see how it affects your overall resilience score."
+              description="Adjust proficiency sliders to model how upskilling safe skills or reducing reliance on at-risk skills changes your overall risk score."
             />
-
             <WhatIfSkillSimulator
-              roleKey={result.workTypeKey}
+              intel={intel}
               baseScore={result.total}
               onScoreChange={setSimulatedScore}
             />
-
-            <div className="mt-4 rounded-lg border p-4 bg-muted">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">
-                  Simulated Resilience:
-                </span>
-                <span
-                  className="text-lg font-bold"
-                  style={{
-                    color: getScoreColor(simulatedScore),
-                  }}
-                >
-                  {(100 - simulatedScore).toFixed(0)}%
-                </span>
+            <div className="mt-3 rounded-xl border border-white/10 p-4 glass-panel">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-sm text-muted-foreground">Simulated Resilience:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold" style={{ color: getScoreColor(simulatedScore) }}>
+                    {(100 - simulatedScore).toFixed(0)}%
+                  </span>
+                  {simulatedDelta !== 0 && (
+                    <span
+                      className="text-xs font-mono font-bold px-1.5 py-0.5 rounded"
+                      style={{
+                        color: simulatedDelta < 0 ? "var(--emerald)" : "var(--red)",
+                        background: simulatedDelta < 0 ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
+                      }}
+                    >
+                      {simulatedDelta < 0 ? "▼" : "▲"} {Math.abs(simulatedDelta)} pts risk
+                    </span>
+                  )}
+                </div>
               </div>
-
-              <div className="mt-2 w-full bg-muted-2 h-2 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${100 - simulatedScore}%`,
-                    backgroundColor: getScoreColor(simulatedScore),
-                  }}
-                />
+              <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
+                <AnimatePresence>
+                  <motion.div
+                    className="h-full rounded-full"
+                    animate={{ width: `${100 - simulatedScore}%` }}
+                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                    style={{ backgroundColor: getScoreColor(simulatedScore) }}
+                  />
+                </AnimatePresence>
               </div>
-
-              <div className="mt-2 flex justify-between text-xs">
-                <span>High Risk</span>
-                <span>Low Risk</span>
+              <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground font-mono">
+                <span>HIGH RISK</span>
+                <span>LOW RISK</span>
               </div>
             </div>
           </div>
         </div>
 
-        <CollapsibleSection title="Upskilling Roadmap">
+        {/* ── Career Paths ── */}
+        {intel.careerPaths && intel.careerPaths.length > 0 && (
+          <div className="mb-6">
+            <SectionHeader
+              title="Recommended Pivot Paths"
+              description="Adjacent roles you can transition into that offer lower AI risk and comparable or higher earning potential."
+            />
+            <div className="grid md:grid-cols-2 gap-4">
+              {intel.careerPaths.slice(0, 4).map((path, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.06 }}
+                  className="glass-panel p-4 rounded-xl hover:border-[var(--border-cyan)] transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="p-1.5 rounded-lg bg-cyan-500/10 flex-shrink-0">
+                      <Zap className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-sm font-bold">{path.role}</span>
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                          -{path.riskReduction}% RISK
+                        </span>
+                        <span className="text-[9px] font-bold text-muted-foreground">{path.salaryDelta}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-2">Gap: {path.skillGap}</p>
+                      <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
+                        <span><Clock className="w-2.5 h-2.5 inline mr-1" />{path.timeToTransition}</span>
+                        <span>Difficulty: <span className="text-amber-400">{path.transitionDifficulty}</span></span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Upskilling Roadmap ── */}
+        <CollapsibleSection title="Strategic Transformation Roadmap">
           <div className="space-y-4">
             <StrategicRoadmap
               intel={intel}

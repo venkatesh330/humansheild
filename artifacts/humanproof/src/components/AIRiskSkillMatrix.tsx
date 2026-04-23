@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { CareerIntelligence, SkillRisk, SafeSkill } from '../data/intelligence/types.ts';
 import { AlertTriangle, XCircle, CheckCircle2, Clock, Zap, TrendingUp, Shield, ChevronDown, ChevronUp, Lightbulb } from 'lucide-react';
+import { buildObsoleteAdvice, buildAtRiskAdvice } from '../services/skillAdviceBuilder';
 
 interface Props {
   intel: CareerIntelligence;
@@ -95,17 +96,8 @@ const UrgencyClock = ({ horizon }: { horizon: string }) => {
 const ObsoleteSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => {
   const [expanded, setExpanded] = useState(idx === 0);
 
-  // ENHANCEMENT: Personalize adaptation advice using the skill's specific aiTool and riskType.
-  // Previously this was identical boilerplate for every skill across all users.
-  const buildObsoleteAdvice = (s: SkillRisk): string => {
-    const toolText = s.aiTool
-      ? `Tools like ${s.aiTool.split(',').slice(0,2).join(' and ')} are already handling this at scale.`
-      : 'Mature AI platforms already handle this function at scale.';
-    const actionText = s.aiReplacement === 'Full'
-      ? `Stop investing time deepening this skill. Instead, learn to configure, prompt, and QA the AI tools that perform it — that is the durable, high-leverage skill.`
-      : `Reduce time on manual execution of this skill. Shift focus to directing and validating AI-generated outputs within this domain.`;
-    return `${toolText} ${actionText}`;
-  };
+  // Adaptation advice composition lives in services/skillAdviceBuilder.ts so it
+  // is independently unit-testable (component file would otherwise pull in React).
 
   return (
     <div style={{
@@ -171,13 +163,7 @@ const ObsoleteSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => 
 const AtRiskSkillRow = ({ skill, idx }: { skill: SkillRisk; idx: number }) => {
   const [expanded, setExpanded] = useState(idx === 0);
 
-  // ENHANCEMENT: Personalize adaptation advice based on the skill's riskType and reason.
-  const buildAtRiskAdvice = (s: SkillRisk): string => {
-    if (s.riskType === 'Augmented' || s.aiReplacement === 'Partial') {
-      return `AI is taking over the execution layer of ${s.skill}, but the judgment, quality standards, and stakeholder context layer remains human-led. Shift from doing to directing and validating — that's where the durable value lives.`;
-    }
-    return `The routine components of ${s.skill} are being automated, but complex, novel, or high-stakes instances still require human judgment. Invest in the edge cases and strategic applications — these are the AI-resistant sub-skills within this domain.`;
-  };
+  // (see services/skillAdviceBuilder.ts — same pattern as buildObsoleteAdvice above)
 
   return (
     <div style={{

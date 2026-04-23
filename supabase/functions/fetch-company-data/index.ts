@@ -140,9 +140,11 @@ const tryFetchLayoffNews = async (
   apiKey: string,
 ): Promise<{
   hasLayoffNews: boolean;
-  layoffs: Array<{ date: string; percent_cut: number }>;
+  layoffs: Array<{ date: string; percent_cut: number | null; headline: string; source: string }>;
 }> => {
-  const query = `"${companyName}" AND (layoff OR layoffs OR workforce reduction OR job cuts)`;
+  // Require the company name in quotes so a 30-word article that mentions the
+  // word "layoff" anywhere doesn't get attributed to this company.
+  const query = `"${companyName}" AND (layoff OR layoffs OR "workforce reduction" OR "job cuts")`;
   const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&pageSize=5&language=en&apiKey=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) return { hasLayoffNews: false, layoffs: [] };
@@ -151,13 +153,29 @@ const tryFetchLayoffNews = async (
   const articles = Array.isArray(json.articles) ? json.articles : [];
   if (articles.length === 0) return { hasLayoffNews: false, layoffs: [] };
 
-  return {
-    hasLayoffNews: true,
-    layoffs: articles.slice(0, 3).map((a: any) => ({
+  // Stricter title-side match: the company name must appear in the headline.
+  // A bare description match is too easy to false-positive on.
+  const lowerName = companyName.toLowerCase();
+  const matched = articles.filter((a: any) =>
+    typeof a?.title === "string" && a.title.toLowerCase().includes(lowerName),
+  );
+  if (matched.length === 0) return { hasLayoffNews: false, layoffs: [] };
+
+  // Extract a percent_cut from the article only if the headline/description
+  // actually states one. Never default to a hardcoded percentage — that
+  // fabricates a layoff event from a single news mention.
+  const layoffs = matched.slice(0, 3).map((a: any) => {
+    const text = `${a.title ?? ""} ${a.description ?? ""}`;
+    const pctMatch = text.match(/(\d+(?:\.\d+)?)\s*%/);
+    return {
       date: a.publishedAt || new Date().toISOString(),
-      percent_cut: 5,
-    })),
-  };
+      percent_cut: pctMatch ? parseFloat(pctMatch[1]) : null,
+      headline: a.title ?? "",
+      source: a.source?.name ?? "NewsAPI",
+    };
+  });
+
+  return { hasLayoffNews: true, layoffs };
 };
 
 Deno.serve(async (req) => {
@@ -262,11 +280,27 @@ Deno.serve(async (req) => {
         if (layoffNews.hasLayoffNews) {
           merged.recent_layoff_news = true;
           merged.recent_layoffs = layoffNews.layoffs;
+          // Count distinct layoff *events* (events on different dates) rather
+          // than article count — multiple outlets covering one round shouldn't
+          // inflate `layoff_rounds`.
+          const distinctEventDates = new Set(
+            layoffNews.layoffs
+              .map((l) => (typeof l.date === "string" ? l.date.slice(0, 10) : ""))
+              .filter(Boolean),
+          );
           merged.layoff_rounds = Math.max(
             merged.layoff_rounds || 0,
-            layoffNews.layoffs.length,
+            distinctEventDates.size,
           );
-          merged.last_layoff_percent = merged.last_layoff_percent ?? 5;
+          // Only update last_layoff_percent when a real % was parsed from
+          // article text. Falling back to a hardcoded 5% silently fabricates
+          // a layoff severity that the scoring engine then trusts.
+          const observedPercents = layoffNews.layoffs
+            .map((l) => l.percent_cut)
+            .filter((p): p is number => typeof p === "number");
+          if (observedPercents.length > 0) {
+            merged.last_layoff_percent = Math.max(...observedPercents);
+          }
           merged.last_updated = new Date().toISOString();
           provenance.push("newsapi.layoff_news");
         }

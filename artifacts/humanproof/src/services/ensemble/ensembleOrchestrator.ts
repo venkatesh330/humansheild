@@ -368,10 +368,14 @@ export const runFullEnsembleAnalysis = async (
     disclaimer:
       "Risk estimation based on 4-model AI ensemble analysis of public signals. Not a prediction or guarantee of future employment outcomes.",
     recommendations: engineResult.recommendations,
-    // Confidence interval, data freshness, and signal quality inherited from engine
+    // Confidence interval, data freshness, signal quality, probability
+    // forecast, and timing inherited from engine — these are deterministic
+    // computations that should not be re-derived in the ensemble path.
     confidenceInterval: engineResult.confidenceInterval,
     dataFreshness: engineResult.dataFreshness,
     signalQuality: engineResult.signalQuality,
+    probabilityForecast: engineResult.probabilityForecast,
+    timing: engineResult.timing,
 
     // Ensemble-specific additions
     ensembleScore: aggregate.finalScore,

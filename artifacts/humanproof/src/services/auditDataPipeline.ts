@@ -15,6 +15,7 @@ import {
 import { fetchLiveCompanyData, patchCompanyDataWithLive } from "./liveDataService";
 import { queryCompanyIntelligence, saveToDiscoveryQueue } from "./companyIntelligenceService";
 import { supabase } from "../utils/supabase";
+import { industryRiskData, IndustryRisk } from "../data/industryRiskData";
 
 export interface AuditInputs {
   companyName: string;
@@ -271,14 +272,25 @@ export async function fetchAuditData(inputs: AuditInputs): Promise<{
     }
   }
 
-  // Calculate scores
+  // Calculate scores. Pass industryData so L4 (Market Headwinds) is computed
+  // from real per-industry baselines instead of falling back to a hardcoded
+  // 0.5 — the previous omission collapsed L4 to a constant for every company,
+  // which silently nullified the entire market-conditions layer (12% of the
+  // composite score).
+  const industryKey = companyData.industry?.trim();
+  const industryData: IndustryRisk | undefined = industryKey
+    ? industryRiskData[industryKey] ??
+      industryRiskData[industryKey.replace(/\b\w/g, (c) => c.toUpperCase())]
+    : undefined;
+
   const scoreInputs: ScoreInputs = {
     companyData,
+    industryData,
     roleTitle: inputs.roleTitle,
     department: inputs.department,
     userFactors: inputs.userFactors
   };
-  
+
   const scoreResult = calculateLayoffScore(scoreInputs);
   const hybridResult = mapToHybridResult(scoreResult, companyData, inputs, dataSource, trueLiveSignals, trueHeuristicSignals);
 

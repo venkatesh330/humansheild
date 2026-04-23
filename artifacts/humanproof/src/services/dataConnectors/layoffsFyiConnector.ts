@@ -1,7 +1,16 @@
 // layoffsFyiConnector.ts
-// layoffs.fyi data connector — confirmed global tech layoffs.
-// Uses the public GitHub-hosted JSON dataset (no key required).
-// Dataset: https://github.com/rogerh2/layoffs-data (CSV mirrored as JSON)
+// Aggregated global layoffs dataset.
+//
+// IMPORTANT: layoffs.fyi itself does not publish a stable public JSON feed —
+// the underlying Google Sheet ID changes and the rogerh2/datasets/layoffs
+// GitHub mirror referenced by the previous version of this file no longer
+// resolves (DNS / 404). Calling those URLs silently returned `[]`, which the
+// pipeline then treated as "company has no layoff history" — a false negative
+// that under-reported risk.
+//
+// The fix: try a list of candidate mirrors (configurable via VITE_LAYOFFS_DATA_URLS),
+// surface the connector's *availability* state to callers, and never fabricate
+// records when every source fails.
 
 export interface LayoffRecord {
   company: string;
@@ -24,67 +33,130 @@ export interface CompanyLayoffSummary {
   peerCount: number;       // companies in same industry that also laid off
 }
 
-// Public JSON endpoint — updated weekly by community
-const DATASET_URL =
-  'https://raw.githubusercontent.com/datasets/layoffs/main/data/layoffs.json';
+// Sources tried in order. Override via VITE_LAYOFFS_DATA_URLS (comma-separated).
+const DEFAULT_DATASET_URLS = [
+  // Self-hosted mirror (recommended in production — keeps the CSV under your control)
+  'https://layoffs-mirror.humanproof.ai/layoffs.json',
+];
 
-const CACHE_KEY = 'hp_layoffs_fyi_cache';
+function getDatasetUrls(): string[] {
+  try {
+    const fromEnv = (import.meta as { env?: Record<string, string | undefined> })?.env
+      ?.VITE_LAYOFFS_DATA_URLS;
+    if (fromEnv) {
+      return fromEnv.split(',').map((u) => u.trim()).filter(Boolean);
+    }
+  } catch { /* import.meta unavailable — non-Vite runtime */ }
+  return DEFAULT_DATASET_URLS;
+}
+
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-let memCache: { records: LayoffRecord[]; ts: number } | null = null;
+interface DatasetCache {
+  records: LayoffRecord[];
+  ts: number;
+  source: string | null;
+  available: boolean;
+}
 
-async function loadDataset(): Promise<LayoffRecord[]> {
-  if (memCache && Date.now() - memCache.ts < CACHE_TTL_MS) return memCache.records;
+// Module-scoped cache works in browser, Node, and Deno without depending on
+// `localStorage` (which threw under SSR / edge runtimes).
+let memCache: DatasetCache | null = null;
 
-  // Check localStorage first
+function safeLocalStorageGet(): DatasetCache | null {
   try {
-    const stored = localStorage.getItem(CACHE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Date.now() - parsed.ts < CACHE_TTL_MS) {
-        memCache = parsed;
-        return parsed.records;
-      }
-    }
-  } catch { /* ignore */ }
+    if (typeof localStorage === 'undefined') return null;
+    const stored = localStorage.getItem('hp_layoffs_fyi_cache');
+    if (!stored) return null;
+    return JSON.parse(stored) as DatasetCache;
+  } catch { return null; }
+}
 
+function safeLocalStorageSet(value: DatasetCache): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem('hp_layoffs_fyi_cache', JSON.stringify(value));
+  } catch { /* quota / disabled */ }
+}
+
+async function fetchOneSource(url: string): Promise<LayoffRecord[] | null> {
   try {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(DATASET_URL, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal });
     clearTimeout(tid);
-    if (!res.ok) return [];
-    const raw: any[] = await res.json();
-    const records: LayoffRecord[] = raw.map(r => ({
-      company: r.Company ?? r.company ?? '',
-      headcount: r['Laid_Off_Count'] ?? r.headcount ?? null,
-      percentCut: r.Percentage ? parseFloat(r.Percentage) : null,
-      date: r.Date ?? r.date ?? '',
-      industry: r.Industry ?? r.industry ?? 'Unknown',
-      country: r.Country ?? r.country ?? 'Unknown',
-      stage: r.Stage ?? r.stage ?? 'Unknown',
-      sources: r.Source ? [r.Source] : [],
-    })).filter(r => r.company && r.date);
-
-    memCache = { records, ts: Date.now() };
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify(memCache)); } catch { /* quota */ }
-    return records;
+    if (!res.ok) return null;
+    const raw = await res.json();
+    if (!Array.isArray(raw)) return null;
+    return raw.map((r: Record<string, unknown>) => ({
+      company: String(r.Company ?? r.company ?? ''),
+      headcount: typeof r['Laid_Off_Count'] === 'number'
+        ? (r['Laid_Off_Count'] as number)
+        : typeof r.headcount === 'number' ? (r.headcount as number) : null,
+      percentCut: r.Percentage ? parseFloat(String(r.Percentage)) : null,
+      date: String(r.Date ?? r.date ?? ''),
+      industry: String(r.Industry ?? r.industry ?? 'Unknown'),
+      country: String(r.Country ?? r.country ?? 'Unknown'),
+      stage: String(r.Stage ?? r.stage ?? 'Unknown'),
+      sources: r.Source ? [String(r.Source)] : [],
+    })).filter((r) => r.company && r.date);
   } catch {
-    return [];
+    return null;
   }
 }
 
+async function loadDataset(): Promise<DatasetCache> {
+  if (memCache && Date.now() - memCache.ts < CACHE_TTL_MS) return memCache;
+
+  const stored = safeLocalStorageGet();
+  if (stored && Date.now() - stored.ts < CACHE_TTL_MS) {
+    memCache = stored;
+    return stored;
+  }
+
+  for (const url of getDatasetUrls()) {
+    const records = await fetchOneSource(url);
+    if (records && records.length > 0) {
+      const cache: DatasetCache = { records, ts: Date.now(), source: url, available: true };
+      memCache = cache;
+      safeLocalStorageSet(cache);
+      return cache;
+    }
+  }
+
+  // Every source failed — record the failure so callers can disclose it
+  // ("data unavailable") rather than silently treating it as "no layoffs".
+  const empty: DatasetCache = { records: [], ts: Date.now(), source: null, available: false };
+  memCache = empty;
+  return empty;
+}
+
+/** Whether the layoffs dataset was reachable on the last fetch. */
+export async function isLayoffsDatasetAvailable(): Promise<boolean> {
+  const cache = await loadDataset();
+  return cache.available;
+}
+
 export async function getCompanyLayoffs(companyName: string): Promise<CompanyLayoffSummary | null> {
-  const records = await loadDataset();
+  const { records } = await loadDataset();
+  if (records.length === 0) return null;
   const name = companyName.toLowerCase();
-  const matches = records.filter(r =>
-    r.company.toLowerCase().includes(name) || name.includes(r.company.toLowerCase()),
-  );
+  // Word-boundary-ish match: avoid "ai" matching every company that contains
+  // "ai" anywhere (Adobe, Saint-Gobain, etc).
+  const matches = records.filter((r) => {
+    const c = r.company.toLowerCase();
+    if (!c) return false;
+    if (c === name) return true;
+    // Allow inclusion in either direction only when the shorter side is at least 4 chars.
+    if (name.length >= 4 && c.includes(name)) return true;
+    if (c.length >= 4 && name.includes(c)) return true;
+    return false;
+  });
   if (matches.length === 0) return null;
 
   const sorted = [...matches].sort((a, b) => b.date.localeCompare(a.date));
   const industry = sorted[0].industry;
-  const peerCount = records.filter(r =>
+  const peerCount = records.filter((r) =>
     r.industry === industry && r.company.toLowerCase() !== name,
   ).length;
 
@@ -100,16 +172,16 @@ export async function getCompanyLayoffs(companyName: string): Promise<CompanyLay
 }
 
 export async function getSectorLayoffCount(industry: string, days = 180): Promise<number> {
-  const records = await loadDataset();
+  const { records } = await loadDataset();
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-  return records.filter(r =>
+  return records.filter((r) =>
     r.industry.toLowerCase().includes(industry.toLowerCase()) &&
     r.date >= cutoff,
   ).length;
 }
 
 export async function getRecentLayoffs(days = 90): Promise<LayoffRecord[]> {
-  const records = await loadDataset();
+  const { records } = await loadDataset();
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-  return records.filter(r => r.date >= cutoff).sort((a, b) => b.date.localeCompare(a.date));
+  return records.filter((r) => r.date >= cutoff).sort((a, b) => b.date.localeCompare(a.date));
 }

@@ -48,6 +48,15 @@ export interface ConsensusSignalSet {
     avgSignalAge: number;
     percentLive: number; // % of signals from live API
     percentHeuristic: number;
+    // Absolute counts so downstream code doesn't have to back-calculate
+    // signal totals from percentages. Previously the hybrid engine multiplied
+    // `percentLive * 17` (a magic number that approximated the dimension
+    // count) — but the actual resolved-signal list is the only authoritative
+    // source, and the magic number was off-by-N when signals were added or
+    // removed.
+    totalSignalCount: number;
+    liveSignalCount: number;
+    heuristicSignalCount: number;
   };
 }
 
@@ -182,18 +191,30 @@ export class ConsensusEngine {
     const ages = allResolved.map((r) => r.stalenessDays);
     const avgAge = ages.reduce((a, b) => a + b, 0) / ages.length;
     const oldest = Math.max(...ages);
+    const totalSignalCount = allResolved.length;
+    const liveSignalCount = allResolved.filter(
+      (r) => r.primarySource === "live",
+    ).length;
+    const heuristicSignalCount = allResolved.filter(
+      (r) => r.primarySource === "hybrid" || r.primarySource === "db",
+    ).length;
     const percentLive =
-      allResolved.filter((r) => r.primarySource === "live").length /
-      allResolved.length;
+      totalSignalCount > 0 ? liveSignalCount / totalSignalCount : 0;
     const percentHeuristic =
-      allResolved.filter(
-        (r) => r.primarySource === "hybrid" || r.primarySource === "db",
-      ).length / allResolved.length;
+      totalSignalCount > 0 ? heuristicSignalCount / totalSignalCount : 0;
 
-    // Aggregate confidence: harmonic mean of individual confidences, penalized by conflicts
-    const baseConf =
-      allResolved.reduce((prod, r) => prod * r.confidence, 1) **
-      (1 / allResolved.length);
+    // Aggregate confidence: arithmetic mean of individual confidences, penalized
+    // by conflicts. (Comment used to claim "harmonic mean" but the formula was
+    // a geometric mean — Nth root of the product. The geometric mean has a
+    // pathological zero-absorbing property: a single signal returning
+    // confidence=0 collapses the aggregate to 0 regardless of how confident the
+    // other 16 signals were. That made one missing source mask all others, and
+    // produced "Confidence: 10%" labels for companies where the engine had
+    // perfectly good data on everything except, say, MCA filings. Arithmetic
+    // mean degrades smoothly: one zero among N signals costs ~1/N, which is the
+    // correct penalty when sources are roughly equally weighted.)
+    const sumConf = allResolved.reduce((sum, r) => sum + r.confidence, 0);
+    const baseConf = allResolved.length > 0 ? sumConf / allResolved.length : 0.5;
     const conflictPenalty = allConflicts.length * 0.08; // -8% per conflict
     const overallConfidence = Math.max(
       0.1,
@@ -226,6 +247,9 @@ export class ConsensusEngine {
         avgSignalAge: Math.round(avgAge),
         percentLive,
         percentHeuristic,
+        totalSignalCount,
+        liveSignalCount,
+        heuristicSignalCount,
       },
     };
   }

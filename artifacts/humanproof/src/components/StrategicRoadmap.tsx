@@ -18,13 +18,75 @@ interface Props {
 }
 
 // ── Experience level metadata ─────────────────────────────────────────────────
-const EXP_META: Record<string, { label: string; persona: string; urgencyMod: string }> = {
-  '0-2':   { label: 'Entry Level',     persona: 'You have the most time advantage — but also the most skill debt.',     urgencyMod: 'Your career is still being shaped. Pivoting now costs almost nothing.' },
-  '2-5':   { label: 'Early Career',    persona: 'You have enough experience to pivot with your existing foundation.',    urgencyMod: 'This is the ideal pivot window — skills are real, identity is still flexible.' },
-  '5-10':  { label: 'Mid-Level',       persona: 'You have deep skills worth protecting and augmenting — not abandoning.', urgencyMod: '12–18 months to decisively shift direction before the market prices you out.' },
-  '10-20': { label: 'Senior',          persona: 'Your authority and network are your primary assets. Protect and lever them.', urgencyMod: 'Senior roles are shrinking in your function. Act on transformation strategy now.' },
-  '20+':   { label: 'Principal/Lead',  persona: 'Your irreplaceable value is in judgment and institutional memory.',      urgencyMod: 'The window for executive repositioning is measured in months, not years.' },
+// `label` is fixed (it's a UI bracket name), but `persona` and `urgencyMod`
+// are now *composed* dynamically from the user's actual role intelligence
+// (top at-risk skill, AI tool already absorbing it, displacement horizon)
+// + their risk score. The static strings below are *only used* when no role
+// intelligence is available and we have to fall back. See `composeExpPersona`.
+const EXP_LABELS: Record<string, string> = {
+  '0-2':   'Entry Level',
+  '2-5':   'Early Career',
+  '5-10':  'Mid-Level',
+  '10-20': 'Senior',
+  '20+':   'Principal/Lead',
 };
+
+const FALLBACK_PERSONA: Record<string, { persona: string; urgencyMod: string }> = {
+  '0-2':   { persona: 'You have the most time advantage — but also the most skill debt.',                                  urgencyMod: 'Pivoting now costs almost nothing — entry-level identity is still flexible.' },
+  '2-5':   { persona: 'You have enough experience to pivot with your existing foundation.',                                urgencyMod: 'This is the ideal pivot window — skills are real, identity is still flexible.' },
+  '5-10':  { persona: 'You have deep skills worth protecting and augmenting — not abandoning.',                            urgencyMod: '12–18 months to decisively shift direction before the market prices you out.' },
+  '10-20': { persona: 'Your authority and network are your primary assets. Protect and lever them.',                       urgencyMod: 'Senior roles are shrinking in your function. Act on transformation strategy now.' },
+  '20+':   { persona: 'Your irreplaceable value is in judgment and institutional memory.',                                 urgencyMod: 'The window for executive repositioning is measured in months, not years.' },
+};
+
+// Compose a persona / urgency string that references the user's actual top
+// at-risk skill, the AI tool absorbing it, and an experience-appropriate
+// strategic stance. Two users at the same experience bracket but different
+// roles get different text because the at-risk skill + tool + horizon differ.
+export function composeExpPersona(
+  expKey: string,
+  intel: CareerIntelligence,
+  score: number,
+): { persona: string; urgencyMod: string } {
+  const fallback = FALLBACK_PERSONA[expKey] ?? FALLBACK_PERSONA['5-10'];
+  const topRisk = (intel.skills.at_risk?.[0]) ?? (intel.skills.obsolete?.[0]) ?? null;
+  const topSafe = intel.skills.safe?.[0];
+  const topPivot = intel.careerPaths?.[0];
+
+  // No role intelligence → return the static fallback unchanged.
+  if (!topRisk && !topSafe && !topPivot) return fallback;
+
+  const role = intel.displayRole ?? 'your role';
+  const horizon = topRisk?.horizon ?? '3-5yr';
+  const aiTool = topRisk?.aiTool;
+  const safeAnchor = topSafe?.skill;
+  const pivotRole = topPivot?.role;
+
+  // Strategic stance per bracket — references the actual at-risk anchor
+  // skill so each role/experience combo composes a unique sentence.
+  const stanceByBracket: Record<string, string> = {
+    '0-2':   `As a 0–2yr ${role}, your at-risk skill (${topRisk?.skill ?? 'baseline craft execution'}) is exactly what ${aiTool ?? 'mainstream copilots'} are absorbing on a ${horizon} horizon — so the cheapest career move is to lean *into* the AI-collaboration layer rather than spend three years deepening the soon-to-be-commoditised skill.`,
+    '2-5':   `At 2–5yr in ${role}, you have shipped enough to be credible, but not so much that pivoting carries identity cost. Your top at-risk skill (${topRisk?.skill ?? 'core craft tasks'}) faces a ${horizon} horizon — bridge into ${safeAnchor ?? 'durably-human work'} or pivot toward ${pivotRole ?? 'an adjacent role'} while it's still cheap.`,
+    '5-10':  `At 5–10yr in ${role}, you carry both deep craft and the institutional credibility to negotiate scope. Defend the ${safeAnchor ?? 'human-judgement'} layer and quietly delegate ${topRisk?.skill ?? 'commoditising tasks'} to ${aiTool ?? 'AI copilots'} — owning the tool decision protects you from being replaced by it.`,
+    '10-20': `As a senior ${role}, your authority is your primary asset. ${aiTool ? `${aiTool} can do the ${topRisk?.skill ?? 'execution layer'},` : 'AI copilots cover the execution layer,'} but cannot own the cross-functional accountability you already hold — re-anchor your title around that.`,
+    '20+':   `At 20+yr you are operating in the ${pivotRole ?? 'principal/advisory'} layer regardless of title. Convert tacit knowledge into written architecture decisions and customer history — that is what survives any restructuring at this level.`,
+  };
+
+  // Urgency tone: high-score → external-search urgency; mid-score → strategic
+  // window; low-score → optionality framing. References the actual horizon so
+  // the timeline feels grounded in the role data, not a generic countdown.
+  const horizonMonths = horizon.includes('1-3') ? '12–18 months' : horizon.includes('3-5') ? '18–30 months' : '36+ months';
+  const urgencyByScore = score >= 70
+    ? `Risk score ${score}/100 says move now: the ${horizon} horizon on ${topRisk?.skill ?? 'your craft layer'} compresses to ~${horizonMonths} when the labour market is already cutting.`
+    : score >= 45
+      ? `Risk score ${score}/100 puts you in the strategic-window band — you have ~${horizonMonths} to reposition while the labour market is still selecting for ${role}, before AI absorption forces the choice.`
+      : `Risk score ${score}/100 means you have optionality — use the ~${horizonMonths} ${horizon} window to deepen ${safeAnchor ?? 'durably-human judgement'} ahead of the curve rather than reactively.`;
+
+  return {
+    persona: stanceByBracket[expKey] ?? stanceByBracket['5-10'],
+    urgencyMod: urgencyByScore,
+  };
+}
 
 // ── Find the best available roadmap for a given experience key ────────────────
 const FALLBACK_ORDER: string[] = ['5-10', '2-5', '10-20', '0-2', '20+'];
@@ -262,7 +324,8 @@ const PhaseCard = ({
 // ── Main Component ────────────────────────────────────────────────────────────
 export const StrategicRoadmap = ({ intel, experience, scoreColor, score }: Props) => {
   const [activeTab, setActiveTab] = useState<'roadmap' | 'pivots'>('roadmap');
-  const expMeta = EXP_META[experience] ?? EXP_META['5-10'];
+  const expLabel = EXP_LABELS[experience] ?? EXP_LABELS['5-10'];
+  const expMeta = { label: expLabel, ...composeExpPersona(experience, intel, score) };
   const roadmap = findBestRoadmap(intel, experience);
   const careerPaths = intel.careerPaths ?? [];
 

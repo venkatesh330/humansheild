@@ -228,15 +228,15 @@ export async function detectCollapseStage(inputs: CollapseInputs): Promise<Colla
   };
 
   const recommendations: Record<number, string> = {
-    1: 'Early signals detected. Begin building your external network and keep your CV updated. No immediate action required.',
-    2: 'Displacement signals active. Start active job search alongside current role. Target 2-3 applications per week.',
-    3: 'Imminent risk detected. Prioritize job search now. Activate all contacts and aim for an exit within 90 days.',
+    1: `Stage 1 early warning: ${s1Active} of 3 signals active. The pattern — efficiency language, sector peer pressure, or misaligned AI investment — is historically the leading indicator of workforce restructuring 12–18 months out. Action: keep CV current, build external contacts, and reassess in 90 days.`,
+    2: `Stage 2 signals active: ${s2Active} of 3 displacement indicators detected. Hiring freeze, layoff recurrence, or stock drawdown are mid-stage signals typically 6–12 months before a restructuring event. Action: start a parallel job search now, allocate 2–3 hours/week to outreach and applications.`,
+    3: `Stage 3 imminent risk: ${s3Active} of 3 late-stage signals detected (leadership instability, active media coverage, or regulatory delinquency). Historical median time to layoff announcement from Stage 3: 4–8 weeks. Action: treat this as an active emergency — prioritize job search above all other career activities.`,
   };
 
   return {
     company: companyName,
     stage,
-    stageLabel: stage ? stageLabels[stage] : 'No Collapse Signals Detected',
+    stageLabel: stage ? stageLabels[stage] : 'No Active Collapse Signals',
     timeToCollapseRange: stage ? timeRanges[stage] : 'N/A',
     overallRisk,
     stage1Signals: s1,
@@ -245,7 +245,9 @@ export async function detectCollapseStage(inputs: CollapseInputs): Promise<Colla
     activeSignalCount: totalActive,
     recommendation: stage
       ? recommendations[stage]
-      : `${companyName} shows no significant collapse signals. Monitor quarterly.`,
+      : overallRisk > 0
+        ? `${companyName} has sub-threshold signals (risk score: ${overallRisk}/100) but no confirmed stage detected. Individual signals are present but haven't converged into a clear pattern. Monitor monthly — a single new signal could trigger Stage 1 classification.`
+        : `${companyName} shows no collapse signals across all 9 detection vectors. This is a positive stability indicator. Reassess in 90 days or when significant company news emerges.`,
     fetchedAt: new Date().toISOString(),
   };
 }

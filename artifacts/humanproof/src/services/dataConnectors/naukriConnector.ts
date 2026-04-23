@@ -11,10 +11,30 @@ export interface RoleDemandSignal {
   demandTrend: 'rising' | 'stable' | 'falling';
   hiringFreezeScore: number;  // 0 = no freeze, 1 = complete freeze
   source: 'Naukri Heuristic' | 'Serper API';
+  /**
+   * True when the values came from a real-time API (Serper). False when
+   * `ROLE_DEMAND_BASE` was used — those are *static priors* curated by the
+   * team and not refreshed per-request. Surface this so the UI does not
+   * label heuristic numbers as "live signals".
+   */
+  isLive: boolean;
+  /**
+   * Human-readable disclosure suitable for tooltips next to the demand trend
+   * value. Empty string when the data is live.
+   */
+  disclosure: string;
   fetchedAt: string;
 }
 
-// Role demand baselines indexed by role keywords (updated Q1 2026)
+// Role demand baselines indexed by role keywords.
+//
+// IMPORTANT: These values are STATIC PRIORS, not live data. They are curated
+// by the team and only updated manually (last review: Q1 2026). The pipeline
+// upstream presents them to the UI through the same channel as live signals,
+// so callers must consult `isLive` before labelling them as fresh.
+//
+// Refresh checklist when updating: cross-check Naukri job-count snapshots,
+// LinkedIn role-trend reports, and StackOverflow developer survey trends.
 const ROLE_DEMAND_BASE: Record<string, { trend: 'rising' | 'stable' | 'falling'; freezeScore: number }> = {
   'ai engineer':           { trend: 'rising',  freezeScore: 0.05 },
   'ml engineer':           { trend: 'rising',  freezeScore: 0.05 },
@@ -74,13 +94,15 @@ export async function fetchRoleDemandSignal(
           demandTrend: count > 3 ? 'rising' : count > 1 ? 'stable' : 'falling',
           hiringFreezeScore: count === 0 ? 0.9 : base.freezeScore,
           source: 'Serper API',
+          isLive: true,
+          disclosure: '',
           fetchedAt: new Date().toISOString(),
         };
       }
     } catch { /* fall through to heuristic */ }
   }
 
-  // Heuristic fallback
+  // Heuristic fallback — static prior, NOT live data.
   const base = matchRole(roleTitle);
   return {
     roleTitle,
@@ -89,6 +111,9 @@ export async function fetchRoleDemandSignal(
     demandTrend: base.trend,
     hiringFreezeScore: base.freezeScore,
     source: 'Naukri Heuristic',
+    isLive: false,
+    disclosure:
+      'Static heuristic baseline (not live). Set VITE_SERPER_KEY to fetch real job-count data from Naukri/LinkedIn.',
     fetchedAt: new Date().toISOString(),
   };
 }

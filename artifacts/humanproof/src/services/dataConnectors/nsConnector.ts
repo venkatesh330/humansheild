@@ -83,10 +83,27 @@ export async function fetchNSECompanyData(symbol: string): Promise<NSECompanyDat
   return data;
 }
 
-// Derives a 90-day stock change proxy from 52-week range position
-export function derive90dChangeFromNSE(data: NSECompanyData): number | null {
+/**
+ * 52-week range position normalised to [-1, +1]
+ * (-1 = at 52w low, 0 = midpoint, +1 = at 52w high).
+ *
+ * NOTE: This is NOT a 90-day stock change. The previous `derive90dChangeFromNSE`
+ * name implied a quarterly return, but the math compares current price to the
+ * 52-week midpoint — a fundamentally different signal that conflated price
+ * level with price *change*. Callers expecting a true 90-day delta were getting
+ * misleading values up to ±100. Renaming so the orchestrator can either use it
+ * intentionally as a range-position factor or fall through to a real chart API.
+ */
+export function deriveRangePositionFromNSE(data: NSECompanyData): number | null {
   if (!data.lastPrice || !data.high52 || !data.low52) return null;
-  const midYear = (data.high52 + data.low52) / 2;
-  if (midYear === 0) return null;
-  return Math.round(((data.lastPrice - midYear) / midYear) * 100);
+  if (data.high52 <= data.low52) return null;
+  const mid = (data.high52 + data.low52) / 2;
+  const halfRange = (data.high52 - data.low52) / 2;
+  return Math.max(-1, Math.min(1, (data.lastPrice - mid) / halfRange));
+}
+
+/** @deprecated mislabeled — use `deriveRangePositionFromNSE`. Kept temporarily
+ *  for external imports; returns null to avoid feeding a wrong signal. */
+export function derive90dChangeFromNSE(_data: NSECompanyData): number | null {
+  return null;
 }
