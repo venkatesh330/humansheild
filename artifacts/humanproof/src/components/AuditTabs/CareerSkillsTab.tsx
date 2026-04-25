@@ -6,17 +6,20 @@ import React, { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import AIRiskSkillMatrix from "@/components/AIRiskSkillMatrix";
 import StrategicRoadmap from "@/components/StrategicRoadmap";
+import { selectStrategyArchetype, buildArchetypeRoadmap } from "@/services/strategyArchetypes";
+import { CareerTwinSubmissionModal } from "@/components/CareerTwinSubmissionModal";
 import { SectionHeader } from "./common/SectionHeader";
 import { CollapsibleSection } from "./common/CollapsibleSection";
 import { useAdaptiveSystem } from "@/hooks/useAdaptiveSystem";
 import { getCareerIntelligence } from "@/data/intelligence";
+import { LAYER_WEIGHTS } from "@/services/layoffScoreEngine";
 import { getScoreColor } from "@/data/riskEngine";
 import type { TabProps } from "./common/types";
 import type { CareerIntelligence } from "@/data/intelligence/types";
 import {
   Shield, AlertTriangle, TrendingUp, TrendingDown, Cpu,
   Brain, Heart, Lightbulb, Users, Zap, Target, ChevronRight,
-  ArrowRight, BarChart3, Clock,
+  ArrowRight, BarChart3, Clock, UserCheck,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -305,21 +308,24 @@ interface SkillAdjustment {
 const WhatIfSkillSimulator: React.FC<{
   intel: CareerIntelligence;
   baseScore: number;
+  /** Full breakdown (0–1 per layer) from HybridResult — used to recompose score
+   *  using actual engine layer weights instead of static developer estimates. */
+  breakdown?: Record<string, number>;
   onScoreChange: (newScore: number) => void;
-}> = ({ intel, baseScore, onScoreChange }) => {
+}> = ({ intel, baseScore, breakdown, onScoreChange }) => {
   const initialSkills = useMemo<SkillAdjustment[]>(() => {
     const safeSkills = (intel.skills.safe ?? []).slice(0, 3).map(s => ({
       skill: s.skill,
       proficiency: 40,
       baselineProf: 40,
-      impact: -(s.longTermValue / 200), // safe skills REDUCE risk when you develop them
+      impact: -(s.longTermValue / 200),
       isSafe: true,
     }));
     const atRiskSkills = (intel.skills.at_risk ?? []).slice(0, 3).map(s => ({
       skill: s.skill,
       proficiency: 70,
       baselineProf: 70,
-      impact: (s.riskScore ?? 60) / 600, // at-risk skills ADD to risk if you keep them
+      impact: (s.riskScore ?? 60) / 600,
       isSafe: false,
     }));
     return [...safeSkills, ...atRiskSkills];
@@ -327,29 +333,70 @@ const WhatIfSkillSimulator: React.FC<{
 
   const [skills, setSkills] = useState<SkillAdjustment[]>(initialSkills);
 
-  const calculateSimulatedScore = useCallback((s: SkillAdjustment[]): number => {
-    let delta = 0;
+  /**
+   * Priority 2 FIX: Engine-grounded score recomposition.
+   * When `breakdown` (0–1 layer values) is available, we:
+   * 1. Compute the L3 delta from slider proficiency changes (safe skills reduce L3,
+   *    reducing at-risk skill dependence also reduces L3)
+   * 2. Apply the adjusted L3 back into the composite using real LAYER_WEIGHTS
+   *    instead of the previously-hardcoded baseScore ± static delta.
+   * This means a user building Python (LTV=80) actually sees the L3-driven impact
+   * at its true 20% engine weight — not a developer-guessed flat number.
+   */
+  const calculateEngineSimulatedScore = useCallback((s: SkillAdjustment[]): number => {
+    if (!breakdown) {
+      // Fallback: original static-delta path (no breakdown available)
+      let delta = 0;
+      for (const skill of s) {
+        const profDiff = skill.proficiency - skill.baselineProf;
+        delta += skill.isSafe ? skill.impact * profDiff : skill.impact * (-profDiff);
+      }
+      return Math.max(3, Math.min(98, Math.round(baseScore + delta * 100)));
+    }
+
+    // Compute cumulative L3 adjustment from all skill sliders
+    let l3Delta = 0;
     for (const skill of s) {
-      const profDiff = skill.proficiency - skill.baselineProf; // e.g. +30 means you improved
+      const profDiff = skill.proficiency - skill.baselineProf; // positive = more proficiency
       if (skill.isSafe) {
-        // More safe skill proficiency = lower risk
-        delta += skill.impact * profDiff; // impact is negative, so delta goes negative
+        // More safe skill proficiency → reduces L3 (human factor strengthens)
+        l3Delta -= skill.impact * profDiff * 0.01;
       } else {
-        // At-risk skills: if you reduce dependence (lower proficiency), risk drops
-        delta += skill.impact * (-profDiff); // lower proficiency → less risk
+        // Reducing at-risk skill dependence → reduces L3 exposure
+        l3Delta += skill.impact * (-profDiff) * 0.01;
       }
     }
-    return Math.max(3, Math.min(98, Math.round(baseScore + delta * 100)));
-  }, [baseScore]);
+
+    const bd = breakdown;
+    const adjustedL3 = Math.max(0, Math.min(1, (bd.L3 ?? 0.5) - l3Delta));
+
+    // Recompose using canonical engine layer weights.
+    // IMPORTANT: normalize by the total weight sum since LAYER_WEIGHTS intentionally
+    // reflects relative proportions that may sum to != 1.0. Without normalization,
+    // scores would be inflated/deflated by the sum factor.
+    const weightSum = (Object.values(LAYER_WEIGHTS) as number[]).reduce((s, w) => s + w, 0);
+    const rawComposed = (
+      (bd.L1 ?? 0.5) * LAYER_WEIGHTS.L1 +
+      (bd.L2 ?? 0.5) * LAYER_WEIGHTS.L2 +
+      adjustedL3      * LAYER_WEIGHTS.L3 +
+      (bd.L4 ?? 0.5) * LAYER_WEIGHTS.L4 +
+      (bd.L5 ?? 0.5) * LAYER_WEIGHTS.L5 +
+      (bd.D6 ?? 0.5) * LAYER_WEIGHTS.D6 +
+      (bd.D7 ?? 0.5) * LAYER_WEIGHTS.D7
+    );
+    const recomposed = (rawComposed / weightSum) * 100;
+
+    return Math.max(3, Math.min(98, Math.round(recomposed)));
+  }, [baseScore, breakdown]);
 
   const handleSkillChange = (index: number, value: number) => {
     const updated = [...skills];
     updated[index].proficiency = value;
     setSkills(updated);
-    onScoreChange(calculateSimulatedScore(updated));
+    onScoreChange(calculateEngineSimulatedScore(updated));
   };
 
-  const simulatedScore = calculateSimulatedScore(skills);
+  const simulatedScore = calculateEngineSimulatedScore(skills);
   const delta = simulatedScore - baseScore;
   const deltaColor = delta < 0 ? "var(--emerald)" : delta > 0 ? "var(--red)" : "var(--text-3)";
 
@@ -455,6 +502,42 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
   const [simulatedScore, setSimulatedScore] = useState<number>(result.total);
   const simulatedDelta = simulatedScore - result.total;
 
+  // v4.0 Intelligence Upgrade 3: Check if experience + capital data triggers an archetype
+  // Capital data is optional — only available if user has completed CareerCapitalAssessment
+  const capitalTotal = (() => {
+    try {
+      const stored = localStorage.getItem('hp_career_capital');
+      if (!stored) return 0;
+      const data = JSON.parse(stored);
+      return (data.productsShippedEndToEnd ?? 0) * 2 + (data.teamSizePeak ?? 0) + (data.networkStrengthScore ?? 0) * 2;
+    } catch { return 0; }
+  })();
+  const capitalPillars = (() => {
+    try {
+      const stored = localStorage.getItem('hp_career_capital');
+      if (!stored) return { networkCapital: 0, knowledgeCapital: 0, deliveryCapital: 0, influenceCapital: 0 };
+      const d = JSON.parse(stored);
+      return {
+        networkCapital: Math.min(25, Math.round((d.clientAccountsOwned ?? 0) * 3 + Math.min(10, (d.clientAccountValueLakh ?? 0) * 0.05) + (d.networkStrengthScore ?? 5) * 1.5)),
+        knowledgeCapital: Math.min(25, Math.round((d.patentsOrPublications ?? 0) * 5 + (d.certifications ?? 0) * 2 + (d.domainDepthScore ?? 5) * 2)),
+        deliveryCapital: Math.min(25, Math.round((d.productsShippedEndToEnd ?? 0) * 8 + Math.min(12, (d.teamSizePeak ?? 0) * 0.8))),
+        influenceCapital: Math.min(25, Math.round((d.speakingEngagements ?? 0) * 4 + Math.min(10, (d.certifications ?? 0) * 1.5))),
+      };
+    } catch { return { networkCapital: 0, knowledgeCapital: 0, deliveryCapital: 0, influenceCapital: 0 }; }
+  })();
+  const expYears = (result as any).experienceYears ?? parseInt(result.experience?.split('-')[0] ?? '5', 10) ?? 5;
+  // D3 augmentation risk: lower value = higher augmentation potential
+  const augmentationRisk = result.breakdown?.L3 ?? 0.5;
+  const archetype = selectStrategyArchetype(expYears, capitalPillars, capitalTotal, augmentationRisk);
+  const archetypeRoadmap = archetype
+    ? buildArchetypeRoadmap(archetype, intel.displayRole, capitalPillars, expYears)
+    : null;
+
+  const [showTwinModal, setShowTwinModal] = useState(false);
+  const [twinSubmitted, setTwinSubmitted] = useState(() => {
+    try { return localStorage.getItem('hp_twin_submitted') === '1'; } catch { return false; }
+  });
+
   return (
     <section aria-labelledby="career-skills-heading" className="space-y-8">
       <motion.div
@@ -529,6 +612,7 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
             <WhatIfSkillSimulator
               intel={intel}
               baseScore={result.total}
+              breakdown={result.breakdown as unknown as Record<string, number>}
               onScoreChange={setSimulatedScore}
             />
             <div className="mt-3 rounded-xl border border-white/10 p-4 glass-panel">
@@ -611,18 +695,119 @@ export const CareerSkillsTab: React.FC<TabProps> = ({
           </div>
         )}
 
-        {/* ── Upskilling Roadmap ── */}
+        {/* ── Upskilling Roadmap — v4.0 archetype-aware ── */}
         <CollapsibleSection title="Strategic Transformation Roadmap">
           <div className="space-y-4">
-            <StrategicRoadmap
-              intel={intel}
-              scoreColor={scoreColor}
-              score={result.total}
-              experience={result.experience}
-            />
+            {archetypeRoadmap ? (
+              /* v4.0: Archetype roadmap supersedes the bracket-based roadmap */
+              <div className="space-y-4">
+                <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/6 p-4">
+                  <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-1">
+                    {archetypeRoadmap.archetype} Strategy Activated
+                  </div>
+                  <p className="text-sm font-semibold mb-2">{archetypeRoadmap.headline}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{archetypeRoadmap.whyThisArchetype}</p>
+                </div>
+
+                {archetypeRoadmap.phase0 && (
+                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/6 p-4">
+                    <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">
+                      Phase 0 — {archetypeRoadmap.phase0.weekRange}
+                    </div>
+                    <p className="text-sm font-bold mb-2">{archetypeRoadmap.phase0.title}</p>
+                    <div className="space-y-1 mb-2">
+                      {archetypeRoadmap.phase0.actions.map((a, i) => (
+                        <p key={i} className="text-xs text-muted-foreground flex gap-2">
+                          <span className="text-amber-400 flex-shrink-0">{i + 1}.</span>{a}
+                        </p>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-amber-400 font-bold">Milestone: {archetypeRoadmap.phase0.milestone}</p>
+                  </div>
+                )}
+
+                {archetypeRoadmap.phases.map((phase, i) => {
+                  const phaseColors = ['#3b82f6', '#8b5cf6', '#10b981'];
+                  const c = phaseColors[i] ?? scoreColor;
+                  return (
+                    <div key={phase.phase} className="rounded-xl border p-4" style={{ borderColor: `${c}30`, background: `${c}06` }}>
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: c }}>
+                          Phase {phase.phase} — {phase.weekRange}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{phase.focus}</span>
+                      </div>
+                      <p className="text-sm font-bold mb-2">{phase.title}</p>
+                      <div className="space-y-1 mb-2">
+                        {phase.actions.map((a, j) => (
+                          <p key={j} className="text-xs text-muted-foreground flex gap-2">
+                            <span style={{ color: c }} className="flex-shrink-0">{j + 1}.</span>{a}
+                          </p>
+                        ))}
+                      </div>
+                      <p className="text-[10px] font-bold" style={{ color: c }}>Milestone: {phase.milestone}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Standard bracket-based roadmap when no archetype is triggered */
+              <StrategicRoadmap
+                intel={intel}
+                scoreColor={scoreColor}
+                score={result.total}
+                experience={result.experience}
+              />
+            )}
           </div>
         </CollapsibleSection>
+
+        {/* ── Career Twin Contribution CTA ── */}
+        <div className="mt-6 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+          <div className="flex items-start gap-3">
+            <UserCheck className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold mb-1">Help others in your role — share your transition story</div>
+              <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                When professionals like you contribute verified transition data, the Career Twin matching engine becomes
+                dramatically more accurate. Every submission improves predictions for everyone in the same role category.
+                As a thank you, you receive a <span className="text-cyan-400 font-semibold">Transition Verified</span> badge
+                that reduces your displayed risk score by 2 pts.
+              </p>
+              {twinSubmitted ? (
+                <div className="flex items-center gap-2 text-xs text-emerald-400 font-semibold">
+                  <UserCheck className="w-3.5 h-3.5" />
+                  Transition story submitted — thank you for contributing.
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowTwinModal(true)}
+                  className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 hover:border-cyan-400/50 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Share My Transition Story
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
       </motion.div>
+
+      {/* Career Twin Submission Modal */}
+      <AnimatePresence>
+        {showTwinModal && (
+          <CareerTwinSubmissionModal
+            fromRole={intel.displayRole}
+            fromRiskScore={result.total}
+            onClose={() => setShowTwinModal(false)}
+            onSuccess={() => {
+              localStorage.setItem('hp_twin_submitted', '1');
+              setTwinSubmitted(true);
+              setShowTwinModal(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </section>
   );
 };

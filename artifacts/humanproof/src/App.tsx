@@ -46,6 +46,9 @@ const AuditLogPage = lazy(() =>
   import("./pages/AuditLogPage").then((m) => ({ default: m.AuditLogPage })),
 );
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
+const PredictionLedgerPage = lazy(() => import("./pages/PredictionLedgerPage"));
+const CommunityIntelligencePage = lazy(() => import("./pages/CommunityIntelligencePage"));
+const CertificationPage = lazy(() => import("./pages/CertificationPage"));
 
 // Context & Components
 import { HumanProofProvider } from "./context/HumanProofContext";
@@ -140,8 +143,10 @@ const NAV_ITEMS = [
   { to: "/", label: "Research" },
   { to: "/terminal", label: "My Dashboard" },
   { to: "/leaderboard", label: "Risk Index" },
+  { to: "/intelligence", label: "Intel" },
   { to: "/safe-careers", label: "Safe List" },
   { to: "/learning-hub", label: "Upskill" },
+  { to: "/certification", label: "Certify" },
 ];
 
 function AppNav({
@@ -612,6 +617,9 @@ function AppContent() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/team" element={<TeamDashboardPage />} />
               <Route path="/leaderboard" element={<LeaderboardPage />} />
+              <Route path="/predictions" element={<PredictionLedgerPage />} />
+              <Route path="/intelligence" element={<CommunityIntelligencePage />} />
+              <Route path="/certification" element={<CertificationPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>

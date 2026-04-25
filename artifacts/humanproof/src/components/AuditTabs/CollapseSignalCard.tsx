@@ -22,6 +22,8 @@ interface CollapseSignalCardProps {
   layoffRounds: number;
   mostRecentLayoffDate: string | null;
   filingDelinquent?: boolean;
+  /** v4.0: User's department for personalised cut probability */
+  userDepartment?: string;
 }
 
 const STAGE_CONFIG = {
@@ -39,6 +41,7 @@ export const CollapseSignalCard: React.FC<CollapseSignalCardProps> = ({
   layoffRounds,
   mostRecentLayoffDate,
   filingDelinquent = false,
+  userDepartment,
 }) => {
   const [report, setReport] = useState<CollapseReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +58,7 @@ export const CollapseSignalCard: React.FC<CollapseSignalCardProps> = ({
       layoffRounds,
       mostRecentLayoffDate,
       filingDelinquent,
+      userDepartment, // v4.0: pass for department-level analysis
     };
 
     detectCollapseStage(inputs)
@@ -147,6 +151,44 @@ export const CollapseSignalCard: React.FC<CollapseSignalCardProps> = ({
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
           {report.recommendation}
         </p>
+
+        {/* v4.0: Department-level cut probability breakdown */}
+        {report.stage && report.stage >= 2 && report.departmentRisks && report.departmentRisks.length > 0 && (
+          <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/8">
+            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
+              Department Risk Distribution
+            </div>
+            <div className="space-y-1.5">
+              {report.departmentRisks.slice(0, 5).map(dept => {
+                const barColor = dept.freezeScore >= 80 ? '#ef4444'
+                  : dept.freezeScore >= 55 ? '#f97316'
+                  : dept.freezeScore >= 30 ? '#f59e0b'
+                  : '#10b981';
+                return (
+                  <div key={dept.department} className="flex items-center gap-2">
+                    <span
+                      className="text-[10px] font-semibold truncate"
+                      style={{ width: 110, color: dept.isUserDepartment ? barColor : 'var(--text-3)', fontWeight: dept.isUserDepartment ? 800 : 400 }}
+                    >
+                      {dept.isUserDepartment ? '→ ' : ''}{dept.department}
+                    </span>
+                    <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div style={{ width: `${dept.freezeScore}%`, height: '100%', background: barColor, borderRadius: 'inherit' }} />
+                    </div>
+                    <span className="text-[9px] font-mono font-bold" style={{ color: barColor, width: 32, textAlign: 'right' }}>
+                      {dept.freezeScore}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {report.userDepartmentFreezeScore !== null && report.userDepartmentFreezeScore !== undefined && (
+              <p className="text-[10px] text-muted-foreground mt-2 opacity-70">
+                Your department ({userDepartment}) freeze score: {report.userDepartmentFreezeScore}%
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Watch CTA */}
         {!watching ? (

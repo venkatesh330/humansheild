@@ -28,6 +28,13 @@ export interface CareerPath {
   industryMapping: string[];
   salaryDelta: string;
   timeToTransition: string;
+  /** v4.0: Months from starting the transition to receiving first paycheck in the new role.
+   *  Derived from career twin network data + labor market research.
+   *  Lateral (same function): 2–4. Function pivot: 4–8. Cross-domain: 8–14. */
+  months_to_first_income?: number;
+  /** v4.0: Months of reduced (or zero) income during the transition window.
+   *  0 = no income gap (internal move). 1–3 = short gap. 4–8 = significant gap. */
+  income_dip_months?: number;
 }
 
 export interface RoadmapAction {

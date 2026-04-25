@@ -17,6 +17,18 @@ export interface StageSignal {
   description: string;
 }
 
+// Intelligence Upgrade 2 (v4.0): Department-level cut probability
+export interface DepartmentRiskBreakdown {
+  /** Department name */
+  department: string;
+  /** 0–100 hiring freeze score for this department */
+  freezeScore: number;
+  /** Whether this is the user's own department */
+  isUserDepartment: boolean;
+  /** Human-readable risk label */
+  riskLabel: 'Active Hiring' | 'Slowdown' | 'Freeze' | 'Critical Freeze';
+}
+
 export interface CollapseReport {
   company: string;
   stage: CollapseStage;
@@ -29,6 +41,10 @@ export interface CollapseReport {
   activeSignalCount: number;
   recommendation: string;
   fetchedAt: string;
+  /** v4.0: Department-level cut probability distribution */
+  departmentRisks?: DepartmentRiskBreakdown[];
+  /** v4.0: User's own department freeze score (0–100) */
+  userDepartmentFreezeScore?: number | null;
 }
 
 // ── Stage 1 signal detectors (12-18 months before collapse) ──────────────────
@@ -166,16 +182,46 @@ export interface CollapseInputs {
   layoffRounds: number;
   mostRecentLayoffDate: string | null;
   filingDelinquent: boolean;
+  /** v4.0: User's department for personalized cut probability */
+  userDepartment?: string;
+}
+
+// ── v4.0: Department role mapping ─────────────────────────────────────────────
+// Maps department names to the role categories we scrape from Naukri
+const DEPARTMENT_ROLES: Record<string, string[]> = {
+  'Engineering':       ['sw_backend', 'sw_frontend', 'sw_devops', 'sw_testing'],
+  'Finance':           ['fin_account', 'fin_fp', 'fin_payroll'],
+  'HR':                ['hr_recruit', 'hr_hrbp', 'hr_ops'],
+  'Operations':        ['bpo_inbound', 'bpo_outbound', 'log_ops'],
+  'Sales':             ['fmcg_sales', 'ser_sales_exec'],
+  'Product':           ['saas_pm', 'sw_pm'],
+  'Data / Analytics':  ['ml_data', 'it_data_analyst', 'ml_mlops'],
+  'Legal':             ['leg_corporate', 'leg_paralegal'],
+  'Marketing':         ['mkt_seo', 'cnt_copy', 'mkt_brand'],
+};
+
+function getDepartmentRiskLabel(score: number): DepartmentRiskBreakdown['riskLabel'] {
+  if (score >= 80) return 'Critical Freeze';
+  if (score >= 55) return 'Freeze';
+  if (score >= 30) return 'Slowdown';
+  return 'Active Hiring';
 }
 
 export async function detectCollapseStage(inputs: CollapseInputs): Promise<CollapseReport> {
   const { companyName, industry, roleTitle, stock90dChange,
-    aiInvestmentSignal, layoffRounds, mostRecentLayoffDate, filingDelinquent } = inputs;
+    aiInvestmentSignal, layoffRounds, mostRecentLayoffDate, filingDelinquent,
+    userDepartment } = inputs;
 
-  const [newsData, roleData, sectorCount] = await Promise.all([
+  // v4.0: Fetch department-level freeze scores in parallel with other signals
+  const departmentEntries = Object.entries(DEPARTMENT_ROLES);
+  const [newsData, roleData, sectorCount, ...deptRoleDataArr] = await Promise.all([
     fetchCompanyNewsSignals(companyName),
     fetchRoleDemandSignal(roleTitle, companyName),
     getSectorLayoffCount(industry, 180),
+    // Fetch freeze score for one representative role per department
+    ...departmentEntries.map(([, roles]) =>
+      fetchRoleDemandSignal(roles[0], companyName).catch(() => ({ hiringFreezeScore: 0.5, demandTrend: 'stable' as const, isLive: false, estimatedOpenings: null, source: 'heuristic' }))
+    ),
   ]);
 
   // Stage 1 signals
@@ -233,6 +279,38 @@ export async function detectCollapseStage(inputs: CollapseInputs): Promise<Colla
     3: `Stage 3 imminent risk: ${s3Active} of 3 late-stage signals detected (leadership instability, active media coverage, or regulatory delinquency). Historical median time to layoff announcement from Stage 3: 4–8 weeks. Action: treat this as an active emergency — prioritize job search above all other career activities.`,
   };
 
+  // ── v4.0: Build department risk breakdown ─────────────────────────────────
+  const departmentRisks: DepartmentRiskBreakdown[] = departmentEntries.map(([deptName], idx) => {
+    const deptData = deptRoleDataArr[idx];
+    const freezeScore = Math.round((deptData?.hiringFreezeScore ?? 0.5) * 100);
+    const isUserDept = userDepartment
+      ? deptName.toLowerCase().includes(userDepartment.toLowerCase()) ||
+        userDepartment.toLowerCase().includes(deptName.toLowerCase().split(' ')[0])
+      : false;
+    return {
+      department: deptName,
+      freezeScore,
+      isUserDepartment: isUserDept,
+      riskLabel: getDepartmentRiskLabel(freezeScore),
+    };
+  }).sort((a, b) => b.freezeScore - a.freezeScore);
+
+  const userDeptRisk = userDepartment
+    ? (departmentRisks.find(d => d.isUserDepartment)?.freezeScore ?? null)
+    : null;
+
+  // Build department commentary for recommendation (only when stage 2+)
+  let departmentNote = '';
+  if (stage && stage >= 2 && departmentRisks.length > 0) {
+    const topTwo = departmentRisks.slice(0, 2);
+    departmentNote = ` Department risk distribution: ${topTwo.map(d => `${d.department} — ${d.freezeScore}% freeze`).join('; ')}.`;
+    if (userDeptRisk !== null) {
+      const userDept = departmentRisks.find(d => d.isUserDepartment);
+      const companyAvg = Math.round(departmentRisks.reduce((s, d) => s + d.freezeScore, 0) / departmentRisks.length);
+      departmentNote += ` Your department (${userDept?.department ?? userDepartment}) shows ${userDeptRisk}% freeze — ${userDeptRisk > companyAvg ? 'above' : 'below'} company average of ${companyAvg}%.`;
+    }
+  }
+
   return {
     company: companyName,
     stage,
@@ -244,11 +322,13 @@ export async function detectCollapseStage(inputs: CollapseInputs): Promise<Colla
     stage3Signals: s3,
     activeSignalCount: totalActive,
     recommendation: stage
-      ? recommendations[stage]
+      ? recommendations[stage] + departmentNote
       : overallRisk > 0
         ? `${companyName} has sub-threshold signals (risk score: ${overallRisk}/100) but no confirmed stage detected. Individual signals are present but haven't converged into a clear pattern. Monitor monthly — a single new signal could trigger Stage 1 classification.`
         : `${companyName} shows no collapse signals across all 9 detection vectors. This is a positive stability indicator. Reassess in 90 days or when significant company news emerges.`,
     fetchedAt: new Date().toISOString(),
+    departmentRisks,
+    userDepartmentFreezeScore: userDeptRisk,
   };
 }
 

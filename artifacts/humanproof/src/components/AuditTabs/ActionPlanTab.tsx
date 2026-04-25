@@ -12,8 +12,23 @@ import {
   Star, ExternalLink,
 } from "lucide-react";
 import { SectionHeader } from "./common/SectionHeader";
+import { CollapsibleSection } from "./common/CollapsibleSection";
 import { CareerTwinCard } from "@/components/CareerTwinCard";
+import { ActionDependencyGraph } from "../../components/ActionDependencyGraph";
 import { getCareerIntelligence } from "@/data/intelligence";
+import { getCitiesForRole, formatSalaryPremium } from "@/data/cityOpportunities";
+import { getActionLearningTime } from "@/data/skillLearningHours";
+import { TimeAvailableTrack, TRACKS } from "../../components/TimeAvailableTrack";
+import type { TrackType } from "../../components/TimeAvailableTrack";
+import { FinancialContextInput } from "../../components/FinancialContextInput";
+import { CareerCapitalAssessment } from "../../components/CareerCapitalAssessment";
+import { PeerBenchmarkPanel } from "../../components/PeerBenchmarkPanel";
+import {
+  loadFinancialContext,
+  deriveFinancialProfile,
+  getPerformanceCollapseStrategy,
+  type FinancialProfile,
+} from "@/services/financialContextService";
 import { useAdaptiveSystem } from "@/hooks/useAdaptiveSystem";
 import type { TabProps } from "./common/types";
 import type { ActionPlanItem } from "@/types/hybridResult";
@@ -53,9 +68,30 @@ const ROLE_SPECIFIC_ACTIONS: Record<string, Partial<ActionPlanItem>[]> = {
 
 const getPrefix = (roleKey: string) => roleKey.split('_')[0];
 
+/** Adjust deadline string by urgency multiplier (e.g. "30 days" × 1.3 → "23 days") */
+function adjustDeadline(deadline: string, multiplier: number): string {
+  if (multiplier === 1.0) return deadline;
+  const match = deadline.match(/^(\d+)\s*(day|days|week|weeks)/i);
+  if (!match) return deadline;
+  const isWeeks = /week/i.test(match[2]);
+  const unit = parseInt(match[1], 10) * (isWeeks ? 7 : 1); // normalise to days
+  const adjusted = Math.max(1, Math.round(unit / multiplier));
+  return adjusted < 7 ? `${adjusted} days` : `${Math.round(adjusted / 7)} week${Math.round(adjusted / 7) !== 1 ? 's' : ''}`;
+}
+
+/** Escalate priority one level when urgency is high */
+function escalatePriority(priority: ActionPlanItem['priority'], urgencyMultiplier: number): ActionPlanItem['priority'] {
+  if (urgencyMultiplier < 1.3) return priority;
+  if (priority === 'Medium') return 'High';
+  if (priority === 'High') return 'Critical';
+  return priority;
+}
+
 function buildDynamicActions(
   result: TabProps["result"],
   companyName: string,
+  financialProfile?: FinancialProfile | null,
+  selectedTrack: TrackType = 'moderate',
 ): ActionPlanItem[] {
   const score = result.total;
   const roleKey = result.workTypeKey;
@@ -168,6 +204,25 @@ function buildDynamicActions(
     });
   }
 
+  // 8. City opportunity action — when market headwinds are high (L4 > 0.60)
+  // and the user is in a secondary city with limited options.
+  const l4Score = result.breakdown?.L4 ?? 0;
+  if (l4Score > 0.60) {
+    const topCities = getCitiesForRole(prefix).slice(0, 2);
+    if (topCities.length > 0) {
+      const best = topCities[0];
+      actions.push({
+        id: `city-opportunity-${prefix}`,
+        title: `Explore ${best.city} Market — ${best.opportunity.employer_count} Active Employers`,
+        description: `Your current market shows elevated headwinds (L4: ${Math.round(l4Score * 100)}/100). ${best.city} has ${best.opportunity.employer_count} companies actively hiring for ${prefix} roles. Salary: ${formatSalaryPremium(best.opportunity.salary_premium_pct)}. Median placement time: ${best.opportunity.avg_placement_weeks} weeks. Remote adoption: ${Math.round(best.opportunity.remote_adoption_rate * 100)}%. Top employers: ${best.opportunity.top_5_hiring_companies.slice(0, 3).join(', ')}.`,
+        priority: l4Score > 0.75 ? "High" : "Medium",
+        layerFocus: "L4 · Market Headwinds",
+        riskReductionPct: 12,
+        deadline: "Research phase: 2 weeks",
+      });
+    }
+  }
+
   // Fallback: ensure at least 3 items
   if (actions.length < 3) {
     actions.push(
@@ -192,9 +247,61 @@ function buildDynamicActions(
     );
   }
 
-  // De-duplicate by id and sort by priority weight
+  // Personalization 4: Conservative profile freelance track
+  // When runway is tight, build parallel income instead of pivot
+  if (financialProfile?.riskAppetite === 'conservative' && score >= 50) {
+    actions.push({
+      id: 'freelance-track-1',
+      title: 'Identify One Freelance Service You Can Offer Today',
+      description: `Conservative financial profile: instead of a role transition, build a parallel income stream while employed. Search Upwork and Toptal for your role category (${prefix.toUpperCase()}). Goal: not income replacement but proof of commercial viability. Even ₹1,000 per engagement transforms your CV from candidate to practitioner.`,
+      priority: 'Medium',
+      layerFocus: 'L5 · Personal Protection',
+      riskReductionPct: 8,
+      deadline: 'This week — identify 3 services',
+    });
+    actions.push({
+      id: 'freelance-track-2',
+      title: 'Complete One Paid Freelance Project This Month',
+      description: 'One completed client project — regardless of size or pay — fundamentally changes how you describe your capabilities. "I work with clients on X" is a stronger credential than "I know how to do X". Any completed engagement counts.',
+      priority: 'Medium',
+      layerFocus: 'L5 · Personal Protection',
+      riskReductionPct: 10,
+      deadline: '30 days',
+    });
+  }
+
+  // Intelligence Upgrade 4: Annotate skill-related actions with weeks-to-proficiency
+  // based on the user's current time-available track
+  const trackWeeklyHours = selectedTrack === 'minimal' ? 2 : selectedTrack === 'intensive' ? 20 : 8;
+  const annotatedActions = actions.map(item => {
+    const learningTime = getActionLearningTime(item.title, trackWeeklyHours as 2 | 8 | 20);
+    if (!learningTime) return item;
+    return {
+      ...item,
+      description: item.description + ` (${learningTime})`,
+    };
+  });
+
+  // De-duplicate by id
   const seen = new Set<string>();
-  const unique = actions.filter(a => { if (seen.has(a.id)) return false; seen.add(a.id); return true; });
+  let unique = annotatedActions.filter(a => { if (seen.has(a.id)) return false; seen.add(a.id); return true; });
+
+  // Priority 4: Apply financial context — adjust urgency and filter expensive items
+  if (financialProfile) {
+    const { urgencyMultiplier, riskAppetite } = financialProfile;
+    unique = unique.map(item => ({
+      ...item,
+      deadline: item.deadline ? adjustDeadline(item.deadline, urgencyMultiplier) : item.deadline,
+      priority: escalatePriority(item.priority, urgencyMultiplier),
+    }));
+    // Conservative profile: suppress any action that implies long income gap
+    if (riskAppetite === 'conservative') {
+      unique = unique.filter(item =>
+        !item.description.toLowerCase().includes('quit') &&
+        !item.description.toLowerCase().includes('leave your job')
+      );
+    }
+  }
 
   const priorityWeight = { Critical: 0, High: 1, Medium: 2, Low: 3 };
   return unique.sort((a, b) => (priorityWeight[a.priority] ?? 2) - (priorityWeight[b.priority] ?? 2));
@@ -204,41 +311,43 @@ function buildDynamicActions(
 // Course Resource Database — role-contextual learning links
 // ---------------------------------------------------------------------------
 
-const COURSE_RESOURCES: Record<string, { title: string; provider: string; url: string; free: boolean }[]> = {
-  sw:  [
-    { title: "GitHub Copilot Advanced Techniques", provider: "GitHub", url: "https://docs.github.com/en/copilot", free: true },
-    { title: "AI-Powered Code Review Workflow", provider: "DeepLearning.AI", url: "https://www.deeplearning.ai/short-courses/", free: true },
-    { title: "System Design with AI Components", provider: "Educative", url: "https://www.educative.io/", free: false },
+// costINR: approximate monthly/one-time cost in Indian Rupees. 0 = free.
+// Conservative profiles (< ₹3K) are filtered to free/affordable only.
+const COURSE_RESOURCES: Record<string, { title: string; provider: string; url: string; free: boolean; costINR: number }[]> = {
+  sw: [
+    { title: "GitHub Copilot Advanced Techniques", provider: "GitHub", url: "https://docs.github.com/en/copilot", free: true, costINR: 0 },
+    { title: "AI-Powered Code Review Workflow", provider: "DeepLearning.AI", url: "https://www.deeplearning.ai/short-courses/", free: true, costINR: 0 },
+    { title: "System Design with AI Components", provider: "Educative", url: "https://www.educative.io/", free: false, costINR: 2800 },
   ],
   fin: [
-    { title: "Python for Financial Analysis", provider: "Coursera / Michigan", url: "https://www.coursera.org/learn/python-statistics-financial-analysis", free: false },
-    { title: "AI Tools for FP&A", provider: "CFI", url: "https://corporatefinanceinstitute.com/", free: false },
-    { title: "Excel to Python Migration", provider: "DataCamp", url: "https://www.datacamp.com/", free: false },
+    { title: "Python for Financial Analysis", provider: "Coursera / Michigan", url: "https://www.coursera.org/learn/python-statistics-financial-analysis", free: false, costINR: 4500 },
+    { title: "AI Tools for FP&A", provider: "CFI", url: "https://corporatefinanceinstitute.com/", free: false, costINR: 6000 },
+    { title: "Excel to Python Migration", provider: "DataCamp", url: "https://www.datacamp.com/", free: false, costINR: 3200 },
   ],
   hr: [
-    { title: "People Analytics (Google)", provider: "Coursera / Google", url: "https://www.coursera.org/learn/people-analytics", free: false },
-    { title: "AI in HR Certificate", provider: "LinkedIn Learning", url: "https://www.linkedin.com/learning/", free: false },
-    { title: "SHRM AI Upskilling Program", provider: "SHRM", url: "https://www.shrm.org/", free: false },
+    { title: "People Analytics (Google)", provider: "Coursera / Google", url: "https://www.coursera.org/learn/people-analytics", free: false, costINR: 4500 },
+    { title: "AI in HR Certificate", provider: "LinkedIn Learning", url: "https://www.linkedin.com/learning/", free: false, costINR: 2500 },
+    { title: "SHRM AI Upskilling Program", provider: "SHRM", url: "https://www.shrm.org/", free: false, costINR: 8000 },
   ],
   leg: [
-    { title: "AI and the Legal System", provider: "Harvard (edX)", url: "https://www.edx.org/", free: false },
-    { title: "Contract AI Fundamentals (Harvey)", provider: "Harvey AI", url: "https://www.harvey.ai/", free: false },
-    { title: "EU AI Act Compliance Certificate", provider: "IAPP", url: "https://iapp.org/", free: false },
+    { title: "AI and the Legal System", provider: "Harvard (edX)", url: "https://www.edx.org/", free: false, costINR: 8000 },
+    { title: "Contract AI Fundamentals (Harvey)", provider: "Harvey AI", url: "https://www.harvey.ai/", free: false, costINR: 5000 },
+    { title: "EU AI Act Compliance Certificate", provider: "IAPP", url: "https://iapp.org/", free: false, costINR: 12000 },
   ],
   hc: [
-    { title: "AI in Healthcare (Stanford)", provider: "Coursera / Stanford", url: "https://www.coursera.org/learn/ai-in-healthcare", free: false },
-    { title: "Clinical AI Validation Methods", provider: "MIT (edX)", url: "https://www.edx.org/", free: false },
-    { title: "Digital Health Leadership", provider: "ACHE", url: "https://www.ache.org/", free: false },
+    { title: "AI in Healthcare (Stanford)", provider: "Coursera / Stanford", url: "https://www.coursera.org/learn/ai-in-healthcare", free: false, costINR: 4500 },
+    { title: "Clinical AI Validation Methods", provider: "MIT (edX)", url: "https://www.edx.org/", free: false, costINR: 7000 },
+    { title: "Digital Health Leadership", provider: "ACHE", url: "https://www.ache.org/", free: false, costINR: 9000 },
   ],
   cnt: [
-    { title: "AI-Augmented Content Strategy", provider: "HubSpot Academy", url: "https://academy.hubspot.com/", free: true },
-    { title: "Prompt Engineering for Writers", provider: "DeepLearning.AI", url: "https://www.deeplearning.ai/short-courses/chatgpt-prompt-engineering-for-developers/", free: true },
-    { title: "Brand Story in the AI Era", provider: "Domestika", url: "https://www.domestika.org/", free: false },
+    { title: "AI-Augmented Content Strategy", provider: "HubSpot Academy", url: "https://academy.hubspot.com/", free: true, costINR: 0 },
+    { title: "Prompt Engineering for Writers", provider: "DeepLearning.AI", url: "https://www.deeplearning.ai/short-courses/chatgpt-prompt-engineering-for-developers/", free: true, costINR: 0 },
+    { title: "Brand Story in the AI Era", provider: "Domestika", url: "https://www.domestika.org/", free: false, costINR: 1800 },
   ],
   default: [
-    { title: "AI for Everyone (Non-Technical)", provider: "Coursera / DeepLearning.AI", url: "https://www.coursera.org/learn/ai-for-everyone", free: false },
-    { title: "AI Upskilling Fundamentals", provider: "Google", url: "https://grow.google/intl/en_us/guide-to-ai-upskilling/", free: true },
-    { title: "ChatGPT Prompt Engineering", provider: "DeepLearning.AI", url: "https://www.deeplearning.ai/short-courses/chatgpt-prompt-engineering-for-developers/", free: true },
+    { title: "AI for Everyone (Non-Technical)", provider: "Coursera / DeepLearning.AI", url: "https://www.coursera.org/learn/ai-for-everyone", free: false, costINR: 4500 },
+    { title: "AI Upskilling Fundamentals", provider: "Google", url: "https://grow.google/intl/en_us/guide-to-ai-upskilling/", free: true, costINR: 0 },
+    { title: "ChatGPT Prompt Engineering", provider: "DeepLearning.AI", url: "https://www.deeplearning.ai/short-courses/chatgpt-prompt-engineering-for-developers/", free: true, costINR: 0 },
   ],
 };
 
@@ -360,8 +469,18 @@ const ProgressIndicator: React.FC<{ completed: number; total: number }> = ({ com
 // Course Resource Card
 // ---------------------------------------------------------------------------
 
-const CourseResourceCard: React.FC<{ rolePrefix: string }> = ({ rolePrefix }) => {
-  const courses = COURSE_RESOURCES[rolePrefix] ?? COURSE_RESOURCES.default;
+const CourseResourceCard: React.FC<{ rolePrefix: string; financialProfile?: FinancialProfile | null }> = ({ rolePrefix, financialProfile }) => {
+  const allCourses = COURSE_RESOURCES[rolePrefix] ?? COURSE_RESOURCES.default;
+
+  // Priority 4: Filter by financial context — conservative users see free/≤₹3K only
+  const courses = useMemo(() => {
+    if (!financialProfile || financialProfile.riskAppetite !== 'conservative') return allCourses;
+    const affordable = allCourses.filter(c => c.free || c.costINR <= 3000);
+    // Always show at least 1 option even if all are expensive
+    return affordable.length > 0 ? affordable : allCourses.slice(0, 1);
+  }, [allCourses, financialProfile]);
+
+  const conservativeFiltered = financialProfile?.riskAppetite === 'conservative' && courses.length < allCourses.length;
 
   return (
     <div className="glass-panel p-5 rounded-xl">
@@ -369,9 +488,14 @@ const CourseResourceCard: React.FC<{ rolePrefix: string }> = ({ rolePrefix }) =>
         <BookOpen className="w-4 h-4 text-cyan-400" />
         <h4 className="font-bold text-sm">Recommended Learning</h4>
         <span className="ml-auto text-[9px] font-black bg-cyan-500/15 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded">
-          CURATED
+          {conservativeFiltered ? 'FREE / ≤₹3K' : 'CURATED'}
         </span>
       </div>
+      {conservativeFiltered && (
+        <p className="text-[10px] text-amber-400 mb-3 leading-relaxed">
+          Showing free and affordable options based on your financial context.
+        </p>
+      )}
       <div className="space-y-3">
         {courses.map((c, i) => (
           <a
@@ -411,9 +535,29 @@ export const ActionPlanTab: React.FC<TabProps> = ({ result, companyData }) => {
   const { width } = useAdaptiveSystem();
   const rolePrefix = getPrefix(result.workTypeKey);
 
-  // Merge server-side recs with dynamic role-specific ones
+  // Priority 4: Load financial context from localStorage (set by FinancialContextInput)
+  const financialCtx = useMemo(() => loadFinancialContext(), []);
+  const financialProfile = useMemo(
+    () => financialCtx ? deriveFinancialProfile(financialCtx, result.total) : null,
+    [financialCtx, result.total],
+  );
+
+  // Priority 9: Performance tier + collapse override
+  const performanceTier = (result as any).performanceTier as 'top' | 'average' | 'below' | 'unknown' | undefined ?? 'unknown';
+  const collapseStageForOverride = (result.collapseStage ?? null) as 1 | 2 | 3 | null;
+  const performanceOverride = useMemo(
+    () => getPerformanceCollapseStrategy(performanceTier, collapseStageForOverride, result.total),
+    [performanceTier, collapseStageForOverride, result.total],
+  );
+
+  // Merge server-side recs with dynamic role-specific ones, passing financial profile
   const allRecommendations = useMemo(() => {
-    const dynamic = buildDynamicActions(result, result.companyName ?? companyData?.name ?? "your company");
+    const dynamic = buildDynamicActions(
+      result,
+      result.companyName ?? companyData?.name ?? "your company",
+      financialProfile,
+      selectedTrack,
+    );
     const serverRecs = result.recommendations ?? [];
     // Merge: prefer dynamic, append non-duplicate server recs
     const dynamicIds = new Set(dynamic.map(d => d.id));
@@ -424,6 +568,9 @@ export const ActionPlanTab: React.FC<TabProps> = ({ result, companyData }) => {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [completedItems, setCompletedItems] = useState<Record<string, boolean>>({});
+  const [selectedTrack, setSelectedTrack] = useState<TrackType>(() =>
+    result.total >= 70 ? "intensive" : result.total >= 45 ? "moderate" : "minimal"
+  );
 
   useEffect(() => {
     try {
@@ -446,16 +593,33 @@ export const ActionPlanTab: React.FC<TabProps> = ({ result, companyData }) => {
       return true;
     }), [allRecommendations, filter, search]);
 
+  const trackConfig = TRACKS[selectedTrack];
+  const trackLimitedItems = useMemo(() => {
+    let items = filteredItems.slice(0, trackConfig.maxActions);
+    // Priority 9: suppress long-horizon upskilling when override is active
+    if (performanceOverride?.suppressUpskilling) {
+      items = items.filter(item =>
+        !item.layerFocus?.toLowerCase().includes('l3') &&
+        !item.layerFocus?.toLowerCase().includes('displacement') &&
+        !item.title?.toLowerCase().includes('certif') &&
+        !item.title?.toLowerCase().includes('roadmap') &&
+        !item.deadline?.toLowerCase().includes('90 day')
+      );
+      if (items.length === 0) items = filteredItems.slice(0, 2); // always show at least 2
+    }
+    return items;
+  }, [filteredItems, trackConfig.maxActions, performanceOverride]);
+
   const sortedItems = useMemo(() => {
     const pw: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
-    return [...filteredItems].sort((a, b) => {
+    return [...trackLimitedItems].sort((a, b) => {
       const aC = completedItems[a.id] || false;
       const bC = completedItems[b.id] || false;
       if (aC !== bC) return aC ? 1 : -1;
       if (!aC) return (pw[a.priority] ?? 2) - (pw[b.priority] ?? 2);
       return 0;
     });
-  }, [filteredItems, completedItems]);
+  }, [trackLimitedItems, completedItems]);
 
   const completedCount = useMemo(
     () => sortedItems.filter(item => completedItems[item.id]).length,
@@ -495,15 +659,56 @@ export const ActionPlanTab: React.FC<TabProps> = ({ result, companyData }) => {
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
 
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
           <div>
             <SectionHeader
               title="Personalized Action Plan"
-              description={`${sortedItems.length} prioritized recommendations tailored to ${result.workTypeKey.replace(/_/g, " ")} at risk score ${result.total}/100. Track progress by checking items off.`}
+              description={`${sortedItems.length} actions tailored to ${result.workTypeKey.replace(/_/g, " ")} at risk score ${result.total}/100. Set your available hours to see only what's realistic for your schedule.`}
             />
           </div>
           <ProgressIndicator completed={completedCount} total={sortedItems.length} />
         </div>
+
+        {/* Priority 9: Performance + collapse override banner */}
+        {performanceOverride?.isActive && (
+          <div
+            className="rounded-xl border p-4 mb-4"
+            style={{
+              background: performanceOverride.urgencyTier === 'immediate' ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+              borderColor: performanceOverride.urgencyTier === 'immediate' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)',
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle
+                className="w-5 h-5 flex-shrink-0 mt-0.5"
+                style={{ color: performanceOverride.urgencyTier === 'immediate' ? 'var(--red)' : 'var(--amber)' }}
+              />
+              <div>
+                <div
+                  className="text-sm font-black mb-1"
+                  style={{ color: performanceOverride.urgencyTier === 'immediate' ? 'var(--red)' : 'var(--amber)' }}
+                >
+                  {performanceOverride.headline}
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {performanceOverride.strategyOverride}
+                </p>
+                {performanceOverride.suppressUpskilling && (
+                  <p className="text-[10px] text-muted-foreground mt-1.5 opacity-70">
+                    Long-horizon upskilling actions have been filtered from this plan. Focus on the exit actions below.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Time-available track selector */}
+        <TimeAvailableTrack
+          selectedTrack={selectedTrack}
+          onTrackChange={setSelectedTrack}
+          riskScore={result.total}
+        />
 
         {/* Search + Filter */}
         <div className="flex flex-col md:flex-row gap-3 mb-6">
@@ -565,7 +770,7 @@ export const ActionPlanTab: React.FC<TabProps> = ({ result, companyData }) => {
         {/* Resources Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
           {/* Recommended Courses */}
-          <CourseResourceCard rolePrefix={rolePrefix} />
+          <CourseResourceCard rolePrefix={rolePrefix} financialProfile={financialProfile} />
 
           {/* AI Adaptation Tools */}
           <div className="glass-panel p-5 rounded-xl">
@@ -597,6 +802,13 @@ export const ActionPlanTab: React.FC<TabProps> = ({ result, companyData }) => {
           </div>
         </div>
 
+        {/* Priority 8: Phased Action Dependency Map */}
+        <div className="mt-8">
+          <CollapsibleSection title="Phased Action Plan — Dependency Sequence">
+            <ActionDependencyGraph actions={sortedItems} completedItems={completedItems} />
+          </CollapsibleSection>
+        </div>
+
         {/* Career Twin Network */}
         <CareerTwinCard
           userRole={result.workTypeKey}
@@ -605,6 +817,26 @@ export const ActionPlanTab: React.FC<TabProps> = ({ result, companyData }) => {
           userCountry={result.countryKey ?? "global"}
           topN={3}
         />
+
+        {/* Financial Context + Career Capital — deep personalization */}
+        <div className="space-y-4 mt-6">
+          <SectionHeader
+            title="Personalise Your Strategy"
+            description="Two optional assessments that significantly improve the accuracy of your action plan. Stored locally only — never transmitted."
+          />
+          <FinancialContextInput riskScore={result.total} currency="INR" />
+          <CareerCapitalAssessment currentRiskScore={result.total} />
+        </div>
+
+        {/* Peer Benchmark */}
+        <div className="mt-6">
+          <PeerBenchmarkPanel
+            roleKey={result.workTypeKey}
+            industryKey={result.industryKey}
+            score={result.total}
+            experience={result.experience}
+          />
+        </div>
       </motion.div>
     </section>
   );

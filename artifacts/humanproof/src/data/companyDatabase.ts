@@ -27,6 +27,15 @@ export interface CompanyData {
   monthsSinceLastFunding?: number;
   /** Company-specific role risk weights (0–1) from Supabase company_intelligence.role_risk_map */
   roleRiskMap?: Record<string, number>;
+  // ── D7 Leadership Independence Fields (all optional — backward compat) ──────
+  /** Months current CEO has been in role. <6mo = recent hire = instability signal. */
+  ceoTenureMonths?: number;
+  /** Number of C-suite departures (CEO, CFO, CTO, COO) in the past 12 months. */
+  cSuiteChanges12m?: number;
+  /** True if board composition was materially restructured in the past 12 months. */
+  boardCompositionChanged?: boolean;
+  /** Management approval trend from employee review platforms. */
+  glassdoorTrendDirection?: 'rising' | 'stable' | 'falling';
 }
 
 export const companyDatabase: CompanyData[] = [

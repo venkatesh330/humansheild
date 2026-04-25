@@ -141,7 +141,11 @@ const AuditTerminalPage: React.FC = () => {
       setResult(cached);
       const d = getScoreDelta(workTypeKey, cached.total, experience, countryKey);
       setDelta(d);
-      recordScore({ roleKey: workTypeKey, industryKey, countryKey, experience, score: cached.total, timestamp: Date.now(), isGrounded: false });
+      // Build breakdown from Oracle dimensions (D1-D6, normalized 0-1)
+      const cachedBreakdown = Object.fromEntries(
+        (cached.dimensions ?? []).map(dim => [dim.key, dim.score / 100])
+      );
+      recordScore({ roleKey: workTypeKey, industryKey, countryKey, experience, score: cached.total, timestamp: Date.now(), isGrounded: false, breakdown: cachedBreakdown });
       setActiveTab('analysis');
       setIsCalculating(false);
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
@@ -156,7 +160,10 @@ const AuditTerminalPage: React.FC = () => {
 
     const d = getScoreDelta(workTypeKey, score.total, experience, countryKey);
     setDelta(d);
-    recordScore({ roleKey: workTypeKey, industryKey, countryKey, experience, score: score.total, timestamp: Date.now(), isGrounded: false });
+    const freshBreakdown = Object.fromEntries(
+      (score.dimensions ?? []).map(dim => [dim.key, dim.score / 100])
+    );
+    recordScore({ roleKey: workTypeKey, industryKey, countryKey, experience, score: score.total, timestamp: Date.now(), isGrounded: true, breakdown: freshBreakdown });
 
     setActiveTab('analysis');
     setIsCalculating(false);

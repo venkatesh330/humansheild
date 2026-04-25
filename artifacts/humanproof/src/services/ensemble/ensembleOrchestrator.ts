@@ -1,6 +1,17 @@
 // ensembleOrchestrator.ts
-// Master controller — deterministic engine + swarm + single Claude analysis call.
+// Master controller — deterministic engine + swarm + tiered LLM analysis.
 // API keys never reach the browser. llm-analyze Edge Function holds ANTHROPIC_API_KEY.
+//
+// ── 3-TIER LLM ARCHITECTURE ──────────────────────────────────────────────────
+// Tier A: Globally known company (top 500 + top 100 India) with real financial data
+//         → Call Claude with full signal context. Produces genuine grounded narrative.
+// Tier B: Known sector company (in DB but not top-tier, or partial data)
+//         → Deterministic template narrative personalized at variable level.
+//         → No API cost, honest framing, still useful.
+// Tier C: Unknown company (source includes 'Fallback' or 'Unknown')
+//         → Skip LLM entirely. Show score with explicit scope framing.
+//         → A hallucinated narrative is worse than no narrative.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from "../../utils/supabase";
 import {
@@ -18,8 +29,10 @@ import {
   ScoreTier,
   ScoreBreakdown,
   UserFactors,
+  type UniquenessDepth,
 } from "../layoffScoreEngine";
 import { getCachedAnalysis, setCachedAnalysis } from "../cache/analysisCache";
+import { loadScoreHistory } from "../scoreDeltaService";
 import { CompanyData } from "../../data/companyDatabase";
 import { IndustryRisk } from "../../data/industryRiskData";
 import { RoleExposure } from "../../data/roleExposureData";
@@ -93,6 +106,8 @@ export interface EnsembleInputs {
   department: string;
   tenureYears: number;
   isUniqueRole: boolean;
+  /** Priority 3: 3-level uniqueness depth — overrides isUniqueRole when present */
+  uniquenessDepth?: UniquenessDepth;
   performanceTier: UserFactors["performanceTier"];
   hasRecentPromotion: boolean;
   hasKeyRelationships: boolean;
@@ -156,6 +171,7 @@ export const runFullEnsembleAnalysis = async (
     department,
     tenureYears,
     isUniqueRole,
+    uniquenessDepth,
     performanceTier,
     hasRecentPromotion,
     hasKeyRelationships,
@@ -173,7 +189,7 @@ export const runFullEnsembleAnalysis = async (
     department.toLowerCase(),
     String(tenureYears),
     performanceTier,
-    isUniqueRole ? '1' : '0',
+    uniquenessDepth ?? (isUniqueRole ? 'critical_knowledge' : 'generic'), // prevents cross-user collision
     hasRecentPromotion ? '1' : '0',
     hasKeyRelationships ? '1' : '0',
     forceRefresh ? 'refresh' : 'standard',
@@ -223,6 +239,102 @@ export const runFullEnsembleAnalysis = async (
   // ── Notify caller that swarm phase is complete → triggers UI stage 2 ──────
   if (onSwarmComplete) onSwarmComplete();
 
+  // ── LLM Tier Classification ──────────────────────────────────────────────
+  // Classify before the engine runs so tier drives Step 3 routing below.
+  // NEVER call LLM for unknown companies — hallucination destroys trust.
+  type LLMTier = 'A' | 'B' | 'C';
+
+  const classifyLLMTier = (cd: CompanyData): LLMTier => {
+    const src = (cd.source ?? '').toLowerCase();
+    // Tier C: unknown — no real data, LLM has no knowledge of this company
+    if (src.includes('fallback') || src.includes('unknown') || src.includes('user input')) return 'C';
+    // Tier A: rich real data present — LLM can produce a genuinely grounded narrative
+    const hasRichData =
+      cd.revenueGrowthYoY != null &&
+      (cd.stock90DayChange != null || !cd.isPublic) &&
+      cd.employeeCount > 0 &&
+      cd.layoffRounds >= 0;
+    if (hasRichData) return 'A';
+    // Tier B: in DB but partial data — deterministic template is safer than LLM guess
+    return 'B';
+  };
+
+  const llmTier = classifyLLMTier(companyData);
+
+  // ── Tier B: Deterministic narrative (no API call) ─────────────────────────
+  const buildTierBNarrative = (
+    cd: CompanyData,
+    role: string,
+    score: number,
+    bd: { L1: number; L2: number; L3: number },
+  ): typeof claudeAnalysis => {
+    const industryLabel = cd.industry ?? 'your sector';
+    const tierLabel = score >= 75 ? 'High risk' : score >= 55 ? 'Elevated risk'
+      : score >= 35 ? 'Moderate risk' : 'Low risk';
+
+    const primaryRisk =
+      bd.L2 > 0.6 ? `Documented layoff history at ${cd.name} is the dominant signal`
+      : bd.L1 > 0.6 ? `${cd.name} shows financial stress signals`
+      : bd.L3 > 0.6 ? `${role} roles face above-average AI displacement in ${industryLabel}`
+      : `${industryLabel} sector headwinds are the primary driver`;
+
+    const primaryProtection =
+      bd.L2 < 0.3 ? `No documented workforce reductions at ${cd.name} in the tracking window`
+      : bd.L1 < 0.3 ? `${cd.name} shows healthy financial signals`
+      : `Sector growth outlook and personal protection factors offset some risk`;
+
+    const horizon = score >= 75 ? '6–12 months' : score >= 55 ? '12–24 months'
+      : score >= 35 ? '24–36 months' : '36+ months';
+
+    const inactionConsequence = score >= 75
+      ? `Without intervention in the next 6 months, the ${role} role at ${cd.name} will likely fall into the highest-risk displacement bracket. AI tools are already absorbing execution-layer work in this function. Waiting for an official announcement typically leaves 4–6 fewer months for proactive action than starting now.`
+      : score >= 55
+        ? `Without upskilling in the next 6 months, gradual task erosion will reduce role leverage as AI tools absorb more execution work. The augmentation window — where AI enhances rather than replaces — is typically 18–36 months before market expectations shift permanently.`
+        : `Without proactive monitoring, your current stability could erode if sector AI adoption accelerates or company financial signals shift. Annual reassessment is the minimum recommended response at this risk level.`;
+
+    const riskReductionFactor = bd.L3 > 0.6
+      ? `Reducing reliance on AI-automatable tasks and building AI oversight skills would most improve your risk position — L3 (Role Displacement) at ${Math.round(bd.L3 * 100)}/100 is the dominant driver`
+      : bd.L1 > 0.6
+        ? `Monitoring ${cd.name}'s financial signals closely and maintaining career optionality would most improve your position — L1 (Financial Health) at ${Math.round(bd.L1 * 100)}/100 is the key driver`
+        : `Building cross-functional relationships and deepening domain expertise would most improve your position — your personal protection (L5) and market headwinds (L4) are the primary levers`;
+
+    return {
+      success: true,
+      dominantRiskFactor: primaryRisk,
+      keyProtectiveFactor: primaryProtection,
+      timeHorizon: horizon,
+      synthesis: [
+        `${cd.name} (${industryLabel}) — ${tierLabel}. Score: ${score}/100.`,
+        `Primary risk: ${primaryRisk}.`,
+        `Key protection: ${primaryProtection}.`,
+        `Estimated exposure horizon: ${horizon}.`,
+        `What changes your risk most: ${riskReductionFactor}.`,
+        `If you do nothing for 6 months: ${inactionConsequence}`,
+      ].join(' '),
+      urgencyLevel: score >= 75 ? 'Immediate' : score >= 55 ? 'High' : score >= 35 ? 'Moderate' : 'Low',
+      oneActionThisWeek: score >= 65
+        ? `Update your CV this week and reach out to 2 warm professional contacts — do not wait for an official announcement`
+        : score >= 45
+          ? `Identify the single AI tool most relevant to ${role} and dedicate 30 minutes/day this week to building proficiency`
+          : `Map your role's task portfolio: mark each task as AI-automatable, augmented, or human-only. This is your personal displacement map.`,
+    };
+  };
+
+  // ── Tier C: Scope-framing (no LLM, no template speculation) ─────────────
+  const buildTierCNarrative = (
+    cd: CompanyData,
+    role: string,
+    score: number,
+  ): typeof claudeAnalysis => ({
+    success: true, // "success" = valid analysis, just limited scope
+    dominantRiskFactor: `Role-level AI displacement risk for ${role} in ${cd.industry ?? 'your sector'}`,
+    keyProtectiveFactor: 'Score reflects role and market conditions, not employer-specific stability',
+    timeHorizon: score >= 65 ? '12–18 months (role-based estimate)' : '24–36 months (role-based estimate)',
+    synthesis: `Note: "${cd.name}" was not found in our company intelligence database. This score reflects your role's displacement risk in the ${cd.industry ?? 'broader'} sector and current market conditions — it does NOT reflect employer-specific signals (financial health, layoff history, AI investment). Score accuracy bounds are ±25–30 points. For a full company-specific audit, ensure the company name matches our database or provide additional company details.`,
+    urgencyLevel: score >= 75 ? 'High' : score >= 45 ? 'Moderate' : 'Low',
+    oneActionThisWeek: `Since company data is limited, focus on the role-level action: map which of your current tasks AI tools can already do and begin positioning yourself as the oversight layer for those tasks`,
+  });
+
   // ── Step 2: Run deterministic 5-layer engine (always, no API cost) ────────
   const engineResult: ScoreResult = calculateLayoffScore({
     companyData,
@@ -232,6 +344,7 @@ export const runFullEnsembleAnalysis = async (
     userFactors: {
       tenureYears,
       isUniqueRole,
+      uniquenessDepth, // Priority 3: ensures 3-level depth reaches the engine
       performanceTier,
       hasRecentPromotion,
       hasKeyRelationships,
@@ -239,11 +352,9 @@ export const runFullEnsembleAnalysis = async (
     roleExposureOverride,
   });
 
-  // ── Step 3: Single Claude analysis via llm-analyze Edge Function ─────────
-
-  // ── Step 3: Single Claude analysis via llm-analyze Edge Function ─────────
-  // One call with REAL signal context beats four calls with no company knowledge.
-  // API key stays on the server. Graceful fallback if unavailable.
+  // ── Step 3: Tiered narrative synthesis ───────────────────────────────────
+  // Tier A → Claude (grounded); Tier B → deterministic template; Tier C → scope framing.
+  // Law: never call LLM for unknown companies. Hallucination > no narrative.
   let claudeAnalysis: {
     success: boolean;
     dominantRiskFactor: string | null;
@@ -253,6 +364,7 @@ export const runFullEnsembleAnalysis = async (
     urgencyLevel: string | null;
     oneActionThisWeek: string | null;
     model?: string;
+    llmTier?: LLMTier;
   } = {
     success: false,
     dominantRiskFactor: null,
@@ -261,45 +373,187 @@ export const runFullEnsembleAnalysis = async (
     synthesis: null,
     urgencyLevel: null,
     oneActionThisWeek: null,
+    llmTier,
   };
 
-  try {
-    const { data: llmData, error: llmError } = await supabase.functions.invoke('llm-analyze', {
-      body: {
-        companyName,
-        roleTitle,
-        industry,
-        engineScore: engineResult.score,
-        engineBreakdown: engineResult.breakdown,
-        signalContext: {
-          stock90DayChange: (companyData as any).stock90DayChange ?? null,
-          revenueGrowthYoY: (companyData as any).revenueGrowthYoY ?? null,
-          layoffRounds: companyData.layoffRounds ?? 0,
-          lastLayoffPercent: companyData.lastLayoffPercent ?? null,
-          recentLayoffHeadlines: 0,
-          employeeCount: companyData.employeeCount ?? 1000,
-          revenuePerEmployee: companyData.revenuePerEmployee ?? 150000,
-          aiInvestmentSignal: companyData.aiInvestmentSignal ?? 'medium',
-          dataSource: companyData.source?.includes('Fallback') ? 'fallback' : 'db',
-        },
-        userFactors: {
-          tenureYears,
-          performanceTier,
-          isUniqueRole,
-          hasRecentPromotion,
-          hasKeyRelationships,
-        },
-      },
-    });
+  if (llmTier === 'C') {
+    // Unknown company: scope-frame honestly, skip LLM entirely
+    claudeAnalysis = { ...buildTierCNarrative(companyData, roleTitle, engineResult.score), llmTier: 'C' };
+    console.log('[Ensemble] Tier C — unknown company, deterministic scope framing used');
 
-    if (!llmError && llmData && !llmData.fallback) {
-      claudeAnalysis = { success: true, ...llmData };
-      console.log('[Ensemble] Claude analysis complete via llm-analyze EF');
-    } else {
-      console.warn('[Ensemble] llm-analyze unavailable — deterministic score only:', llmError?.message);
+  } else if (llmTier === 'B') {
+    // Known sector company: template narrative, no API cost
+    claudeAnalysis = {
+      ...buildTierBNarrative(companyData, roleTitle, engineResult.score, engineResult.breakdown),
+      llmTier: 'B',
+    };
+    console.log('[Ensemble] Tier B — deterministic template narrative');
+
+  } else {
+    // Tier A: call Claude with real signals + priority sequencing
+    // Priority 10: Detect user context to sequence questions by urgency.
+    // A returning user whose score jumped needs "what changed" first.
+    // A Stage 3 user needs "inaction consequence + 6-week protocol" first.
+    // A first-time user needs "primary risk driver" first.
+    type QuestionKey = 'primaryRiskDriver' | 'keyProtectiveFactor' | 'estimatedTimeline' |
+      'oneActionThisWeek' | 'whatChangesRiskMost' | 'sixMonthInactionConsequence';
+
+    const scoreHistory = loadScoreHistory();
+    const isReturningUser = scoreHistory.length >= 2;
+    const priorScore = isReturningUser ? (scoreHistory[1]?.score ?? engineResult.score) : engineResult.score;
+    const scoreJump = engineResult.score - priorScore;
+
+    function getQuestionPriority(returning: boolean, jump: number, stage3: boolean): QuestionKey[] {
+      if (stage3) {
+        // Stage 3: immediate consequence + action first — user is in crisis
+        return ['sixMonthInactionConsequence', 'oneActionThisWeek', 'primaryRiskDriver',
+                'whatChangesRiskMost', 'estimatedTimeline', 'keyProtectiveFactor'];
+      }
+      if (returning && jump >= 5) {
+        // Returning user, score rose: explain what changed and why first
+        return ['whatChangesRiskMost', 'primaryRiskDriver', 'estimatedTimeline',
+                'oneActionThisWeek', 'sixMonthInactionConsequence', 'keyProtectiveFactor'];
+      }
+      if (!returning) {
+        // First-time user: primary risk + inaction equally important
+        return ['primaryRiskDriver', 'sixMonthInactionConsequence', 'estimatedTimeline',
+                'oneActionThisWeek', 'whatChangesRiskMost', 'keyProtectiveFactor'];
+      }
+      // Returning, stable score: focus on actionable next step
+      return ['oneActionThisWeek', 'primaryRiskDriver', 'keyProtectiveFactor',
+              'estimatedTimeline', 'whatChangesRiskMost', 'sixMonthInactionConsequence'];
     }
-  } catch (llmErr: any) {
-    console.warn('[Ensemble] llm-analyze call failed:', llmErr.message);
+
+    const isStage3 = llmTier === 'A' && engineResult.score >= 75;
+    const questionPriority = getQuestionPriority(isReturningUser, scoreJump, isStage3);
+
+    // ── v4.0: Proportional token allocation ──────────────────────────────────
+    // Intelligence Upgrade 1: question weight determines both ORDER and DEPTH.
+    // Stage 3 → consequence question gets 40% of tokens (crisis framing).
+    // Returning+jump → whatChanges gets 35% (explanation-first framing).
+    // First-time → primaryRisk gets 30% + inaction gets 25% (orientation framing).
+    // Stable returning → action gets 35% (execution-first framing).
+    function buildQuestionWeights(priority: QuestionKey[], returning: boolean, jump: number, stage3: boolean): Record<QuestionKey, number> {
+      // Default equal distribution (100% / 6 ≈ 17% each)
+      const equal: Record<QuestionKey, number> = {
+        primaryRiskDriver: 17, keyProtectiveFactor: 12, estimatedTimeline: 12,
+        oneActionThisWeek: 20, whatChangesRiskMost: 17, sixMonthInactionConsequence: 22,
+      };
+      if (stage3) {
+        return { ...equal, sixMonthInactionConsequence: 40, oneActionThisWeek: 25,
+          primaryRiskDriver: 15, whatChangesRiskMost: 10, estimatedTimeline: 5, keyProtectiveFactor: 5 };
+      }
+      if (returning && jump >= 5) {
+        return { ...equal, whatChangesRiskMost: 35, primaryRiskDriver: 20,
+          oneActionThisWeek: 18, estimatedTimeline: 12, sixMonthInactionConsequence: 10, keyProtectiveFactor: 5 };
+      }
+      if (!returning) {
+        return { ...equal, primaryRiskDriver: 30, sixMonthInactionConsequence: 25,
+          oneActionThisWeek: 20, estimatedTimeline: 12, whatChangesRiskMost: 8, keyProtectiveFactor: 5 };
+      }
+      // Returning, stable: action-first
+      return { ...equal, oneActionThisWeek: 35, primaryRiskDriver: 20,
+        keyProtectiveFactor: 15, estimatedTimeline: 12, whatChangesRiskMost: 10, sixMonthInactionConsequence: 8 };
+    }
+    const questionWeights = buildQuestionWeights(questionPriority, isReturningUser, scoreJump, isStage3);
+
+    // ── v4.0: Full signal set — all required fields per LLM prompt spec ───────
+    const v4SignalContext = {
+      // Company data — all actual values, not summaries
+      stock_90d_change: companyData.stock90DayChange ?? null,
+      revenue_growth_yoy: companyData.revenueGrowthYoY ?? null,
+      layoff_rounds_24m: companyData.layoffRounds ?? 0,
+      last_layoff_months_ago: companyData.layoffsLast24Months?.[0]
+        ? Math.round((Date.now() - new Date(companyData.layoffsLast24Months[0].date).getTime()) / (30 * 24 * 60 * 60 * 1000))
+        : null,
+      last_layoff_percent: companyData.lastLayoffPercent ?? null,
+      ai_investment_signal: companyData.aiInvestmentSignal ?? 'medium',
+      collapse_stage: (companyData as any).collapseStage ?? null,
+      peer_contagion_count: 0, // populated by sectorContagionAgent
+      employee_count: companyData.employeeCount ?? 1000,
+      revenue_per_employee: companyData.revenuePerEmployee ?? 150000,
+      is_public: companyData.isPublic,
+      region: companyData.region ?? 'GLOBAL',
+      // User context
+      experience_years: (inputs as any).careerYears ?? tenureYears,
+      tenure_years: tenureYears,
+      performance_tier: performanceTier,
+      uniqueness_depth: uniquenessDepth ?? (isUniqueRole ? 'critical_knowledge' : 'generic'),
+      has_recent_promotion: hasRecentPromotion,
+      has_key_relationships: hasKeyRelationships,
+      // Financial + capital (if available from localStorage via context)
+      financial_risk_appetite: null, // populated by FinancialContext if user has set it
+      career_capital_total: null,    // populated by CareerCapital if user has assessed
+      city: null,                    // populated if user provided city
+      // Session context
+      is_returning_user: isReturningUser,
+      previous_score: isReturningUser ? priorScore : null,
+      score_delta: isReturningUser ? scoreJump : null,
+      days_since_last_audit: isReturningUser
+        ? Math.round((Date.now() - (loadScoreHistory()[1]?.timestamp ?? Date.now())) / 86400000)
+        : null,
+      // Data quality
+      data_source: 'live' as const,
+    };
+
+    try {
+      const { data: llmData, error: llmError } = await supabase.functions.invoke('llm-analyze', {
+        body: {
+          companyName,
+          roleTitle,
+          industry,
+          engineScore: engineResult.score,
+          // v4.0: Full L1-D7 breakdown as percentages
+          engineBreakdown: {
+            L1: Math.round(engineResult.breakdown.L1 * 100),
+            L2: Math.round(engineResult.breakdown.L2 * 100),
+            L3: Math.round(engineResult.breakdown.L3 * 100),
+            L4: Math.round(engineResult.breakdown.L4 * 100),
+            L5: Math.round(engineResult.breakdown.L5 * 100),
+            D6: Math.round(((engineResult.breakdown as any).D6 ?? 0) * 100),
+            D7: Math.round(((engineResult.breakdown as any).D7 ?? 0) * 100),
+          },
+          // v4.0: Full signal context (not the truncated v3 version)
+          signalContext: v4SignalContext,
+          userFactors: {
+            tenureYears,
+            performanceTier,
+            isUniqueRole,
+            uniquenessDepth,
+            hasRecentPromotion,
+            hasKeyRelationships,
+          },
+          // v4.0: Priority ordering AND proportional token allocation
+          responseFormat: {
+            questions: questionPriority,
+            // v4.0: Token budget allocation per question (must sum to 100)
+            questionWeights,
+            priorityInstruction: `Answer the 6 questions in the exact order given. Each question has a token budget percentage — allocate your response depth proportionally to these weights. Question 1 (${questionPriority[0]}) receives ${questionWeights[questionPriority[0]]}% of your response. Question 2 (${questionPriority[1]}) receives ${questionWeights[questionPriority[1]]}%. Remaining 4 questions share ${100 - questionWeights[questionPriority[0]] - questionWeights[questionPriority[1]]}%. User context: ${isReturningUser ? `returning user, score changed ${scoreJump > 0 ? '+' : ''}${scoreJump} pts since last audit` : 'first-time user'}. Company data quality: live signals. Do not use corporate language. Speak directly.`,
+            // v4.0: Structured JSON output — one field per question key
+            outputFormat: 'structured_json',
+            maxWords: 250,
+          },
+        },
+      });
+
+      if (!llmError && llmData && !llmData.fallback) {
+        claudeAnalysis = { success: true, llmTier: 'A', ...llmData };
+        console.log('[Ensemble] Tier A — Claude narrative complete');
+      } else {
+        // Tier A API failed → fall back to Tier B template (not silence)
+        console.warn('[Ensemble] Tier A Claude failed — falling back to Tier B template:', llmError?.message);
+        claudeAnalysis = {
+          ...buildTierBNarrative(companyData, roleTitle, engineResult.score, engineResult.breakdown),
+          llmTier: 'B',
+        };
+      }
+    } catch (llmErr: any) {
+      console.warn('[Ensemble] Tier A call exception — using Tier B template:', llmErr.message);
+      claudeAnalysis = {
+        ...buildTierBNarrative(companyData, roleTitle, engineResult.score, engineResult.breakdown),
+        llmTier: 'B',
+      };
+    }
   }
 
   // ── Step 4: Aggregate — engine score is authoritative, Claude provides narrative ──

@@ -47,6 +47,8 @@ import {
 import { getAutoDeducedDepartment } from "../../data/oracleRoleIndex";
 import { countryCodeToD5Key } from "../../data/companyDatabase";
 import { injectLayoffEvent } from "../../data/layoffNewsCache";
+import { recordScore } from "../../services/scoreDeltaService";
+import { detectCollapseStage } from "../../services/collapsePredictor";
 
 interface Props {
   /** Optional: passed from ToolsPage so action plan links can switch tabs */
@@ -490,6 +492,7 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
         department: inputs.department,
         tenureYears: inputs.userFactors.tenureYears,
         isUniqueRole: inputs.userFactors.isUniqueRole,
+        uniquenessDepth: inputs.userFactors.uniquenessDepth, // Priority 3 fix
         performanceTier: inputs.userFactors.performanceTier,
         hasRecentPromotion: inputs.userFactors.hasRecentPromotion,
         hasKeyRelationships: inputs.userFactors.hasKeyRelationships,
@@ -567,6 +570,45 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
 
       dispatch({ type: "SET_SCORE_RESULT", payload: enrichedResult });
 
+      // ── Priority 5: Async collapse detection — patches collapseStage into result ──
+      // Runs non-blocking so dashboard loads immediately; stage appears within ~1s.
+      // Only runs for known companies (not fallback) to avoid meaningless results.
+      if (companyData.name && !companyData.source?.includes('Fallback') && !companyData.source?.includes('Unknown')) {
+        detectCollapseStage({
+          companyName: companyData.name,
+          industry: companyData.industry || 'Technology',
+          roleTitle: inputs.roleTitle,
+          stock90dChange: companyData.stock90DayChange,
+          aiInvestmentSignal: companyData.aiInvestmentSignal ?? 'medium',
+          layoffRounds: companyData.layoffRounds ?? 0,
+          mostRecentLayoffDate: companyData.layoffsLast24Months?.[0]?.date ?? null,
+          filingDelinquent: false,
+        }).then(report => {
+          if (report.stage) {
+            dispatch({ type: "SET_SCORE_RESULT", payload: { ...enrichedResult, collapseStage: report.stage } });
+          }
+        }).catch(() => { /* collapse detection is best-effort */ });
+      }
+
+      // ── Record score with L1-L5 breakdown for delta attribution ──────────────
+      // This enables "why did your score change?" for returning Layoff Audit users.
+      const bd = ensembleResult.breakdown;
+      if (bd && state.oracleKey) {
+        recordScore({
+          roleKey: state.oracleKey,
+          industryKey: companyData.industry || 'Technology',
+          countryKey: d5CountryKey,
+          experience: oracleExp,
+          score: ensembleResult.score,
+          timestamp: Date.now(),
+          isGrounded: finalQuality === 'live',
+          breakdown: { L1: bd.L1, L2: bd.L2, L3: bd.L3, L4: bd.L4, L5: bd.L5,
+                       ...(bd.D6 != null ? { D6: bd.D6 } : {}),
+                       ...(bd.D7 != null ? { D7: bd.D7 } : {}) },
+          companyName: companyData.name,
+        });
+      }
+
       const modelCount = ensembleResult.modelsUsed?.length || 1;
       const liveAgents = ensembleResult.swarmReport?.liveAgentsUsed ?? 0;
       const swarmInfo = liveAgents > 0 ? ` · ${liveAgents} live signals` : "";
@@ -589,6 +631,9 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
         if (session?.user?.id && state.companyName && state.roleTitle) {
           // BUG-05 FIX: Use finalQuality (local const) not dataQuality state —
           // React state is async; dataQuality may be stale at this point in the closure.
+          const allowCommunityShare = (() => {
+            try { return localStorage.getItem('hp_community_share') === '1'; } catch { return false; }
+          })();
           await supabase.from("layoff_scores").insert({
             user_id: session.user.id,
             company_name: state.companyName,
@@ -602,6 +647,7 @@ export const LayoffCalculator: React.FC<Props> = ({ onSwitchTab }) => {
             models_used: ensembleResult.modelsUsed,
             data_quality: finalQuality,
             calculated_at: new Date().toISOString(),
+            allow_community_share: allowCommunityShare,
           });
 
           // Non-blocking score_history sync via scoreSyncService

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { motion, AnimatePresence } from "framer-motion";
 import { HybridResult } from "../../types/hybridResult";
@@ -47,6 +47,15 @@ export const LayoffAuditDashboard: React.FC<Props> = ({
   onRetake,
   onDownload,
 }) => {
+  const [communityShare, setCommunityShare] = useState<boolean>(() => {
+    try { return localStorage.getItem('hp_community_share') === '1'; } catch { return false; }
+  });
+
+  const handleCommunityToggle = () => {
+    const next = !communityShare;
+    setCommunityShare(next);
+    try { localStorage.setItem('hp_community_share', next ? '1' : '0'); } catch { /* ignore */ }
+  };
   return (
     <div className="w-full max-w-7xl mx-auto pb-[var(--space-16)]" style={{ padding: '0 var(--space-6)' }}>
       <Tabs.Root defaultValue="overview" className="flex flex-col">
@@ -135,8 +144,31 @@ export const LayoffAuditDashboard: React.FC<Props> = ({
 
         {/* Global Footer Controls — Oracle Branding */}
         <div className="mt-[var(--space-16)] flex flex-col items-center gap-[var(--space-4)]">
+          {/* Community intelligence opt-in */}
+          <div className="w-full max-w-lg rounded-xl border border-white/8 bg-white/3 px-4 py-3 flex items-center gap-3">
+            <button
+              onClick={handleCommunityToggle}
+              aria-label="Toggle community share"
+              className={`relative w-9 h-5 rounded-full flex-shrink-0 transition-colors duration-200 ${communityShare ? 'bg-cyan-500' : 'bg-white/10'}`}
+            >
+              <span
+                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${communityShare ? 'translate-x-4' : 'translate-x-0.5'}`}
+              />
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-white/70 leading-snug">
+                Contribute anonymous score to community benchmarks
+              </p>
+              <p className="text-[10px] text-white/35 mt-0.5">
+                {communityShare
+                  ? 'Your score is included in the AI Risk Intelligence aggregate. No personal data is shared.'
+                  : 'Help build accurate industry benchmarks — opt in to share your anonymous risk score.'}
+              </p>
+            </div>
+          </div>
+
            <div className="h-px w-24 bg-gradient-to-r from-transparent via-[var(--border-2)] to-transparent" />
-           <button 
+           <button
              onClick={onRetake}
              className="btn btn-secondary border-none text-[var(--text-3)] hover:text-[var(--text)] transition-colors text-[10px] font-mono tracking-widest uppercase"
            >

@@ -4,6 +4,7 @@ import { searchAllCompanies, resolveCompanyData } from "../../data/companyIntell
 import { CompanyData } from "../../data/companyDatabase";
 import { profileUnknownCompany } from "../../services/ensemble/quickProfilerAgent";
 import { Building, Info, Zap, Shield, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import type { UniquenessDepth } from "../../services/layoffScoreEngine";
 import {
   searchOracleRoles,
   getAutoDeducedDepartment,
@@ -312,7 +313,13 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
   const [tenureYears, setTenureYears] = useState(state.userFactors?.tenureYears || 1.5);
   /** BUG-C1 FIX: Total career years across ALL jobs (not just current company) */
   const [careerYears, setCareerYears] = useState(state.userFactors?.careerYears ?? 5);
-  const [isUniqueRole, setIsUniqueRole] = useState(state.userFactors?.isUniqueRole ?? false);
+  // Priority 3: 3-level uniqueness depth replaces Yes/No toggle
+  const [uniquenessDepth, setUniquenessDepth] = useState<UniquenessDepth>(
+    state.userFactors?.uniquenessDepth ??
+    (state.userFactors?.isUniqueRole ? 'critical_knowledge' : 'generic')
+  );
+  // Keep isUniqueRole derived for backward compat
+  const isUniqueRole = uniquenessDepth === 'critical_knowledge';
   const [performanceTier, setPerformanceTier] = useState(
     state.userFactors?.performanceTier || "average"
   );
@@ -331,11 +338,12 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
     if (performanceTier === 'below') base += 25;
     if (tenureYears < 1) base += 10;
     if (tenureYears > 8) base -= 12;
-    if (isUniqueRole) base -= 10;
+    if (uniquenessDepth === 'critical_knowledge') base -= 10;
+    else if (uniquenessDepth === 'functional_specialist') base -= 5;
     if (hasRecentPromotion) base -= 8;
     if (hasKeyRelationships) base -= 5;
     return Math.min(99, Math.max(1, base));
-  }, [selectedOracleEntry, performanceTier, tenureYears, isUniqueRole, hasRecentPromotion, hasKeyRelationships]);
+  }, [selectedOracleEntry, performanceTier, tenureYears, uniquenessDepth, hasRecentPromotion, hasKeyRelationships]);
 
   // ── Company search with debounce — BUG-B6 FIX ────────────────────────
   useEffect(() => {
@@ -551,6 +559,7 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
           tenureYears,
           careerYears: validatedCareerYears,
           isUniqueRole,
+          uniquenessDepth,
           performanceTier: performanceTier as "top" | "average" | "below" | "unknown",
           hasRecentPromotion,
           hasKeyRelationships,
@@ -723,17 +732,32 @@ export const LayoffInputForm: React.FC<Props> = ({ onNext }) => {
                 onChange={v => setPerformanceTier(v as "top" | "average" | "below" | "unknown")}
               />
 
+              {/* Priority 3: 3-Level Uniqueness Depth (replaces Yes/No toggle) */}
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-3)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Role Uniqueness 💎
+                </div>
+                <ToggleGroup
+                  ariaLabel="Role uniqueness depth"
+                  options={[
+                    { value: 'generic', label: 'Generic', desc: 'Role exists at thousands of companies' },
+                    { value: 'functional_specialist', label: 'Specialist', desc: 'Unique expertise, replaceable with hiring' },
+                    { value: 'critical_knowledge', label: 'Critical', desc: 'Irreplaceable institutional knowledge' },
+                  ]}
+                  value={uniquenessDepth}
+                  onChange={v => setUniquenessDepth(v as UniquenessDepth)}
+                />
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
                   {[
-                    { key: 'unique', label: 'Role Uniqueness', active: isUniqueRole, setter: setIsUniqueRole, icon: '💎' },
                     { key: 'promo', label: 'Recent Promotion', active: hasRecentPromotion, setter: setHasRecentPromotion, icon: '↗' },
                     { key: 'stake', label: 'Key Relationships', active: hasKeyRelationships, setter: setHasKeyRelationships, icon: '🤝' }
                   ].map(item => (
-                    <button 
-                      key={item.key} 
+                    <button
+                      key={item.key}
                       onClick={() => item.setter(!item.active)}
                       className="card card-hover"
-                      style={{ 
+                      style={{
                         display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
                         background: item.active ? 'var(--cyan-dim)' : 'rgba(255,255,255,0.03)',
                         borderColor: item.active ? 'var(--cyan)' : 'var(--border)',

@@ -174,6 +174,11 @@ export interface HybridResult {
 
   // Legacy compatibility: preserve original engine ScoreResult for fallback rendering
   _engineResult?: ScoreResult;
+
+  // ── Company Collapse Stage (Priority 5) ──────────────────────────────────
+  // Populated asynchronously after detectCollapseStage() resolves in LayoffCalculator.
+  // null = no signals detected; 1 = early warning; 2 = active risk; 3 = imminent.
+  collapseStage?: 1 | 2 | 3 | null;
 }
 
 // ============================================================================
